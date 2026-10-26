@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Daymix's Chess — шахматы в браузере: 25 режимов, пять тем доски, пять наборов фигур, часы, статистика и игра по коду из пяти цифр.">
+  <meta name="description" content="Daymix's Chess — шахматы в браузере: 25 режимов, пять тем доски и 45 наборов фигур, часы, статистика и игра по коду из пяти цифр.">
   <meta name="theme-color" content="#1d100c">
   <title>Daymix's Chess</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233a241b'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%23f2e2c8'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
@@ -18,7 +18,7 @@
       <span class="brand-mark">♞</span>
       <span class="brand-text">
         <span class="brand-name">Daymix's Chess</span>
-        <span class="brand-sub">25 режимов · 5 тем · 5 наборов фигур</span>
+        <span class="brand-sub">25 режимов · 45 наборов фигур</span>
       </span>
     </button>
     <div class="top-right">
@@ -58,6 +58,13 @@
           <div class="play-actions">
             <button class="btn btn-primary btn-lg" id="btnPlayLocal" type="button">Играть здесь</button>
             <button class="btn btn-accent btn-lg" id="btnCreate" type="button">Создать игру по сети</button>
+          </div>
+
+          <div class="bot-row">
+            <span class="bot-label">С ботом:</span>
+            <button class="bot-level" data-level="easy" type="button">лёгкий</button>
+            <button class="bot-level" data-level="medium" type="button">средний</button>
+            <button class="bot-level" data-level="hard" type="button">сложный</button>
           </div>
 
           <div class="join-row">
@@ -264,9 +271,12 @@
             <div class="tab-panel hidden" id="tabInfo">
               <textarea class="pgn" id="pgnBox" readonly spellcheck="false"></textarea>
               <div class="info-row">
-                <button class="btn btn-sm" id="btnCopyPgn" type="button">Копировать PGN</button>
-                <span class="muted" id="infoLine"></span>
+                <button class="btn btn-sm" id="btnCopyPgn" type="button">PGN</button>
+                <button class="btn btn-sm" id="btnExport" type="button">Сохранить JSON</button>
+                <button class="btn btn-sm" id="btnCopyGame" type="button">JSON в буфер</button>
+                <button class="btn btn-sm" id="btnImport" type="button">Импорт</button>
               </div>
+              <div class="muted" id="infoLine"></div>
             </div>
           </div>
         </aside>
@@ -333,6 +343,29 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- импорт партии -->
+<div class="modal hidden" id="importModal">
+  <div class="modal-card">
+    <div class="modal-head"><b>Импорт партии</b><button class="icon-btn" id="importClose" type="button">✕</button></div>
+    <p class="modal-note">Вставьте JSON партии, вставьте из буфера или выберите файл.</p>
+    <textarea id="importText" placeholder='{"app":"daymix-chess", ...}' spellcheck="false"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-sm" id="importFileBtn" type="button">Выбрать файл</button>
+      <button class="btn btn-sm" id="importPaste" type="button">Из буфера</button>
+      <button class="btn btn-sm btn-primary" id="importConfirm" type="button">Импортировать</button>
+    </div>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+  </div>
+</div>
+
+<!-- выбор набора фигур -->
+<div class="modal hidden" id="skinModal">
+  <div class="modal-card wide">
+    <div class="modal-head"><b>Наборы фигур</b><span class="muted" id="skinCount"></span><button class="icon-btn" id="skinClose" type="button">✕</button></div>
+    <div class="skin-grid" id="skinGrid"></div>
+  </div>
+</div>
 
 <!-- градиенты для металлического набора фигур -->
 <svg class="svg-defs" aria-hidden="true" width="0" height="0">

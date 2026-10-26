@@ -1108,21 +1108,27 @@ function negamax(st, depth, alpha, beta) {
   return best;
 }
 
-/** Лучший ход по оценке на пару полуходов вперёд. */
-function bestMove(st, depth = 2) {
+/** Все ходы с оценками, от лучшего к худшему. */
+function rankMoves(st, depth = 2) {
   const color = st.turn;
   const moves = legalMoves(st, color);
-  if (!moves.length) return null;
+  if (!moves.length) return [];
   moves.sort((a, b) => (b.capture ? 1 : 0) - (a.capture ? 1 : 0));
-  let best = null;
-  let bestScore = -Infinity;
+  const scored = [];
   for (const m of moves) {
     const undo = applyMove(st, m);
     const score = -negamax(st, depth - 1, -Infinity, Infinity);
     undoMove(st, undo);
-    if (score > bestScore) { bestScore = score; best = m; }
+    scored.push({ move: m, score });
   }
-  return { move: best, score: bestScore };
+  scored.sort((a, b) => b.score - a.score);
+  return scored;
+}
+
+/** Лучший ход по оценке на пару полуходов вперёд. */
+function bestMove(st, depth = 2) {
+  const ranked = rankMoves(st, depth);
+  return ranked.length ? ranked[0] : null;
 }
 function cloneState(st) {
   const copy = {

@@ -113,6 +113,214 @@ function updateSoundIcon() {
 
 /* ──────────────────── 1в. ПОДСКАЗКА, ОЦЕНКА, КОНФЕТТИ ────────────────── */
 
+
+/* ─────────────────────────── БОТ ────────────────────────────────────── */
+
+const BOT_LABELS = { easy: 'лёгкий', medium: 'средний', hard: 'сложный' };
+const BOT_DELAY = { easy: 420, medium: 600, hard: 780 };
+
+function startBotGame(level) {
+  if (!BOT_LABELS[level]) level = 'medium';
+  ui.online = null;
+  sound.click();
+  newGame({
+    mode: 'local',
+    modeId: profile.modeId,
+    timeMs: profile.timeMs,
+    splash: true,
+    bot: { level, color: other(profile.side) },
+  });
+}
+
+function chooseBotMove(st, level) {
+  const moves = legalMoves(st, st.turn);
+  if (!moves.length) return null;
+  if (level === 'easy') {
+    if (Math.random() < 0.55) return moves[Math.floor(Math.random() * moves.length)];
+    const caps = moves.filter((m) => m.capture != null || m.ep || (m.caps && m.caps.length));
+    if (caps.length) return caps[Math.floor(Math.random() * caps.length)];
+    return moves[Math.floor(Math.random() * moves.length)];
+  }
+  const big = st.W * st.H > 64;
+  const depth = level === 'hard' ? (big ? 2 : 4) : 2;
+  let ranked = [];
+  try { ranked = rankMoves(st, depth); } catch (error) { ranked = []; }
+  if (!ranked.length) return moves[Math.floor(Math.random() * moves.length)];
+  if (level === 'hard') return ranked[0].move;
+  const top = ranked.slice(0, Math.min(3, ranked.length));
+  return top[Math.floor(Math.random() * top.length)].move;
+}
+
+function maybeBotTurn() {
+  if (!ui.bot || !ui.st || ui.st.status !== 'play' || ui.mode !== 'local') return;
+  if (ui.st.turn !== ui.bot.color || ui.bot.busy) return;
+  ui.bot.busy = true;
+  ui.botThinking = true;
+  renderStatus();
+  const level = ui.bot.level;
+  setTimeout(() => {
+    ui.bot.busy = false;
+    ui.botThinking = false;
+    if (!ui.st || ui.st.status !== 'play' || !ui.bot || ui.st.turn !== ui.bot.color) { renderStatus(); return; }
+    const move = chooseBotMove(ui.st, level);
+    if (move) commitMove(move, { bot: true });
+    renderStatus();
+  }, BOT_DELAY[level] || 600);
+}
+
+/* ─────────────────────── ЭКСПОРТ И ИМПОРТ ───────────────────────────── */
+
+function buildGameJson() {
+  const st = ui.st;
+  if (!st) return null;
+  const names = ui.names || {};
+  return {
+    app: 'daymix-chess',
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    mode: { id: st.modeId, name: st.mode.name, W: st.W, H: st.H, square: !!st.square },
+    time: { ms: ui.timeMs, label: ui.timeMs ? profile.timeLabel : 'без ограничений' },
+    players: {
+      w: names.w || { name: 'Белые', avatar: 'k' },
+      b: names.b || { name: 'Чёрные', avatar: 'k' },
+    },
+    startedAt: ui.startedAt ? new Date(ui.startedAt).toISOString() : null,
+    endedAt: st.status === 'over' ? new Date().toISOString() : null,
+    result: st.result || null,
+    bot: ui.bot ? { level: ui.bot.level } : null,
+    moves: ui.moves.map((m, i) => ({
+      n: i + 1,
+      side: m.color,
+      san: m.san,
+      from: sqName(st, m.from),
+      to: sqName(st, m.to),
+      promo: m.promo || null,
+      at: m.at ? new Date(m.at).toISOString() : null,
+      ms: Math.round(m.spent || 0),
+      clockSec: m.clock != null ? Math.round(m.clock / 1000) : null,
+    })),
+    pgn: buildPgnText(),
+  };
+}
+
+function gameJsonText() {
+  const data = buildGameJson();
+  return data ? JSON.stringify(data, null, 2) : '';
+}
+
+function exportGameFile() {
+  const text = gameJsonText();
+  if (!text) { toast('Партия ещё не начата'); return; }
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `daymix-chess-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast('JSON сохранён');
+}
+
+async function copyGameJson() {
+  const text = gameJsonText();
+  if (!text) { toast('Партия ещё не начата'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('JSON партии в буфере');
+  } catch (error) {
+    toast('Не удалось скопировать');
+  }
+}
+
+function openImport() {
+  const modal = $('#importModal');
+  if (!modal) return;
+  $('#importText').value = '';
+  modal.classList.remove('hidden');
+  setTimeout(() => { const el = $('#importText'); if (el) el.focus(); }, 60);
+}
+
+function closeImport() {
+  const modal = $('#importModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function parseSquare(st, text) {
+  if (!text || text.length < 2) return -1;
+  const file = 'abcdefghijklmn'.indexOf(String(text)[0].toLowerCase());
+  const rank = parseInt(String(text).slice(1), 10) - 1;
+  if (file < 0 || !Number.isFinite(rank)) return -1;
+  if (file >= st.W || rank < 0 || rank >= st.H) return -1;
+  return rank * st.W + file;
+}
+
+function importGameText(raw) {
+  let data = null;
+  try { data = JSON.parse(String(raw)); } catch (error) { toast('Это не JSON'); return false; }
+  if (!data || data.app !== 'daymix-chess') { toast('Это не партия Daymix’s Chess'); return false; }
+  const mode = modeById(data.mode && data.mode.id);
+  ui.online = null;
+  ui.bot = null;
+  ui.imported = true;
+  ui.scored = true;
+  ui.timeMs = Number(data.time && data.time.ms) || 0;
+  ui.clocks = { w: ui.timeMs, b: ui.timeMs };
+  ui.st = createState(mode.id, { square: !!(data.mode && data.mode.square) });
+  ui.frames = [snap(ui.st)];
+  ui.moves = [];
+  ui.viewPly = 0;
+  ui.lastMove = null;
+  ui.chat = [];
+  ui.selected = -1;
+  ui.hint = null;
+  ui.names = {
+    w: (data.players && data.players.w) || { name: 'Белые', avatar: 'k' },
+    b: (data.players && data.players.b) || { name: 'Чёрные', avatar: 'k' },
+  };
+  ui.startedAt = data.startedAt ? Date.parse(data.startedAt) : Date.now();
+  const list = Array.isArray(data.moves) ? data.moves : [];
+  for (const rec of list) {
+    const legal = legalMoves(ui.st, ui.st.turn);
+    const from = parseSquare(ui.st, rec.from);
+    const to = parseSquare(ui.st, rec.to);
+    const found = legal.find((x) => x.from === from && x.to === to && (x.promo || null) === (rec.promo || null));
+    if (!found) break;
+    const mover = ui.st.turn;
+    const san = rec.san || moveToSan(ui.st, found, legal);
+    applyMove(ui.st, found);
+    ui.frames.push(snap(ui.st));
+    ui.moves.push({
+      san, from, to, color: mover,
+      spent: Number(rec.ms) || 0,
+      clock: rec.clockSec != null ? Number(rec.clockSec) * 1000 : null,
+      at: rec.at ? Date.parse(rec.at) : 0,
+      promo: found.promo || null,
+    });
+    ui.lastMove = { from, to };
+  }
+  ui.viewPly = ui.frames.length - 1;
+  updateStatus(ui.st);
+  if (data.result) {
+    ui.st.result = data.result;
+    ui.st.status = 'over';
+  }
+  closeImport();
+  buildSquares();
+  renderAll(false);
+  renderMoves();
+  renderPlayers();
+  renderMeta();
+  switchTab('moves');
+  showScreen('game');
+  updateNav();
+  toast(`Партия импортирована: ${ui.moves.length} ходов`);
+  return true;
+}
+
 function showHint() {
   const st = ui.st;
   if (!st || st.status !== 'play') return;
@@ -243,13 +451,72 @@ const THEMES = [
   { id: 'metal', name: 'Металл', light: '#dde2e8', dark: '#8b959f' },
 ];
 
-const PIECE_SETS = [
-  { id: '1', name: 'Классика' },
-  { id: '2', name: 'Жирные' },
-  { id: '3', name: 'Контур' },
-  { id: '4', name: 'Металл' },
-  { id: '5', name: 'Нео' },
+const PIECE_SKINS = [
+  { id: '1', name: 'Классика', w: '#fbf9f4', we: '#c3b69e', wd: '#b0a288', b: '#26292f', be: '#101216', bd: '#3a4049', sw: 2.2 },
+  { id: '2', name: 'Жирные', w: '#fdfbf6', we: '#b9ab90', wd: '#a89a80', b: '#23262c', be: '#0d0f12', bd: '#343a43', sw: 4.2 },
+  { id: '3', name: 'Контур', w: '#2a241d', we: '#2a241d', wd: '#2a241d', b: '#1d2026', be: '#1d2026', bd: '#1d2026', sw: 1.9, hollow: true },
+  { id: '4', name: 'Металл', w: '#e8edf2', we: '#4a4640', wd: '#7d786f', b: '#3a4048', be: '#e9edf2', bd: '#d7dbe0', sw: 1.9, metal: true },
+  { id: '5', name: 'Нео', w: '#fffdf7', we: '#b9a88c', wd: '#a29073', b: '#23262c', be: '#22262c', bd: '#454c56', sw: 3.4, glow: '#d9a56666' },
 ];
+
+/* Палитры для сорока дополнительных наборов: тело/контур/детали белых и чёрных. */
+const SKIN_PALETTES = [
+  ['Слоновая кость', '#fdfaf0', '#d9cdb6', '#c4b79e', '#2a2d33', '#101216', '#3a4049'],
+  ['Мрамор', '#f7f7f4', '#cfd2d4', '#b9bdc0', '#2c3036', '#14171b', '#3e444c'],
+  ['Янтарь', '#ffe7b0', '#c9973f', '#a87a2c', '#3a2a12', '#241708', '#5a4322'],
+  ['Изумруд', '#eafbf1', '#b7dcc4', '#9bc7aa', '#1e3a2a', '#0e2016', '#2f5a41'],
+  ['Сапфир', '#eef5ff', '#b9cbe8', '#9db3d6', '#1d2b44', '#0d1728', '#31456a'],
+  ['Рубин', '#fff0f0', '#e8b9b9', '#d69d9d', '#3a1d22', '#220f12', '#5c3038'],
+  ['Аметист', '#f7f0ff', '#d3bfe8', '#bda4d9', '#2c1f3a', '#190f22', '#4a3660'],
+  ['Джейд', '#effaf6', '#bde3d6', '#a0cfbf', '#1e3a34', '#0e201c', '#315a50'],
+  ['Медь', '#ffe9d6', '#d9a06b', '#bd8350', '#3a2418', '#22140c', '#5c3c28'],
+  ['Бронза', '#f4e3c8', '#c19a5f', '#a37f47', '#332716', '#1d150b', '#53432a'],
+  ['Золото', '#fff3c9', '#e0b64a', '#c29a32', '#3a2c0e', '#221a06', '#5c4a1e'],
+  ['Серебро', '#f7f9fb', '#c8ced6', '#aeb6c0', '#2c3138', '#151a20', '#3e4652'],
+  ['Неон', '#f2ffff', '#7fe8ff', '#5cc9e6', '#26103a', '#12061f', '#4a2a6a', { sw: 2.6, glow: '#54e6ff88' }],
+  ['Лёд', '#eef9ff', '#a9d6ef', '#8cc2e0', '#1d3346', '#0c1a26', '#2f5069'],
+  ['Лава', '#fff0e0', '#f0a35e', '#d4803a', '#3a1a10', '#220d05', '#5c3220', { sw: 3, glow: '#ff7a3a55' }],
+  ['Лес', '#eef7e6', '#b6d19a', '#9bbb7c', '#22331a', '#111d0c', '#3a5230'],
+  ['Закат', '#fff0e6', '#e8b48f', '#d29a6f', '#3a2418', '#22130a', '#5c3a28'],
+  ['Небо', '#eef6ff', '#b3d1ee', '#97bce0', '#20364a', '#0f1e2a', '#33526b'],
+  ['Пергамент', '#f8efd9', '#d6c49c', '#c0ab7f', '#3a3020', '#221b0e', '#5c4c30'],
+  ['Графит', '#eceef1', '#b9bec6', '#9ea4ad', '#23262b', '#0c0e11', '#3a3f47'],
+  ['Молоко', '#fffdf9', '#e6ded0', '#d6cbb9', '#3a3630', '#221f1a', '#5c574e'],
+  ['Карамель', '#fff2dd', '#e0b07a', '#c89456', '#3a2814', '#22160a', '#5c4326'],
+  ['Хаки', '#f2efdd', '#c9c39a', '#b0a97e', '#33301f', '#1d1b0e', '#53502f'],
+  ['Вишня', '#ffeef0', '#e8b0b8', '#d6959f', '#3a1a20', '#220c10', '#5c3038'],
+  ['Океан', '#e9f7fb', '#a9d4e0', '#8cbccb', '#1a3340', '#0b1a22', '#2a4f5f'],
+  ['Пепел', '#f2f2f0', '#c9c9c4', '#b0b0aa', '#2c2c2a', '#141414', '#444440'],
+  ['Роза', '#fff0f5', '#e8b9cc', '#d69db4', '#3a1f2a', '#220f18', '#5c3644'],
+  ['Лайм', '#f5ffe9', '#c9e89e', '#b0d17f', '#2a3318', '#161d0a', '#46522a'],
+  ['Кобальт', '#eaf0ff', '#a9bff0', '#8ca5db', '#1a2a4a', '#0b1428', '#2f4470'],
+  ['Терракота', '#fbeee6', '#dba98c', '#c29070', '#3a2418', '#22120a', '#5c3c28'],
+];
+
+/* Десять наборов-эффектов. */
+const SKIN_EFFECTS = [
+  ['Тонкий контур', '#fbf9f4', '#b7ab93', '#a2927a', '#26292f', '#0f1115', '#353b44', { sw: 1.2 }],
+  ['Жирный контур', '#fdfbf6', '#a99a7e', '#97866a', '#202329', '#08090b', '#2e343c', { sw: 5.2 }],
+  ['Свечение', '#fffdf5', '#d9b273', '#c39a58', '#2a2d33', '#0f1115', '#4a4433', { sw: 2.6, glow: '#f2c14e99' }],
+  ['Тень', '#f6f4ef', '#b8afa0', '#a39784', '#24272c', '#0b0d10', '#343a43', { sw: 2.6, shadow: true }],
+  ['Бумажный', '#fdf9ef', '#3a352c', '#3a352c', '#3a352c', '#3a352c', '#3a352c', { hollow: true, sw: 1.6 }],
+  ['Чертёж', '#eef4ff', '#2b4a7a', '#2b4a7a', '#2b4a7a', '#2b4a7a', '#2b4a7a', { hollow: true, sw: 1.4 }],
+  ['Призрак', '#ffffff', '#b9b3a8', '#a49c8e', '#2a2d33', '#101216', '#3a4049', { sw: 2.2, opacity: 0.62 }],
+  ['Контраст', '#ffffff', '#000000', '#000000', '#000000', '#ffffff', '#ffffff', { sw: 3 }],
+  ['Матовый', '#efece4', '#b3ad9f', '#9f9888', '#2b2d31', '#121417', '#3c4148', { sw: 3 }],
+  ['Глянец', '#fffdfa', '#cbbfa6', '#b5a789', '#22252a', '#0d0f13', '#3d434c', { sw: 2.4, glow: '#ffffff55' }],
+];
+
+for (const [name, w, we, wd, b, be, bd, extra] of SKIN_PALETTES) {
+  PIECE_SKINS.push({ id: String(PIECE_SKINS.length + 1), name, w, we, wd, b, be, bd, sw: 2.2, ...(extra || {}) });
+}
+for (const [name, w, we, wd, b, be, bd, extra] of SKIN_EFFECTS) {
+  PIECE_SKINS.push({ id: String(PIECE_SKINS.length + 1), name, w, we, wd, b, be, bd, ...extra });
+}
+
+const PIECE_SETS = PIECE_SKINS;
+const QUICK_SKINS = 5;
+const skinById = (id) => PIECE_SKINS.find((s) => s.id === String(id)) || PIECE_SKINS[0];
 
 /* ──────────────────────────── 3. СОСТОЯНИЕ UI ─────────────────────────── */
 
@@ -272,6 +539,11 @@ const ui = {
   lastMove: null,
   chat: [],
   hint: null,
+  bot: null,
+  botThinking: false,
+  imported: false,
+  names: null,
+  startedAt: 0,
   tab: 'moves',
   scored: false,
   promo: null,
@@ -295,6 +567,7 @@ function renderProfile() {
   if ($('#homePoints')) $('#homePoints').textContent = `${profile.points} очков`;
   document.documentElement.dataset.theme = profile.theme;
   document.documentElement.dataset.pieces = profile.pieces;
+  applySkin();
   $('#optFlip').checked = profile.flip;
   $('#optAutoQueen').checked = profile.autoQueen;
   $('#gFlip').checked = profile.flip;
@@ -364,17 +637,70 @@ function renderPieceRows() {
   for (const box of [$('#settingsPiecesRow'), $('#drawerPiecesRow')]) {
     if (!box) continue;
     box.innerHTML = '';
-    for (const s of PIECE_SETS) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'pset' + (profile.pieces === s.id ? ' active' : '');
-      b.dataset.pieces = s.id;
-      b.title = s.name;
-      b.innerHTML = `<span class="pset-glyph">${pieceSvg('n')}</span><span class="pset-name">${s.name}</span>`;
-      b.addEventListener('click', () => setPieces(s.id));
-      box.appendChild(b);
+    for (const s of PIECE_SKINS.slice(0, QUICK_SKINS)) {
+      box.appendChild(skinTile(s));
     }
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'pset pset-more';
+    more.title = 'Ещё ' + (PIECE_SKINS.length - QUICK_SKINS) + ' наборов';
+    more.innerHTML = `<span class="pset-plus">+</span><span class="pset-name">ещё ${PIECE_SKINS.length - QUICK_SKINS}</span>`;
+    more.addEventListener('click', openSkinModal);
+    box.appendChild(more);
   }
+}
+
+function skinTile(s) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pset' + (profile.pieces === s.id ? ' active' : '');
+  b.dataset.pieces = s.id;
+  b.title = s.name;
+  const glyph = document.createElement('span');
+  glyph.className = 'pset-glyph' + (s.hollow ? ' hollow' : '') + (s.metal ? ' metal' : '');
+  glyph.style.setProperty('--skin-w', s.w);
+  glyph.style.setProperty('--skin-we', s.we);
+  glyph.style.setProperty('--skin-wd', s.wd);
+  glyph.style.setProperty('--skin-sw', String(s.sw));
+  glyph.innerHTML = pieceSvg('n');
+  const name = document.createElement('span');
+  name.className = 'pset-name';
+  name.textContent = s.name;
+  b.append(glyph, name);
+  b.addEventListener('click', () => setPieces(s.id));
+  return b;
+}
+
+function openSkinModal() {
+  const modal = $('#skinModal');
+  const grid = $('#skinGrid');
+  grid.innerHTML = '';
+  for (const s of PIECE_SKINS) grid.appendChild(skinTile(s));
+  $('#skinCount').textContent = PIECE_SKINS.length + ' наборов';
+  modal.classList.remove('hidden');
+}
+
+function closeSkinModal() {
+  const modal = $('#skinModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function applySkin() {
+  const s = skinById(profile.pieces);
+  const root = document.documentElement;
+  root.style.setProperty('--skin-w', s.w);
+  root.style.setProperty('--skin-we', s.we);
+  root.style.setProperty('--skin-wd', s.wd);
+  root.style.setProperty('--skin-b', s.b);
+  root.style.setProperty('--skin-be', s.be);
+  root.style.setProperty('--skin-bd', s.bd);
+  root.style.setProperty('--skin-sw', String(s.sw || 2.2));
+  root.style.setProperty('--skin-glow', s.glow || 'transparent');
+  root.style.setProperty('--skin-opacity', String(s.opacity || 1));
+  root.dataset.hollow = s.hollow ? '1' : '0';
+  root.dataset.metal = s.metal ? '1' : '0';
+  root.dataset.skinGlow = s.glow ? '1' : '0';
+  root.dataset.skinShadow = s.shadow ? '1' : '0';
 }
 
 function renderAvatarRow() {
@@ -404,11 +730,12 @@ function setTheme(id) {
 }
 
 function setPieces(id) {
-  profile.pieces = id;
-  document.documentElement.dataset.pieces = id;
-  $$('.pset').forEach((b) => b.classList.toggle('active', b.dataset.pieces === id));
-  renderPreview();
+  profile.pieces = String(id);
+  document.documentElement.dataset.pieces = profile.pieces;
+  applySkin();
+  $$('.pset').forEach((b) => b.classList.toggle('active', b.dataset.pieces === profile.pieces));
   saveProfile();
+  closeSkinModal();
 }
 
 function renderTimeGroups() {
@@ -898,6 +1225,16 @@ function newGame(opts = {}) {
   ui.orientation = opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w');
   ui.mode = opts.mode || 'local';
   ui.role = opts.role || null;
+  ui.bot = opts.bot ? { ...opts.bot, name: 'Бот · ' + (BOT_LABELS[opts.bot.level] || 'средний') } : null;
+  ui.botThinking = false;
+  ui.imported = false;
+  ui.startedAt = Date.now();
+  const mySide = ui.mode === 'online' ? (ui.role === 'host' ? 'w' : 'b') : profile.side;
+  const oppName = ui.bot ? ui.bot.name : 'Соперник';
+  ui.names = {
+    w: { name: mySide === 'w' ? profile.name : oppName, avatar: mySide === 'w' ? profile.avatar : 'k' },
+    b: { name: mySide === 'b' ? profile.name : oppName, avatar: mySide === 'b' ? profile.avatar : 'k' },
+  };
 
   closePanel();
   closeDrawer();
@@ -921,6 +1258,7 @@ function newGame(opts = {}) {
     setTimeout(() => showPhase('opening'), 350);
   }
   updateNav();
+  if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
 }
 
 function renderMeta() {
@@ -950,14 +1288,15 @@ function renderPlayers() {  const st = ui.st;
   const topColor = other(bottomColor);
   const mySide = ui.mode === 'online' ? (ui.role === 'host' ? 'w' : 'b') : me;
 
-  const names = ui.online && ui.online.names ? ui.online.names : null;
   const nameFor = (color) => {
-    if (ui.mode !== 'online' || !names) return color === mySide ? profile.name : 'Соперник';
-    return color === mySide ? profile.name : (names[other(mySide)] || 'Соперник');
+    if (color === mySide) return profile.name;
+    if (ui.mode === 'online' && ui.online && ui.online.names) return ui.online.names[other(mySide)] || 'Соперник';
+    return (ui.names && ui.names[color] && ui.names[color].name) || 'Соперник';
   };
   const avatarFor = (color) => {
-    if (ui.mode !== 'online' || !names) return color === mySide ? profile.avatar : 'k';
-    return color === mySide ? profile.avatar : (ui.online.avatars?.[other(mySide)] || 'k');
+    if (color === mySide) return profile.avatar;
+    if (ui.mode === 'online' && ui.online && ui.online.avatars) return ui.online.avatars[other(mySide)] || 'k';
+    return (ui.names && ui.names[color] && ui.names[color].avatar) || 'k';
   };
 
   const setBar = (bar, color) => {
@@ -1023,6 +1362,11 @@ function renderStatus() {
   const el = $('#gameStatus');
   const sub = $('#gameSub');
   if (!st) return;
+  if (ui.imported) {
+    el.textContent = 'Импортированная партия';
+    sub.textContent = 'просмотр и экспорт · ходы недоступны';
+    return;
+  }
   if (ui.viewPly !== ui.frames.length - 1) {
     el.textContent = 'Просмотр партии';
     sub.textContent = `позиция после ${ui.viewPly}-го полухода · вернитесь в конец, чтобы играть`;
@@ -1033,7 +1377,11 @@ function renderStatus() {
     sub.textContent = resultReason(st.result);
     return;
   }
-  el.textContent = st.turn === 'w' ? 'Ход белых' : 'Ход чёрных';
+  if (ui.botThinking) {
+    el.textContent = 'Бот думает…';
+  } else {
+    el.textContent = st.turn === 'w' ? 'Ход белых' : 'Ход чёрных';
+  }
   const bits = [st.mode.name];
   if (st.check) bits.push('шах!');
   if (st.flags.checksToWin) bits.push(`шахи ${st.mv.w.checks}:${st.mv.b.checks}`);
@@ -1068,6 +1416,8 @@ function resultReason(res) {
 
 function onSquareClick(sq) {
   if (!ui.st || ui.st.status !== 'play') return;
+  if (ui.imported) { toast('Импортированная партия — только просмотр'); return; }
+  if (ui.bot && ui.st.turn === ui.bot.color) return;
   if (ui.viewPly !== ui.frames.length - 1) return;
   const st = ui.st;
   if (ui.mode === 'online' && st.turn !== myColor()) return;
@@ -1156,7 +1506,10 @@ function commitMove(m, opts = {}) {
   ui.frames.push(snap(st));
   ui.viewPly = ui.frames.length - 1;
   const captured = !!match.capture || (match.caps && match.caps.length) || match.ep;
-  ui.moves.push({ san, from: match.from, to: match.to, color: mover, spent, clock: ui.clocks[mover], captured });
+  ui.moves.push({
+    san, from: match.from, to: match.to, color: mover, spent,
+    clock: ui.clocks[mover], captured, promo: match.promo || null, at: Date.now(),
+  });
   ui.lastMove = { from: match.from, to: match.to };
   ui.selected = -1;
   ui.hint = null;
@@ -1200,6 +1553,7 @@ function commitMove(m, opts = {}) {
     finishGame(res);
   } else if (!opts.silent) {
     maybePhase();
+    maybeBotTurn();
   }
   return true;
 }
@@ -1384,16 +1738,17 @@ function gotoPly(ply) {
   renderPgnBox();
 }
 
-function renderPgnBox() {
+function buildPgnText() {
   const st = ui.st;
-  if (!st) return;
+  if (!st) return '';
   const side = myColor();
-  const white = side === 'w' ? profile.name : (ui.online ? 'Соперник' : 'Соперник');
-  const black = side === 'b' ? profile.name : (ui.online ? 'Соперник' : 'Соперник');
+  const names = ui.names || {};
+  const white = names.w ? names.w.name : (side === 'w' ? profile.name : 'Соперник');
+  const black = names.b ? names.b.name : (side === 'b' ? profile.name : 'Соперник');
   const result = st.result ? (st.result.winner ? (st.result.winner === 'w' ? '1-0' : '0-1') : '1/2-1/2') : '*';
   const lines = [
     `[Event "Daymix's Chess"]`,
-    `[Site "${ui.mode === 'online' ? 'по сети' : 'на одном устройстве'}"]`,
+    `[Site "${ui.mode === 'online' ? 'по сети' : ui.bot ? 'с ботом' : 'на одном устройстве'}"]`,
     `[Date "${new Date().toISOString().slice(0, 10).replace(/-/g, '.')}"]`,
     `[White "${white}"]`,
     `[Black "${black}"]`,
@@ -1408,8 +1763,14 @@ function renderPgnBox() {
     const num = i / 2 + 1;
     body.push(`${num}. ${ui.moves[i].san}${ui.moves[i + 1] ? ' ' + ui.moves[i + 1].san : ''}`);
   }
-  $('#pgnBox').value = lines.join('\n') + body.join(' ') + (body.length ? ' ' + result : '');
+  return lines.join('\n') + body.join(' ') + (body.length ? ' ' + result : '');
 }
+
+function renderPgnBox() {
+  const box = $('#pgnBox');
+  if (box) box.value = buildPgnText();
+}
+
 
 /* ────────────────────────────── 12. ВКЛАДКИ ───────────────────────────── */
 
@@ -1928,6 +2289,38 @@ function bindEvents() {
     newGame({ mode: 'local', modeId: profile.modeId, timeMs: profile.timeMs, splash: true });
   });
 
+  $$('.bot-level').forEach((b) => b.addEventListener('click', () => startBotGame(b.dataset.level)));
+
+  $('#btnExport').addEventListener('click', exportGameFile);
+  $('#btnCopyGame').addEventListener('click', copyGameJson);
+  $('#btnImport').addEventListener('click', openImport);
+  $('#importClose').addEventListener('click', closeImport);
+  $('#importConfirm').addEventListener('click', () => {
+    const text = $('#importText').value.trim();
+    if (!text) { toast('Вставьте JSON партии'); return; }
+    importGameText(text);
+  });
+  $('#importPaste').addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      $('#importText').value = text;
+      importGameText(text);
+    } catch (error) {
+      toast('Нет доступа к буферу — вставьте текст вручную');
+    }
+  });
+  $('#importFileBtn').addEventListener('click', () => $('#importFile').click());
+  $('#importFile').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => importGameText(reader.result);
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+  $('#skinClose').addEventListener('click', closeSkinModal);
+  $('#skinModal').addEventListener('click', (e) => { if (e.target && e.target.id === 'skinModal') closeSkinModal(); });
+
   $('#btnCreate').addEventListener('click', () => createRoom());
   $('#btnCopyCode').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText($('#roomCode').textContent); toast('Код скопирован'); }
@@ -2011,7 +2404,15 @@ function bindEvents() {
     if (e.key === 'ArrowRight') { gotoPly(ui.viewPly + 1); e.preventDefault(); }
     if (e.key === 'Home') { gotoPly(0); e.preventDefault(); }
     if (e.key === 'End') { gotoPly(ui.frames.length - 1); e.preventDefault(); }
-    if (e.key === 'Escape') { ui.selected = -1; renderSquares(); renderHints(); }
+    if (e.key === 'Escape') {
+      closeSkinModal();
+      closeImport();
+      closeDrawer();
+      closePanel();
+      ui.selected = -1;
+      renderSquares();
+      renderHints();
+    }
   });
 
   window.addEventListener('resize', () => {
@@ -2038,6 +2439,9 @@ function boot() {
     engine: { createState, legalMoves, genPseudo, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, attacked, materialOf, visSet, maybeBlock, centerCells, evaluateWhite, bestMove, MODES, modeById },
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
+    startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
+    PIECE_SKINS, applySkin, setPieces,
+    openSkinModal: () => openSkinModal(),
     setProfile: (patch) => { Object.assign(profile, patch); renderProfile(); renderThemeRows(); renderPieceRows(); renderPreview(); saveProfile(true); },
   };
 }
