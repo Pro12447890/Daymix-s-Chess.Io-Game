@@ -1078,7 +1078,7 @@ html[data-pieces="5"] .piece.b { --edge: #f6f1e6; filter: drop-shadow(0 0 calc(v
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 22px;
+  bottom: 84px;
   transform: translate(-50%, 20px);
   background: #f3e3c9;
   color: #2a1508;
@@ -1242,6 +1242,15 @@ html[data-pieces="5"] .piece.b { --edge: #f6f1e6; filter: drop-shadow(0 0 calc(v
   z-index: 2;
   pointer-events: none;
 }
+.sq.center-mark::before {
+  content: '';
+  position: absolute;
+  inset: 14%;
+  border: 2px dashed #f2c14e88;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
 @keyframes hintPulse {
   from { opacity: .55; }
   to { opacity: 1; }

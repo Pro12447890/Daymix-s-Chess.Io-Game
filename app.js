@@ -682,6 +682,7 @@ function renderSquares() {
   const sq = ui.sq;
   const last = ui.lastMove;
   const checkSq = st.check ? findKing(st, st.turn) : -1;
+  const centerCellsList = st.flags.centerWin ? centerCells(st) : null;
   for (let i = 0; i < st.board.length; i++) {
     const el = ui.squareEls[i];
     if (!el) continue;
@@ -690,6 +691,7 @@ function renderSquares() {
     if (i === ui.selected) cls.push('sel');
     if (i === checkSq) cls.push('check');
     if (st.blocked.includes(i)) cls.push('blocked');
+    if (centerCellsList && centerCellsList.includes(i)) cls.push('center-mark');
     if (ui.hint && i === ui.hint.from) cls.push('hint-from');
     if (ui.hint && i === ui.hint.to) cls.push('hint-to');
     el.className = cls.join(' ');
@@ -1424,6 +1426,14 @@ class Relay {
   connect(code) {
     this.topic = topicFor(code);
     this.closed = false;
+    /* Локальный канал между вкладками: работает даже без интернета
+       и не зависит от лимитов публичной службы. */
+    try {
+      this.bc = new BroadcastChannel('daymix-chess-' + this.topic);
+      this.bc.onmessage = (event) => {
+        if (this.onMessage && typeof event.data === 'string') this.onMessage(event.data);
+      };
+    } catch (error) { this.bc = null; }
     return new Promise((resolve, reject) => {
       let settled = false;
       const ws = new WebSocket(`${RELAY_WS}${this.topic}/ws`);
@@ -1465,18 +1475,22 @@ class Relay {
 
   publish(payload) {
     if (!this.topic) return Promise.resolve();
+    const body = JSON.stringify(payload);
+    try { if (this.bc) this.bc.postMessage(body); } catch (error) { /* канал закрыт */ }
     return fetch(RELAY_HTTP + this.topic, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'content-type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify(payload),
+      body,
     }).catch(() => { /* сеть моргнула */ });
   }
 
   close() {
     this.closed = true;
     try { if (this.ws) this.ws.close(); } catch (error) { /* уже закрыт */ }
+    try { if (this.bc) this.bc.close(); } catch (error) { /* уже закрыт */ }
     this.ws = null;
+    this.bc = null;
   }
 }
 
@@ -1533,7 +1547,7 @@ async function createRoom() {
   ui.online.waiting = true;
   announceRoom();
   clearInterval(ui.online.announce);
-  ui.online.announce = setInterval(announceRoom, 2500);
+  ui.online.announce = setInterval(announceRoom, 4000);   // реже: у ntfy есть лимит на публикации
 }
 
 function announceRoom() {
@@ -1579,13 +1593,14 @@ async function joinRoom(code) {
   ui.online.joinTimer = setInterval(() => {
     tries += 1;
     if (!ui.online || ui.online.started) { clearInterval(ui.online.joinTimer); return; }
-    if (tries > 10) {
+    if (tries > 24) {
       clearInterval(ui.online.joinTimer);
-      setLobby('Комната не отвечает. Возможно, код неверный или хозяин ушёл.');
+      setLobby('Комната не отвечает: служба связи перегружена. Нажмите «Присоединиться» ещё раз через минуту.');
       return;
     }
+    if (tries % 5 === 0) setLobby('Ждём ответа комнаты ' + code + '… попытка ' + (tries + 1));
     netPublish({ t: 'join', name: profile.name, avatar: profile.avatar });
-  }, 2000);
+  }, 4000);
 }
 
 function scheduleReconnect() {
@@ -1621,6 +1636,13 @@ function handleNet(text) {
   let msg;
   try { msg = JSON.parse(text); } catch (error) { return; }
   if (!msg || msg.app !== 'daymix-chess') return;
+  /* Одно и то же сообщение может прийти и по BroadcastChannel, и по WebSocket. */
+  if (msg.mid) {
+    if (!ui.online.seen) ui.online.seen = new Set();
+    if (ui.online.seen.has(msg.mid)) return;
+    ui.online.seen.add(msg.mid);
+    if (ui.online.seen.size > 500) ui.online.seen.delete(ui.online.seen.values().next().value);
+  }
   if (msg.sender === ui.online.role) return;
   /* Идентификатор партии не фильтруем: у гостя он свой до старта, а после
      старта совпадает с хозяйским. Комната и так уникальна по коду. */
