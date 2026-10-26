@@ -1,139 +1,242 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="brown" data-pieces="1">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Daymix's Chess — шахматы в браузере: полные правила, блиц и рапид, игра с другом на одном устройстве и по сети по коду из пяти цифр.">
-  <meta name="theme-color" content="#241410">
+  <meta name="description" content="Daymix's Chess — шахматы в браузере: 17 режимов, пять тем доски, пять наборов фигур, часы, статистика и игра по коду из пяти цифр.">
+  <meta name="theme-color" content="#1d100c">
   <title>Daymix's Chess</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233a241b'/%3E%3Ctext x='32' y='45' font-size='40' text-anchor='middle' fill='%23f2e2c8'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233a241b'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%23f2e2c8'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
 <div class="app">
 
   <header class="topbar">
-    <a class="brand" href="#" id="brandHome">
-      <div class="brand-mark">♞</div>
-      <div>
-        <div class="brand-name">Daymix's Chess</div>
-        <div class="brand-sub">шахматы в браузере</div>
-      </div>
-    </a>
-    <div class="top-actions">
-      <span class="muted" id="topMode"></span>
+    <button class="brand" id="brandHome" type="button" title="На главную">
+      <span class="brand-mark">♞</span>
+      <span class="brand-text">
+        <span class="brand-name">Daymix's Chess</span>
+        <span class="brand-sub">17 режимов · 5 тем · 5 наборов фигур</span>
+      </span>
+    </button>
+    <div class="top-right">
+      <button class="prof-chip" id="profChip" type="button" title="Профиль и статистика">
+        <span class="prof-avatar" id="profAvatar">♞</span>
+        <span class="prof-text"><b id="profName">Игрок</b><span id="profPoints">0 очков</span></span>
+      </button>
+      <button class="btn btn-sm" id="btnHomeModes" type="button">Режимы</button>
+      <button class="btn btn-sm" id="btnHomeStats" type="button">Статистика</button>
     </div>
   </header>
 
-  <!-- ── главный экран ─────────────────────────────────────────────────── -->
-  <section class="screen active" id="screen-home">
-    <div class="home">
-      <div class="home-card panel">
-        <h1 class="home-title">Daymix's Chess</h1>
-        <p class="home-lead">Полные правила, точные часы и игра по коду из пяти цифр — с любого устройства на планете.</p>
+  <main class="main">
 
-        <div class="home-actions">
-          <button class="mode-card" id="modeOnline" type="button">
-            <span class="mode-icon">🌐</span>
-            <span class="mode-name">Играть по сети</span>
-            <span class="mode-hint">Получите код из пяти цифр и передайте другу</span>
-          </button>
-          <button class="mode-card" id="modeLocal" type="button">
-            <span class="mode-icon">👥</span>
-            <span class="mode-name">С другом здесь же</span>
-            <span class="mode-hint">Одна доска на двоих, переворот после хода</span>
-          </button>
+    <!-- ─────────────────────────── ГЛАВНАЯ ─────────────────────────── -->
+    <section class="screen active" id="screen-home">
+      <div class="home">
+        <div class="home-head">
+          <h1 class="home-title">Соберите партию за десять секунд</h1>
+          <p class="home-lead">Имя, аватар, тема доски, фигуры, время и режим — всё на этой странице. Партии, очки и статистика сохраняются в браузере.</p>
         </div>
 
-        <div class="home-foot">Рокировка, взятие на проходе, превращение, троекратное повторение, правило 50 ходов и пат — всё по правилам.</div>
-      </div>
-    </div>
-  </section>
+        <div class="home-grid">
+          <!-- настройки -->
+          <div class="card settings-card">
+            <div class="card-head"><h2>Настройки</h2><span class="hint-text" id="saveHint">сохраняется автоматически</span></div>
 
-  <!-- ── выбор времени ─────────────────────────────────────────────────── -->
-  <section class="screen" id="screen-time">
-    <div class="time-screen panel">
-      <div class="screen-head">
-        <button class="btn btn-sm btn-ghost" id="timeBack" type="button">← Назад</button>
-        <h2 class="screen-title" id="timeTitle">Выберите контроль времени</h2>
-        <div class="grow"></div>
-        <span class="muted" id="timeMode"></span>
-      </div>
-      <div class="time-groups" id="timeGroups"></div>
-    </div>
-  </section>
+            <label class="field">
+              <span class="field-label">Имя пользователя</span>
+              <input id="nickInput" maxlength="18" placeholder="Игрок" autocomplete="off" spellcheck="false">
+            </label>
 
-  <!-- ── лобби онлайн ──────────────────────────────────────────────────── -->
-  <section class="screen" id="screen-online">
-    <div class="online-screen">
-      <div class="online-card panel">
-        <h3>Создать игру</h3>
-        <p>Нажмите кнопку — получите код из пяти цифр. Передайте код другу, он введёт его у себя.</p>
-        <button class="btn btn-primary" id="btnCreate" type="button">Создать код</button>
-        <div class="code-big hidden" id="roomCode">00000</div>
-        <div class="status-line" id="createStatus"></div>
-        <button class="btn btn-sm btn-ghost hidden" id="btnCopyCode" type="button">Скопировать код</button>
-      </div>
+            <div class="field">
+              <span class="field-label">Аватар</span>
+              <div class="avatar-row" id="avatarRow"></div>
+            </div>
 
-      <div class="online-card panel">
-        <h3>Войти по коду</h3>
-        <p>Введите код, который вам передали. Игра начнётся сразу после подключения.</p>
-        <input class="code-input" id="joinCode" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="•••••">
-        <button class="btn btn-primary" id="btnJoin" type="button">Подключиться</button>
-        <div class="status-line" id="joinStatus"></div>
-      </div>
-    </div>
-  </section>
+            <div class="field">
+              <span class="field-label">Тема доски</span>
+              <div class="theme-row" id="themeRow"></div>
+            </div>
 
-  <!-- ── партия ────────────────────────────────────────────────────────── -->
-  <section class="screen" id="screen-game">
-    <div class="game-layout">
-      <div class="board-col">
-        <div class="player-bar" id="barTop">
-          <div class="avatar">♚</div>
-          <div class="who">
-            <b id="topName">Соперник</b>
-            <span id="topRole">чёрные</span>
-            <div class="captured" id="topCaptured"></div>
-          </div>
-          <span class="link-dot" id="topLink" title="связь"></span>
-          <div class="clock" id="topClock">—</div>
-        </div>
+            <div class="field">
+              <span class="field-label">Набор фигур</span>
+              <div class="pieces-row" id="piecesRow"></div>
+            </div>
 
-        <div class="board-wrap">
-          <div class="board" id="board">
-            <div class="squares" id="squares"></div>
-            <div class="pieces" id="pieces"></div>
-            <div class="hints" id="hints"></div>
-          </div>
-          <div class="coords files top" id="coordFilesTop"></div>
-          <div class="coords files bottom" id="coordFiles"></div>
-          <div class="coords ranks left" id="coordRanks"></div>
-          <div class="coords ranks right" id="coordRanksRight"></div>
-          <div class="promo" id="promo">
-            <div class="promo-card">
-              <div class="side-title">Превращение</div>
-              <div class="promo-row" id="promoRow"></div>
+            <div class="field toggles">
+              <label class="toggle"><input type="checkbox" id="optFlip" checked><span>Переворачивать доску после хода</span></label>
+              <label class="toggle"><input type="checkbox" id="optAutoQueen" checked><span>Авто-ферзь при превращении</span></label>
+              <label class="toggle" id="optSquareWrap"><input type="checkbox" id="optSquare"><span>Квадратная доска (12×12 и 14×14)</span></label>
+            </div>
+
+            <div class="field">
+              <span class="field-label">В локальной игре я играю за</span>
+              <div class="seg" id="sideSeg">
+                <button type="button" data-side="w">белых</button>
+                <button type="button" data-side="b">чёрных</button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="player-bar active" id="barBottom">
-          <div class="avatar">♔</div>
-          <div class="who">
-            <b id="bottomName">Вы</b>
-            <span id="bottomRole">белые</span>
-            <div class="captured" id="bottomCaptured"></div>
+          <!-- игра и время -->
+          <div class="home-col">
+            <div class="card play-card">
+              <div class="mode-pick" id="modePick">
+                <span class="mode-pick-icon" id="modeIcon">♟</span>
+                <span class="mode-pick-text"><b id="modeName">Классика</b><span id="modeDesc">Обычные шахматы 8×8.</span></span>
+                <button class="btn btn-sm" id="btnPickMode" type="button">Сменить</button>
+              </div>
+
+              <div class="preview">
+                <div class="preview-board" id="previewBoard"></div>
+                <div class="preview-note">Так выглядит ваша доска</div>
+              </div>
+
+              <div class="time-head">
+                <span class="field-label">Контроль времени</span>
+                <span class="chip" id="timeSummary">5 минут</span>
+              </div>
+              <div class="time-groups" id="timeGroups"></div>
+
+              <div class="play-actions">
+                <button class="btn btn-primary btn-lg" id="btnPlayLocal" type="button">Играть здесь</button>
+                <button class="btn btn-accent btn-lg" id="btnCreate" type="button">Создать игру по сети</button>
+              </div>
+
+              <div class="join-row">
+                <input class="code-input" id="joinCode" inputmode="numeric" maxlength="5" placeholder="код из 5 цифр" autocomplete="off" aria-label="Код комнаты">
+                <button class="btn" id="btnJoin" type="button">Присоединиться</button>
+              </div>
+
+              <div class="status-line" id="lobbyLine"></div>
+              <div class="room-row hidden" id="roomRow">
+                <div class="code-big" id="roomCode">00000</div>
+                <button class="btn btn-sm" id="btnCopyCode" type="button">Копировать</button>
+                <button class="btn btn-sm btn-danger" id="btnCancelRoom" type="button">Отменить</button>
+              </div>
+            </div>
+
+            <div class="card mini-stats" id="miniStats"></div>
           </div>
-          <span class="link-dot" id="bottomLink" title="связь"></span>
-          <div class="clock" id="bottomClock">—</div>
         </div>
       </div>
+    </section>
 
-      <aside class="side">
-        <div class="side-card panel">
+    <!-- ─────────────────────────── РЕЖИМЫ ─────────────────────────── -->
+    <section class="screen" id="screen-modes">
+      <div class="wide-card card">
+        <div class="screen-head">
+          <button class="btn btn-sm btn-ghost back-btn" id="modesBack" type="button">← Назад</button>
+          <div class="screen-head-text">
+            <h2>Режимы</h2>
+            <p id="modesLead">17 режимов: от трёх шахов до Пацанчиков на доске 14×10.</p>
+          </div>
+          <span class="chip" id="modesCurrent">Классика</span>
+        </div>
+        <div class="modes-grid" id="modesGrid"></div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────── СТАТИСТИКА ─────────────────────── -->
+    <section class="screen" id="screen-stats">
+      <div class="wide-card card">
+        <div class="screen-head">
+          <button class="btn btn-sm btn-ghost back-btn" id="statsBack" type="button">← Назад</button>
+          <div class="screen-head-text"><h2>Статистика</h2><p>Очки, счёт партий и последние игры — всё хранится в этом браузере.</p></div>
+          <button class="btn btn-sm btn-danger" id="btnResetStats" type="button">Сбросить</button>
+        </div>
+        <div class="stats-hero" id="statsHero"></div>
+        <div class="stats-grid" id="statsGrid"></div>
+        <h3 class="list-title">История партий</h3>
+        <div class="history" id="historyList"></div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────── ПАРТИЯ ──────────────────────────── -->
+    <section class="screen" id="screen-game">
+      <div class="game-layout">
+
+        <aside class="game-side left" id="gameLeft">
+          <div class="side-scroll">
+            <button class="btn btn-sm btn-ghost back-btn" id="gameBack" type="button">← Назад</button>
+            <div class="g-profile">
+              <span class="g-avatar" id="gAvatar">♞</span>
+              <div><b id="gName">Игрок</b><span id="gPoints">0 очков</span></div>
+            </div>
+            <div class="g-block">
+              <span class="field-label">Тема доски</span>
+              <div class="theme-row compact" id="gameThemeRow"></div>
+            </div>
+            <div class="g-block">
+              <span class="field-label">Фигуры</span>
+              <div class="pieces-row compact" id="gamePiecesRow"></div>
+            </div>
+            <div class="g-block toggles">
+              <label class="toggle"><input type="checkbox" id="gFlip"><span>Переворот после хода</span></label>
+              <label class="toggle"><input type="checkbox" id="gAutoQueen"><span>Авто-ферзь</span></label>
+            </div>
+            <div class="g-block">
+              <span class="field-label">Партия</span>
+              <div class="g-meta" id="gameMeta"></div>
+            </div>
+            <div class="g-block g-links">
+              <button class="btn btn-sm" id="gameModes" type="button">Сменить режим</button>
+              <button class="btn btn-sm btn-ghost" id="gameStats" type="button">Статистика</button>
+            </div>
+          </div>
+        </aside>
+
+        <div class="board-col" id="boardCol">
+          <button class="btn btn-sm btn-ghost back-btn mobile-only" id="gameBackTop" type="button">← Назад</button>
+          <div class="player-bar top" id="barTop">
+            <span class="pb-avatar" id="topAvatar">♚</span>
+            <span class="pb-who"><b id="topName">Соперник</b><span id="topRole">чёрные</span><span class="captured" id="topCaptured"></span></span>
+            <span class="link-dot" id="topLink" title="связь"></span>
+            <span class="clock" id="topClock">—</span>
+          </div>
+
+          <div class="board-wrap" id="boardWrap">
+            <div class="board" id="board">
+              <div class="squares" id="squares"></div>
+              <div class="pieces" id="pieces"></div>
+              <div class="hints" id="hints"></div>
+              <div class="fog-layer" id="fogLayer"></div>
+            </div>
+            <div class="coords files top" id="coordFilesTop"></div>
+            <div class="coords files bottom" id="coordFiles"></div>
+            <div class="coords ranks left" id="coordRanks"></div>
+            <div class="coords ranks right" id="coordRanksRight"></div>
+
+            <div class="promo hidden" id="promo">
+              <div class="promo-card">
+                <div class="promo-title">Превращение</div>
+                <div class="promo-row" id="promoRow"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="player-bar bottom" id="barBottom">
+            <span class="pb-avatar" id="bottomAvatar">♔</span>
+            <span class="pb-who"><b id="bottomName">Вы</b><span id="bottomRole">белые</span><span class="captured" id="bottomCaptured"></span></span>
+            <span class="link-dot" id="bottomLink" title="связь"></span>
+            <span class="clock" id="bottomClock">—</span>
+          </div>
+
+          <div class="game-actions">
+            <button class="btn" id="btnAbort" type="button">Прервать</button>
+            <button class="btn" id="btnDraw" type="button">Ничья</button>
+            <button class="btn btn-danger" id="btnResign" type="button">Сдаться</button>
+            <button class="btn btn-ghost" id="btnNew" type="button">Новая партия</button>
+            <button class="btn btn-ghost" id="btnLeave" type="button">В меню</button>
+          </div>
+        </div>
+
+        <aside class="game-side right" id="gameRight">
           <div class="game-head">
-            <div>
+            <div class="game-status-wrap">
               <div class="game-status" id="gameStatus">Ход белых</div>
               <div class="game-sub" id="gameSub">Начальное положение</div>
             </div>
@@ -143,15 +246,15 @@
           <div class="tabs" id="tabs">
             <button class="tab active" data-tab="moves" type="button">Ходы</button>
             <button class="tab" data-tab="chat" type="button">Чат</button>
-            <button class="tab" data-tab="info" type="button">Информация</button>
+            <button class="tab" data-tab="info" type="button">Инфо</button>
           </div>
 
           <div class="tab-panel" id="tabMoves">
-            <div class="moves" id="moves"><div class="moves-empty">Пока пусто</div></div>
+            <div class="moves" id="moves"><div class="moves-empty">Пока пусто — сделайте первый ход</div></div>
             <div class="nav-row">
               <button class="icon-btn" id="navStart" type="button" title="В начало">⏮</button>
-              <button class="icon-btn" id="navPrev" type="button" title="Назад">‹</button>
-              <button class="icon-btn" id="navNext" type="button" title="Вперёд">›</button>
+              <button class="icon-btn" id="navPrev" type="button" title="На ход назад">‹</button>
+              <button class="icon-btn" id="navNext" type="button" title="На ход вперёд">›</button>
               <button class="icon-btn" id="navEnd" type="button" title="В конец">⏭</button>
             </div>
           </div>
@@ -171,40 +274,55 @@
               <span class="muted" id="infoLine"></span>
             </div>
           </div>
-        </div>
+        </aside>
 
-        <div class="side-card panel">
-          <label class="toggle" for="flipToggle">Переворачивать доску
-            <input type="checkbox" id="flipToggle" checked>
-          </label>
-          <div class="side-actions">
-            <button class="btn" id="btnAbort" type="button">Прервать</button>
-            <button class="btn" id="btnDraw" type="button">Ничья</button>
-            <button class="btn btn-danger" id="btnResign" type="button">Сдаться</button>
-            <button class="btn btn-ghost" id="btnNew" type="button">Новая партия</button>
-            <button class="btn btn-ghost" id="btnLeave" type="button">В меню</button>
-          </div>
-          <div class="muted" id="gameInfo" style="font-size:12.5px"></div>
-        </div>
-      </aside>
-    </div>
-  </section>
+      </div>
+    </section>
 
+  </main>
 </div>
 
-<div class="result" id="result">
+<!-- эпичная надпись стадии партии -->
+<div class="phase-splash" id="phaseSplash" aria-hidden="true">
+  <div class="phase-rays"></div>
+  <div class="phase-badge" id="phaseBadge">ДЕБЮТ</div>
+  <div class="phase-sub" id="phaseSub">первые десять ходов</div>
+</div>
+
+<!-- результат -->
+<div class="result hidden" id="result">
   <div class="result-card">
+    <div class="result-glow"></div>
     <h2 class="result-title" id="resultTitle">Мат</h2>
     <p class="result-sub" id="resultSub"></p>
+    <div class="result-points" id="resultPoints"></div>
     <div class="result-actions">
       <button class="btn btn-primary" id="resultAgain" type="button">Ещё партию</button>
       <button class="btn" id="resultMenu" type="button">В меню</button>
+      <button class="btn btn-ghost" id="resultClose" type="button">Посмотреть доску</button>
     </div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
+<!-- градиенты для металлического набора фигур -->
+<svg class="svg-defs" aria-hidden="true" width="0" height="0">
+  <defs>
+    <linearGradient id="pc-w" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".55" stop-color="#e3e9f0"/>
+      <stop offset="1" stop-color="#b6c1cd"/>
+    </linearGradient>
+    <linearGradient id="pc-b" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#626b76"/>
+      <stop offset=".5" stop-color="#32373e"/>
+      <stop offset="1" stop-color="#14171b"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<script src="engine.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
