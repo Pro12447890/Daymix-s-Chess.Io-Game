@@ -290,9 +290,9 @@ function renderProfile() {
   $('#profName').textContent = profile.name;
   $('#profPoints').textContent = `${profile.points} очков`;
   $('#profAvatar').innerHTML = pieceSvg(profile.avatar, 'av-pc');
-  $('#gName').textContent = profile.name;
-  $('#gPoints').textContent = `${profile.points} очков`;
-  $('#gAvatar').innerHTML = pieceSvg(profile.avatar, 'av-pc');
+  if ($('#homeAvatar')) $('#homeAvatar').innerHTML = pieceSvg(profile.avatar, 'av-pc');
+  if ($('#homeName')) $('#homeName').textContent = profile.name;
+  if ($('#homePoints')) $('#homePoints').textContent = `${profile.points} очков`;
   document.documentElement.dataset.theme = profile.theme;
   document.documentElement.dataset.pieces = profile.pieces;
   $('#optFlip').checked = profile.flip;
@@ -344,7 +344,7 @@ function renderPreview() {
 }
 
 function renderThemeRows() {
-  for (const box of [$('#themeRow'), $('#gameThemeRow')]) {
+  for (const box of [$('#settingsThemeRow'), $('#drawerThemeRow')]) {
     if (!box) continue;
     box.innerHTML = '';
     for (const t of THEMES) {
@@ -361,7 +361,7 @@ function renderThemeRows() {
 }
 
 function renderPieceRows() {
-  for (const box of [$('#piecesRow'), $('#gamePiecesRow')]) {
+  for (const box of [$('#settingsPiecesRow'), $('#drawerPiecesRow')]) {
     if (!box) continue;
     box.innerHTML = '';
     for (const s of PIECE_SETS) {
@@ -483,18 +483,6 @@ function renderModesGrid() {
   }
 }
 
-function renderMiniStats() {
-  const s = profile.stats;
-  $('#miniStats').innerHTML = `
-    <div class="ms-row">
-      <div class="ms-item"><b>${profile.points}</b><span>очков</span></div>
-      <div class="ms-item"><b>${s.games}</b><span>партий</span></div>
-      <div class="ms-item"><b>${s.wins}</b><span>побед</span></div>
-      <div class="ms-item"><b>${s.streak}</b><span>серия</span></div>
-    </div>
-    <button class="btn btn-sm btn-ghost" id="miniStatsMore" type="button">Вся статистика →</button>`;
-  $('#miniStatsMore').addEventListener('click', () => showScreen('stats'));
-}
 
 function renderStats() {
   const s = profile.stats;
@@ -532,11 +520,62 @@ function renderStats() {
 
 /* ────────────────────────── 5. ЭКРАНЫ И ТОСТЫ ─────────────────────────── */
 
+function openScreen(name) {
+  ui.prevScreen = ui.screen === 'game' ? 'game' : (ui.screen === 'settings' || ui.screen === 'modes' || ui.screen === 'stats' ? ui.prevScreen || 'home' : 'home');
+  showScreen(name);
+}
+
+function backFromScreen() {
+  showScreen(ui.prevScreen === 'game' && ui.st ? 'game' : 'home');
+}
+
+function closeDrawer() {
+  const d = $('#drawer');
+  if (d) d.classList.remove('open');
+  updateScrim();
+}
+
+function toggleDrawer() {
+  const d = $('#drawer');
+  if (!d) return;
+  d.classList.toggle('open');
+  updateScrim();
+}
+
+function closePanel() {
+  const panel = $('#sidePanel');
+  if (panel) panel.classList.remove('open');
+  updateScrim();
+}
+
+function togglePanel() {
+  const panel = $('#sidePanel');
+  if (!panel) return;
+  panel.classList.toggle('open');
+  updateScrim();
+}
+
+function updateScrim() {
+  const drawerOpen = $('#drawer') && $('#drawer').classList.contains('open');
+  const panelOpen = $('#sidePanel') && $('#sidePanel').classList.contains('open') && window.innerWidth < 1000;
+  const scrim = $('#scrim');
+  if (scrim) scrim.classList.toggle('show', !!(drawerOpen || panelOpen));
+}
+
+function renderSettings() {
+  renderProfile();
+  renderThemeRows();
+  renderPieceRows();
+  renderAvatarRow();
+}
+
 function showScreen(name) {
+  if (name !== 'game') { closeDrawer(); closePanel(); }
   ui.screen = name;
   $$('.screen').forEach((s) => s.classList.toggle('active', s.id === 'screen-' + name));
   if (name === 'stats') renderStats();
-  if (name === 'home') { renderProfile(); renderMiniStats(); }
+  if (name === 'settings') renderSettings();
+  if (name === 'home') { renderProfile(); }
   if (name === 'modes') renderModesGrid();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -591,35 +630,28 @@ function disp(st, i) {
 function layoutBoard() {
   const st = ui.st;
   if (!st) return;
-  // clientWidth не раздувается, когда мобильный браузер пытается вписать контент
-  const vw = document.documentElement.clientWidth || window.innerWidth;
-  const vh = document.documentElement.clientHeight || window.innerHeight;
-  const pad = 20;
-  const leftPanel = document.querySelector('.game-side.left');
-  const rightPanel = document.querySelector('.game-side.right');
-  const topbar = document.querySelector('.topbar');
-  const portrait = vw < 1000 && vh >= vw;
-  const landscapePhone = vw < 1000 && vw > vh;
-  let availW;
-  if (vw >= 1200) availW = vw - 2 * ((leftPanel ? leftPanel.offsetWidth : 300) + 18) - 44;
-  else if (vw >= 1000) availW = vw - 2 * ((leftPanel ? leftPanel.offsetWidth : 260) + 16) - 40;
-  else if (landscapePhone) availW = Math.max(220, vw - 24);   // ширину всё равно ограничит высота
-  else availW = vw - 20;
-
-  const chrome = (topbar && getComputedStyle(topbar).display !== 'none' ? topbar.offsetHeight : 0)
-    + (($('#barTop') || {}).offsetHeight || 0)
-    + (($('#barBottom') || {}).offsetHeight || 0)
-    + (($('.game-actions') || {}).offsetHeight || 0)
-    + (($('.board-tools') || {}).offsetHeight || 0);
-  const availH = portrait ? 100000 : vh - chrome - 34;
-  const sq = Math.max(16, Math.min(96,
+  const stage = $('#stage');
+  const wrap = $('#boardWrap');
+  if (!stage || !wrap) return;
+  const pad = window.innerWidth < 560 ? 16 : 20;
+  const barH = ($('#barTop') ? $('#barTop').offsetHeight : 0) + ($('#barBottom') ? $('#barBottom').offsetHeight : 0);
+  const act = $('.stage-actions');
+  const actionsH = act ? act.offsetHeight : 0;
+  const gaps = 18;
+  const availW = Math.max(160, stage.clientWidth - 4);
+  const availH = Math.max(160, stage.clientHeight - barH - actionsH - gaps);
+  const sq = Math.max(12, Math.min(110,
     Math.floor((availW - pad * 2) / st.W),
     Math.floor((availH - pad * 2) / st.H)));
   ui.sq = sq;
-  const wrap = $('#boardWrap');
-  wrap.style.width = sq * st.W + pad * 2 + 'px';
+  const widthPx = sq * st.W + pad * 2;
+  wrap.style.width = widthPx + 'px';
   wrap.style.height = sq * st.H + pad * 2 + 'px';
   wrap.style.padding = pad + 'px';
+  const topBar = $('#barTop');
+  const bottomBar = $('#barBottom');
+  if (topBar) topBar.style.width = widthPx + 'px';
+  if (bottomBar) bottomBar.style.width = widthPx + 'px';
   document.documentElement.style.setProperty('--sq', sq + 'px');
 }
 
@@ -867,6 +899,8 @@ function newGame(opts = {}) {
   ui.mode = opts.mode || 'local';
   ui.role = opts.role || null;
 
+  closePanel();
+  closeDrawer();
   showScreen('game');        // сначала показываем экран: иначе замеры панелей нулевые
   buildSquares();
   renderAll(false);
@@ -883,6 +917,7 @@ function newGame(opts = {}) {
   $('#gameSub').textContent = mode.name + ' · ' + (ui.timeMs ? profile.timeLabel : 'без ограничений');
 
   if (opts.splash !== false) {
+    ui.phase = 'opening';
     setTimeout(() => showPhase('opening'), 350);
   }
   updateNav();
@@ -1237,7 +1272,6 @@ function finishGame(res) {
   }
 
   renderProfile();
-  renderMiniStats();
 
   if (res.reason !== 'abort') {
     if (win) { sound.win(); buzz([20, 40, 20, 40, 40]); celebrate(); }
@@ -1836,21 +1870,25 @@ function setSound(on) {
 
 function bindEvents() {
   $('#brandHome').addEventListener('click', () => { if (ui.st) leaveGame(); else showScreen('home'); });
-  $('#profChip').addEventListener('click', () => showScreen('stats'));
-  $('#btnHomeModes').addEventListener('click', () => showScreen('modes'));
-  $('#btnHomeStats').addEventListener('click', () => showScreen('stats'));
-  $('#modesBack').addEventListener('click', () => showScreen('home'));
-  $('#statsBack').addEventListener('click', () => showScreen('home'));
-  $('#gameBack').addEventListener('click', () => leaveGame());
-  $('#gameBackTop').addEventListener('click', () => leaveGame());
-  $('#gameModes').addEventListener('click', () => showScreen('modes'));
-  $('#gameStats').addEventListener('click', () => showScreen('stats'));
-  $('#btnPickMode').addEventListener('click', () => showScreen('modes'));
+  $('#profChip').addEventListener('click', () => openScreen('settings'));
+  $('#btnSettings').addEventListener('click', () => openScreen('settings'));
+  $('#homeSettings').addEventListener('click', () => openScreen('settings'));
+  $('#btnHomeModes').addEventListener('click', () => openScreen('modes'));
+  $('#btnHomeStats').addEventListener('click', () => openScreen('stats'));
+  $('#settingsBack').addEventListener('click', backFromScreen);
+  $('#modesBack').addEventListener('click', backFromScreen);
+  $('#statsBack').addEventListener('click', backFromScreen);
+  $('#btnPickMode').addEventListener('click', () => openScreen('modes'));
+  $('#gameModes').addEventListener('click', () => { closeDrawer(); openScreen('modes'); });
+  $('#gameSettings').addEventListener('click', () => { closeDrawer(); openScreen('settings'); });
+  $('#drawerClose').addEventListener('click', closeDrawer);
+  $('#scrim').addEventListener('click', () => { closeDrawer(); closePanel(); });
+  $('#panelClose').addEventListener('click', closePanel);
 
   $('#nickInput').addEventListener('input', (e) => {
     profile.name = e.target.value.trim().slice(0, 18) || 'Игрок';
     $('#profName').textContent = profile.name;
-    $('#gName').textContent = profile.name;
+    if ($('#homeName')) $('#homeName').textContent = profile.name;
     saveProfile();
   });
 
@@ -1905,21 +1943,18 @@ function bindEvents() {
   $('#btnJoin').addEventListener('click', () => joinRoom($('#joinCode').value.trim()));
   $('#joinCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(e.target.value.trim()); });
 
-  $('#btnHint').addEventListener('click', showHint);
-  $('#btnFlip2').addEventListener('click', () => {
+  $('#railHint').addEventListener('click', showHint);
+  $('#railSettings').addEventListener('click', () => { closePanel(); toggleDrawer(); });
+  $('#railInfo').addEventListener('click', () => { closeDrawer(); togglePanel(); });
+  $('#railHome').addEventListener('click', leaveGame);
+  $('#railSound').addEventListener('click', () => setSound(profile.sound === false));
+  $('#railFlip').addEventListener('click', () => {
     ui.orientation = other(ui.orientation);
     renderAll(false);
     renderPlayers();
   });
-  $('#btnSound').addEventListener('click', () => setSound(profile.sound === false));
   $('#optSound').addEventListener('change', (e) => setSound(e.target.checked));
   $('#gSound').addEventListener('change', (e) => setSound(e.target.checked));
-
-  $('#btnFlip').addEventListener('click', () => {
-    ui.orientation = other(ui.orientation);
-    renderAll(false);
-    renderPlayers();
-  });
 
   $('#navStart').addEventListener('click', () => gotoPly(0));
   $('#navPrev').addEventListener('click', () => gotoPly(ui.viewPly - 1));
@@ -1961,7 +1996,6 @@ function bindEvents() {
     saveProfile(true);
     renderProfile();
     renderStats();
-    renderMiniStats();
     toast('Статистика сброшена');
   });
 
@@ -1981,6 +2015,7 @@ function bindEvents() {
   });
 
   window.addEventListener('resize', () => {
+    updateScrim();
     if (!ui.st) return;
     renderBoard(false);
   });
@@ -1997,7 +2032,6 @@ function boot() {
   renderAvatarRow();
   renderTimeGroups();
   renderModeCard();
-  renderMiniStats();
   $('#joinCode').value = '';
   showScreen('home');
   window.ChessApp = {
