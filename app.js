@@ -18,7 +18,7 @@ const DEFAULT_PROFILE = {
   avatar: 'n',
   theme: 'green',
   pieces: '1',
-  flip: false,
+  flip: true,
   autoQueen: true,
   sound: true,
   side: 'w',
@@ -42,8 +42,12 @@ function loadProfile() {
   // переход на оформление Chess.com: старым профилям ставим зелёную доску
   if ((merged.uiVersion || 1) < 2) {
     merged.theme = 'green';
-    merged.flip = false;
     merged.uiVersion = 2;
+  }
+  // локальная игра на одном устройстве по умолчанию переворачивает доску
+  if ((merged.uiVersion || 1) < 3) {
+    merged.flip = true;
+    merged.uiVersion = 3;
   }
   return merged;
 }
@@ -1803,11 +1807,14 @@ function commitMove(m, opts = {}) {
     setTimeout(() => board.classList.remove('shake'), 450);
   }
 
+  let flippedNow = false;
   if (ui.mode === 'local' && !ui.bot && profile.flip && !opts.remote && !opts.silent) {
+    const prevOrientation = ui.orientation;
     ui.orientation = st.turn;
+    flippedNow = ui.orientation !== prevOrientation;
   }
   if (!opts.silent) {
-    renderAll(!opts.noAnim);
+    renderAll(flippedNow ? false : !opts.noAnim);
     if (capInfo.length) captureFx(capInfo);
     renderMoves();
   }
