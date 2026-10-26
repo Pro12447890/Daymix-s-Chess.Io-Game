@@ -1858,7 +1858,7 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
   align-items: center !important;
   justify-content: space-between !important;
   gap: 10px;
-  width: 100% !important;
+  width: 100%;
   height: 46px !important;
   min-height: 46px !important;
   max-height: 46px !important;
