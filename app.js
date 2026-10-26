@@ -1761,7 +1761,7 @@ function boot() {
   $('#joinCode').value = '';
   showScreen('home');
   window.ChessApp = {
-    engine: { createState, legalMoves, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, materialOf, visSet, maybeBlock, MODES, modeById },
+    engine: { createState, legalMoves, genPseudo, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, attacked, materialOf, visSet, maybeBlock, MODES, modeById },
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     setProfile: (patch) => { Object.assign(profile, patch); renderProfile(); renderThemeRows(); renderPieceRows(); renderPreview(); saveProfile(true); },

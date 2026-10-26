@@ -465,8 +465,12 @@ function genPseudo(st, color) {
           if (isBlocked(st, t)) break;
           const q = board[t];
           if (st.flags.queenPierce) {
-            if (q && q.c !== color) caps.push(t);
-            else if (!q) out.push({ from: sq, to: t, caps: caps.slice() });
+            if (q && q.c !== color) {
+              if (q.t === 'k') break;           // короля не едим: линия на нём заканчивается
+              caps.push(t);
+            } else if (!q) {
+              out.push({ from: sq, to: t, caps: caps.slice() });
+            }
             nx += dx; ny += dy;
             continue;
           }
@@ -581,6 +585,12 @@ function attacked(st, sq, by) {
       const dir = by === 'w' ? 1 : -1;
       const leaps = [[-1, 2], [0, 2], [1, 2], [0, 3]];
       for (const [lx, ly] of leaps) if (dx === lx && dy === dir * ly) return true;
+      continue;
+    }
+    if (p.t === 'q' && st.flags.queenPierce) {
+      const diag = Math.abs(dx) === Math.abs(dy) && dx !== 0;
+      const ortho = (dx === 0) !== (dy === 0);
+      if (diag || ortho) return true;          // ферзь-шашки пробивает линию насквозь
       continue;
     }
     if (p.t === 'b' || p.t === 'r' || p.t === 'q' || p.t === 'g') {
