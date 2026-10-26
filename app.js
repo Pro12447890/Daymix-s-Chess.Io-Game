@@ -77,6 +77,56 @@ const TIME_GROUPS = [
   },
 ];
 
+/* Названия дебютов: ищем самое длинное совпадение по началу партии. */
+const OPENINGS = [
+  { moves: ['e4'], name: 'Королевская пешка' },
+  { moves: ['e4', 'e5'], name: 'Открытая игра' },
+  { moves: ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'], name: 'Испанская партия' },
+  { moves: ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4'], name: 'Итальянская партия' },
+  { moves: ['e4', 'e5', 'Nf3', 'Nc6', 'd4'], name: 'Шотландская партия' },
+  { moves: ['e4', 'e5', 'Nf3', 'Nf6'], name: 'Русская партия' },
+  { moves: ['e4', 'e5', 'Nf3', 'd6'], name: 'Защита Филидора' },
+  { moves: ['e4', 'e5', 'Bc4'], name: 'Дебют слона' },
+  { moves: ['e4', 'e5', 'f4'], name: 'Королевский гамбит' },
+  { moves: ['e4', 'e5', 'Nc3'], name: 'Венская партия' },
+  { moves: ['e4', 'c5'], name: 'Сицилианская защита' },
+  { moves: ['e4', 'c5', 'Nf3', 'd6'], name: 'Сицилианская, вариант Найдорфа' },
+  { moves: ['e4', 'e6'], name: 'Французская защита' },
+  { moves: ['e4', 'c6'], name: 'Защита Каро-Канн' },
+  { moves: ['e4', 'd5'], name: 'Скандинавская защита' },
+  { moves: ['e4', 'd6'], name: 'Защита Пирца' },
+  { moves: ['e4', 'g6'], name: 'Современная защита' },
+  { moves: ['e4', 'Nf6'], name: 'Защита Алехина' },
+  { moves: ['d4'], name: 'Ферзевая пешка' },
+  { moves: ['d4', 'd5'], name: 'Закрытая игра' },
+  { moves: ['d4', 'd5', 'c4'], name: 'Ферзевый гамбит' },
+  { moves: ['d4', 'd5', 'c4', 'e6'], name: 'Отказанный ферзевый гамбит' },
+  { moves: ['d4', 'd5', 'c4', 'dxc4'], name: 'Принятый ферзевый гамбит' },
+  { moves: ['d4', 'Nf6'], name: 'Индийская защита' },
+  { moves: ['d4', 'Nf6', 'c4', 'g6'], name: 'Староиндийская защита' },
+  { moves: ['d4', 'Nf6', 'c4', 'e6'], name: 'Новоиндийская защита' },
+  { moves: ['d4', 'f5'], name: 'Голландская защита' },
+  { moves: ['d4', 'd5', 'Nf3'], name: 'Дебют ферзевой пешки' },
+  { moves: ['c4'], name: 'Английское начало' },
+  { moves: ['Nf3'], name: 'Дебют Рети' },
+  { moves: ['g3'], name: 'Дебют Бенко' },
+  { moves: ['b3'], name: 'Дебют Ларсена' },
+  { moves: ['f4'], name: 'Дебют Берда' },
+  { moves: ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'a6'], name: 'Испанская, вариант Морфи' },
+  { moves: ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5'], name: 'Итальянская, вариант Грек' },
+];
+
+function openingName() {
+  const sans = ui.moves.map((m) => String(m.san || '').replace(/[+#]$/, ''));
+  let best = null;
+  for (const o of OPENINGS) {
+    if (o.moves.length > sans.length) continue;
+    if (o.moves.every((m, i) => sans[i] === m)) {
+      if (!best || o.moves.length > best.moves.length) best = o;
+    }
+  }
+  return best ? best.name : null;
+}
 const THEMES = [
   { id: 'brown', name: 'Коричневая', light: '#f0d9b5', dark: '#9a6a47' },
   { id: 'green', name: 'Зелёная', light: '#eeeed2', dark: '#769656' },
@@ -820,8 +870,10 @@ function renderStatus() {
   if (st.check) bits.push('шах!');
   if (st.flags.checksToWin) bits.push(`шахи ${st.mv.w.checks}:${st.mv.b.checks}`);
   if (st.flags.crossCastle) bits.push(`обмены ${st.mv.w.cross}/${st.flags.crossCastle}`);
-  const target = st.flags.race ? ` · цель: верхний ряд` : '';
-  sub.textContent = bits.join(' · ') + target;
+  if (st.flags.race) bits.push('цель: верхний ряд');
+  const open = openingName();
+  if (open) bits.push(open);
+  sub.textContent = bits.join(' · ');
 }
 
 function resultTitle(res) {
@@ -1167,6 +1219,7 @@ function renderPgnBox() {
     `[Result "${result}"]`,
     `[Variant "${st.mode.name}"]`,
     `[TimeControl "${ui.timeMs ? Math.round(ui.timeMs / 1000) : '-'}"]`,
+    `[Opening "${openingName() || ''}"]`,
     '',
   ];
   const body = [];
