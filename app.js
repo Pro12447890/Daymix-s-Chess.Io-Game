@@ -1886,7 +1886,7 @@ function playBoardIntro() {
   const kids = Array.from(pieces.children);
   kids.forEach((el, i) => {
     const wave = kids.length > 1 ? i / (kids.length - 1) : 0;
-    el.style.setProperty('--d', (wave * 0.8 + Math.random() * 0.06).toFixed(3) + 's');
+    el.style.setProperty('--d', (wave * 0.45 + Math.random() * 0.05).toFixed(3) + 's');
   });
   pieces.classList.remove('intro');
   wrap.classList.remove('intro');
@@ -1897,7 +1897,7 @@ function playBoardIntro() {
   playBoardIntro.timer = setTimeout(() => {
     pieces.classList.remove('intro');
     wrap.classList.remove('intro');
-  }, 1900);
+  }, 1600);
 }
 
 function showPhase(phase) {

@@ -2080,11 +2080,11 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
 
 /* ═══ эпичное появление фигур на доске ═══ */
 .pieces.intro .piece .pc-svg {
-  animation: pieceDrop .8s cubic-bezier(.2, .9, .25, 1.25) both;
+  animation: pieceDrop .65s cubic-bezier(.2, .9, .25, 1.25) both;
   animation-delay: var(--d, 0s);
 }
 @keyframes pieceDrop {
-  0% { transform: translateY(-130%) scale(.2) rotate(-10deg); opacity: 0; filter: blur(4px); }
+  0% { transform: translateY(-85%) scale(.35) rotate(-8deg); opacity: 0; filter: blur(3px); }
   45% { transform: translateY(9%) scale(1.12) rotate(2deg); opacity: 1; filter: blur(0); }
   70% { transform: translateY(-4%) scale(.97) rotate(0); }
   100% { transform: translateY(0) scale(1); opacity: 1; }
