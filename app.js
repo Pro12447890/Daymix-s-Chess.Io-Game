@@ -1027,7 +1027,13 @@ function layoutBoard() {
   const bottomBar = $('#barBottom');
   const barH = 96;   // фиксировано: плашки 44 + 44 + зазор, доска не дёргается при взятии
   const gaps = 8;
-  const availW = Math.max(160, stage.clientWidth);
+  const shell = $('#gameShell');
+  const panel = $('#sidePanel');
+  const desk = window.innerWidth >= 1000;
+  const panelW = desk && panel ? panel.offsetWidth : 0;
+  const padX = desk ? 32 : 0;
+  const shellW = shell ? shell.clientWidth : stage.clientWidth;
+  const availW = Math.max(160, (desk ? shellW - padX - panelW - 22 : stage.clientWidth));
   const availH = Math.max(160, stage.clientHeight - barH - gaps);
   const layoutKey = `${availW}x${availH}x${st.W}x${st.H}`;
   if (ui.layoutKey === layoutKey && wrap.style.width) return;
@@ -1043,8 +1049,14 @@ function layoutBoard() {
   wrap.style.padding = '0';
   if (topBar) topBar.style.width = widthPx + 'px';
   if (bottomBar) bottomBar.style.width = widthPx + 'px';
-  const panel = $('#sidePanel');
-  if (panel && window.innerWidth >= 1000) {
+  if (desk) {
+    stage.style.flex = '0 0 auto';
+    stage.style.width = widthPx + 'px';
+  } else {
+    stage.style.flex = '';
+    stage.style.width = '';
+  }
+  if (panel && desk) {
     const need = barH + heightPx + 10;
     panel.style.height = Math.min(need, stage.clientHeight) + 'px';
   } else if (panel) {
