@@ -120,9 +120,9 @@ const MODES = [
     W: 8, H: 8, flags: { classic: true, fog: true },
   },
   {
-    id: 'fischer', n: 16, name: 'Фишер / 960', icon: '🎲',
+    id: 'fischer', n: 16, name: 'Фишер', icon: '🎲',
     desc: 'Случайная расстановка: слоны на разных цветах, король между ладьями. Рокировка по правилам 960.',
-    W: 8, H: 8, flags: { classic: true, fischer: true },
+    W: 8, H: 8, flags: { classic: true, fischerLoose: true },
   },
   {
     id: 'blocks', n: 17, name: 'Случайные блоки', icon: '🚧',
@@ -179,6 +179,56 @@ const MODES = [
     desc: 'Соперник видит клетку, на которую вы нажали перед ходом. Блефуйте или читайте замысел противника!',
     W: 8, H: 8, flags: { classic: true, openIntent: true },
   },
+  {
+    id: 'random', n: 0, name: 'Рандомный', icon: '🎲',
+    desc: 'Каждый раз новый случайный режим из всех остальных. Судьба выбирает за вас.',
+    W: 8, H: 8, flags: { classic: true, randomPick: true },
+  },
+  {
+    id: 'chess960', n: 28, name: 'Шахматы 960', icon: '♜',
+    desc: 'Настоящие Фишеровские шахматы: 960 расстановок, слоны на разных цветах, король между ладьями.',
+    W: 8, H: 8, flags: { classic: true, chess960: true },
+  },
+  {
+    id: 'swapReplace', n: 29, name: 'Замена фигур', icon: '🔄',
+    desc: 'Перед партией у каждого случайно заменяются 1–3 фигуры (кроме короля) на любые другие.',
+    W: 8, H: 8, flags: { classic: true, swapReplace: true },
+  },
+  {
+    id: 'vanishEdge', n: 30, name: 'Край бездны', icon: '🕳️',
+    desc: 'Пешка, дошедшая до последней горизонтали, не превращается, а безвозвратно исчезает.',
+    W: 8, H: 8, flags: { classic: true, vanishEdge: true },
+  },
+  {
+    id: 'pawnRush', n: 31, name: 'Пешки-ракеты', icon: '🚀',
+    desc: 'Пешка всегда может пойти на 1, 2 или 3 клетки вперёд — с любой линии, лишь бы путь был свободен.',
+    W: 8, H: 8, flags: { classic: true, pawnRush: true },
+  },
+  {
+    id: 'backCapture', n: 32, name: 'Пешка-хищник', icon: '🦷',
+    desc: 'Пешка умеет бить назад по диагонали, но ходить назад по-прежнему не может.',
+    W: 8, H: 8, flags: { classic: true, backCapture: true },
+  },
+  {
+    id: 'convert20', n: 33, name: 'Перебежчик', icon: '🎖️',
+    desc: 'С шансом 20% съеденная фигура не умирает, а переходит на вашу сторону и встаёт на случайное свободное поле.',
+    W: 8, H: 8, flags: { classic: true, convert20: true },
+  },
+  {
+    id: 'radiusCheck', n: 34, name: 'Грозовой радиус', icon: '📡',
+    desc: 'Шах — это любая вражеская фигура в радиусе 3 клеток от короля. Зона опасности обведена белым контуром.',
+    W: 8, H: 8, flags: { classic: true, radiusCheck: true },
+  },
+  {
+    id: 'horde', n: 35, name: 'Орда', icon: '🧟',
+    desc: 'У белых только король и три ряда пешек против полной армии чёрных. Задавите массой или выживете.',
+    W: 8, H: 8, flags: { horde: true },
+  },
+  {
+    id: 'antichess', n: 36, name: 'Антишахматы', icon: '🔄',
+    desc: 'Цель — потерять все свои фигуры. Бить обязательно, короля можно съесть, шаха нет.',
+    W: 8, H: 8, flags: { antichess: true, kingFree: true },
+  },
 ];
 
 const MODE_BY_ID = Object.fromEntries(MODES.map((m) => [m.id, m]));
@@ -194,6 +244,15 @@ const BACK_RANKS = {
 };
 
 /** Случайная расстановка 960: слоны на разных цветах, король между ладьями. */
+function shuffleBackRank() {
+  const pieces = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
+  for (let i = pieces.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pieces[i], pieces[j]] = [pieces[j], pieces[i]];
+  }
+  return pieces.join('');
+}
+
 function fischerRank() {
   const files = new Array(8).fill(null);
   const free = () => [0, 1, 2, 3, 4, 5, 6, 7].filter((i) => !files[i]);
@@ -240,6 +299,7 @@ function createState(modeId, opts = {}) {
     status: 'play',
     result: null,
     capturedKing: null,
+    converted: -1,
     check: false,
     seed: opts.seed || Math.floor(Math.random() * 1e9),
   };
@@ -255,12 +315,29 @@ function setupBoard(st) {
   if (flags.pawnField) return setupPawnField(st, !!flags.withQueen);
   if (flags.noPawns) return setupNoPawns(st);
 
-  if (flags.fischer) {
+  if (flags.chess960) {
     const back = fischerRank();
     for (let x = 0; x < 8; x++) {
       board[x] = newPiece(back[x], 'w');
       board[(H - 1) * W + x] = newPiece(back[x], 'b');
     }
+  } else if (flags.fischerLoose) {
+    const back = shuffleBackRank();
+    for (let x = 0; x < 8; x++) {
+      board[x] = newPiece(back[x], 'w');
+      board[(H - 1) * W + x] = newPiece(back[x], 'b');
+    }
+  } else if (flags.horde) {
+    const back = BACK_RANKS[W] || 'rnbqkbnr';
+    for (let x = 0; x < Math.min(W, back.length); x++) board[(H - 1) * W + x] = newPiece(back[x], 'b');
+    board[0] = newPiece('k', 'w');
+    for (let y = 1; y <= Math.min(3, H - 2); y++) {
+      for (let x = 0; x < W; x++) board[y * W + x] = newPiece('p', 'w');
+    }
+    st.pawnStart = { w: [1, 2, 3], b: [H - 2] };
+    for (let x = 0; x < W; x++) board[(H - 2) * W + x] = newPiece('p', 'b');
+    initCastling(st);
+    return;
   } else if (flags.kqp) {
     board[3] = newPiece('q', 'w');
     board[4] = newPiece('k', 'w');
@@ -279,6 +356,22 @@ function setupBoard(st) {
   for (const y of wRows) for (let x = 0; x < W; x++) board[y * W + x] = newPiece('p', 'w');
   for (const y of bRows) for (let x = 0; x < W; x++) board[y * W + x] = newPiece('p', 'b');
   st.pawnStart = { w: wRows.slice(), b: bRows.slice() };
+
+  if (flags.swapReplace) {
+    for (const color of ['w', 'b']) {
+      const candidates = [];
+      for (let i = 0; i < board.length; i++) {
+        const q = board[i];
+        if (q && q.c === color && q.t !== 'k') candidates.push(i);
+      }
+      const count = 1 + Math.floor(Math.random() * 3);
+      const pool = ['q', 'r', 'b', 'n'];
+      for (let k = 0; k < count && candidates.length; k++) {
+        const idx = candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
+        board[idx] = newPiece(pool[Math.floor(Math.random() * pool.length)], color);
+      }
+    }
+  }
 
   initCastling(st);
 }
@@ -435,12 +528,16 @@ function genPseudo(st, color) {
       if (ny < 0 || ny >= H) continue;
       const one = sqAt(st, x, ny);
       if (!board[one] && !isBlocked(st, one)) {
-        addPawnMoves(out, st, sq, one, ny);
+        pushPawnAdvance(out, st, sq, one, ny);
         const startRows = st.pawnStart[color] || [];
-        const ny2 = y + dir * 2;
-        if (startRows.includes(y) && ny2 >= 0 && ny2 < H) {
-          const two = sqAt(st, x, ny2);
-          if (!board[two] && !isBlocked(st, two)) out.push({ from: sq, to: two, double: true });
+        const maxStep = st.flags.pawnRush ? 3 : 2;
+        for (let step = 2; step <= maxStep; step++) {
+          if (!st.flags.pawnRush && !startRows.includes(y)) break;
+          const nyn = y + dir * step;
+          if (nyn < 0 || nyn >= H) break;
+          const target = sqAt(st, x, nyn);
+          if (board[target] || isBlocked(st, target)) break;
+          pushPawnAdvance(out, st, sq, target, nyn, { double: step === 2, triple: step === 3 });
         }
       }
       for (const dx of [-1, 1]) {
@@ -449,8 +546,19 @@ function genPseudo(st, color) {
         const t = sqAt(st, nx, ny);
         if (isBlocked(st, t)) continue;
         const q = board[t];
-        if (q && q.c !== color) addPawnMoves(out, st, sq, t, ny);
+        if (q && q.c !== color) pushPawnAdvance(out, st, sq, t, ny);
         else if (!q && st.ep === t) out.push({ from: sq, to: t, ep: true, capture: sqAt(st, nx, y) });
+      }
+      if (st.flags.backCapture) {
+        const by = y - dir;
+        for (const dx of [-1, 1]) {
+          const nx = x + dx;
+          if (!inside(st, nx, by)) continue;
+          const t = sqAt(st, nx, by);
+          if (isBlocked(st, t)) continue;
+          const q = board[t];
+          if (q && q.c !== color) out.push({ from: sq, to: t, capture: t, backward: true });
+        }
       }
       continue;
     }
@@ -612,12 +720,23 @@ function genPseudo(st, color) {
   return out;
 }
 
-function addPawnMoves(out, st, from, to, ny) {
-  if (ny === 0 || ny === st.H - 1) {
-    for (const promo of ['q', 'r', 'b', 'n']) out.push({ from, to, promo, capture: st.board[to] ? to : null });
-  } else {
-    out.push({ from, to, capture: st.board[to] ? to : null });
+function pushPawnAdvance(out, st, from, to, ny, extra = {}) {
+  const last = ny === 0 || ny === st.H - 1;
+  if (last) {
+    if (st.flags.vanishEdge) {
+      out.push({ from, to, vanish: true, capture: st.board[to] ? to : null, ...extra });
+      return;
+    }
+    for (const promo of ['q', 'r', 'b', 'n']) {
+      out.push({ from, to, promo, capture: st.board[to] ? to : null, ...extra });
+    }
+    return;
   }
+  out.push({ from, to, capture: st.board[to] ? to : null, ...extra });
+}
+
+function addPawnMoves(out, st, from, to, ny) {
+  pushPawnAdvance(out, st, from, to, ny);
 }
 
 function addCastling(st, color, out, kingSq) {
@@ -727,7 +846,20 @@ function attacked(st, sq, by) {
 }
 
 function inCheck(st, color) {
+  if (st.flags.antichess) return false;
   const king = findKing(st, color);
+  if (king >= 0 && st.flags.radiusCheck) {
+    const kx = fileOf(st, king);
+    const ky = rankOf(st, king);
+    for (let i = 0; i < st.board.length; i++) {
+      const q = st.board[i];
+      if (!q || q.c === color) continue;
+      const dx = Math.abs(fileOf(st, i) - kx);
+      const dy = Math.abs(rankOf(st, i) - ky);
+      if (Math.max(dx, dy) <= 3 && !(dx === 0 && dy === 0)) return true;
+    }
+    return false;
+  }
   if (king >= 0 && attacked(st, king, other(color))) return true;
   if (st.flags.queenCheck) {
     const q = findPiece(st, color, 'q');
@@ -754,7 +886,10 @@ function applyMove(st, m) {
     castling: { w: { ...st.castling.w }, b: { ...st.castling.b } },
     cross: { w: st.mv.w.cross, b: st.mv.b.cross },
     capturedKing: st.capturedKing,
+    converted: st.converted,
+    exploded: st.exploded,
   };
+  st.converted = -1;
   const remove = (sq) => {
     const q = board[sq];
     if (!q) return null;
@@ -796,9 +931,10 @@ function applyMove(st, m) {
       if (v) capturedColor = v.c;
     }
     let placed = p;
-    if (m.promo) placed = { ...p, t: m.promo, used: 0 };
+    if (m.vanish) placed = null;
+    else if (m.promo) placed = { ...p, t: m.promo, used: 0 };
     else if ((m.kingStep && st.flags.bishopKing) || p.t === 'j') placed = { ...p, used: p.used + 1 };
-    board[m.to] = placed;
+    if (placed) board[m.to] = placed;
   }
 
   /* Взрыв: крест вокруг клетки приземления, короли неуязвимы. */
@@ -813,6 +949,21 @@ function applyMove(st, m) {
       const s = sqAt(st, nx, ny);
       const q = board[s];
       if (q && q.t !== 'k') remove(s);
+    }
+  }
+
+  /* Перебежчик: с шансом 20% съеденная фигура переходит на сторону победителя. */
+  if (st.flags.convert20 && undo.removed.length && Math.random() < 0.2) {
+    const victim = undo.removed[undo.removed.length - 1].piece;
+    if (victim && victim.t !== 'k') {
+      const empties = [];
+      for (let i = 0; i < board.length; i++) if (!board[i]) empties.push(i);
+      if (empties.length) {
+        const target = empties[Math.floor(Math.random() * empties.length)];
+        board[target] = { ...victim, c: p.c, used: 0 };
+        st.converted = target;
+        undo.convertedPiece = { sq: target, piece: board[target] };
+      }
     }
   }
 
@@ -845,6 +996,9 @@ function applyMove(st, m) {
 function undoMove(st, undo) {
   const { board } = st;
 
+  if (undo.convertedPiece) board[undo.convertedPiece.sq] = null;   // убрать перебежчика
+  st.converted = undo.converted;
+  st.exploded = undo.exploded;
   board[undo.to] = null;                                   // убрать фигуру с места приземления
   if (undo.swapPiece) board[undo.to] = undo.swapPiece;     // вернуть обменянную фигуру
   if (undo.rook) board[undo.rook.to] = null;               // убрать ладью с нового места
@@ -865,7 +1019,12 @@ function undoMove(st, undo) {
 /* ═════════════════════════════ ЛЕГАЛЬНОСТЬ ═════════════════════════════ */
 
 function legalMoves(st, color = st.turn) {
-  const pseudo = genPseudo(st, color);
+  let pseudo = genPseudo(st, color);
+  if (st.flags.antichess) {
+    const caps = pseudo.filter((m) => m.capture != null || m.ep || (m.caps && m.caps.length));
+    if (caps.length) pseudo = caps;
+    return pseudo;
+  }
   if (st.flags.kingFree || st.flags.race) return pseudo;
   const out = [];
   for (const m of pseudo) {
@@ -909,6 +1068,26 @@ function updateStatus(st) {
     st.status = 'over';
     st.result = { winner: other(st.capturedKing), reason: 'king' };
     return st.result;
+  }
+  if (st.flags.antichess) {
+    const count = (color) => st.board.filter((q) => q && q.c === color).length;
+    const wLeft = count('w');
+    const bLeft = count('b');
+    if (wLeft === 0 || bLeft === 0) {
+      st.status = 'over';
+      st.result = { winner: wLeft === 0 ? 'w' : 'b', reason: 'antichess' };
+      return st.result;
+    }
+    const moves = legalMoves(st, st.turn);
+    if (!moves.length) {
+      st.status = 'over';
+      st.result = { winner: st.turn, reason: 'antichess' };
+      return st.result;
+    }
+    st.check = false;
+    st.status = 'play';
+    st.result = null;
+    return null;
   }
   if (st.flags.race) {
     for (const c of ['w', 'b']) {

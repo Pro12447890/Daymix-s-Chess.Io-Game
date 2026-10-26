@@ -2292,3 +2292,215 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
 }
 
 .build-stamp { color: var(--accent-green); opacity: .85; }
+
+
+/* ═══ группы режимов и крупные карточки ═══ */
+.modes-groups { display: flex; flex-direction: column; gap: 14px; }
+.modes-group { display: flex; flex-direction: column; gap: 8px; }
+.modes-group-title {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
+  color: var(--text-muted);
+}
+.modes-group-title b { font-size: 14px; letter-spacing: .2px; color: #fff; text-transform: none; }
+.modes-group-title.g1 b { color: #b6e08c; }
+.modes-group-title.g2 b { color: #f2c14e; }
+.modes-group-title.g3 b { color: #ff8f6b; }
+.modes-grid.grouped { grid-template-columns: repeat(3, minmax(0, 1fr)); height: auto; grid-auto-rows: auto; }
+.mode-tile.big { padding: 12px 13px; gap: 7px; border-radius: 10px; }
+.mode-tile.big .mt-icon { font-size: 26px; }
+.mode-tile.big .mt-name { font-size: 15.5px; }
+.mode-tile.big .mt-desc { font-size: 11.5px; line-height: 1.35; }
+.mode-tile.big .mt-meta { font-size: 9.5px; display: flex; align-items: center; gap: 6px; }
+.mt-badge {
+  font-style: normal; font-size: 8.5px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .4px; padding: 1px 6px; border-radius: 999px;
+}
+.mt-badge.g1 { background: #81b64c22; color: #b6e08c; }
+.mt-badge.g2 { background: #f2c14e22; color: #f2c14e; }
+.mt-badge.g3 { background: #ff6b3a22; color: #ff9f7a; }
+.mode-tile.random-tile {
+  background:
+    radial-gradient(circle at 15% 15%, #81b64c33, transparent 45%),
+    radial-gradient(circle at 85% 85%, #f2c14e33, transparent 45%),
+    var(--panel-card);
+  border-color: #81b64c66;
+}
+.mode-tile.random-tile .mt-icon { animation: diceWiggle 2.6s ease-in-out infinite; }
+@keyframes diceWiggle {
+  0%, 80%, 100% { transform: rotate(0) scale(1); }
+  85% { transform: rotate(-12deg) scale(1.12); }
+  92% { transform: rotate(10deg) scale(1.08); }
+}
+
+/* ═══ рулетка случайного режима ═══ */
+.roulette {
+  position: fixed; inset: 0; z-index: 165;
+  display: grid; place-items: center;
+  background: #0b0a09ee;
+  overflow: hidden;
+}
+.roulette-rays {
+  position: absolute; width: 130vmax; height: 130vmax; border-radius: 50%;
+  background: conic-gradient(from 0deg, #f2c14e44 0 22deg, transparent 22deg 58deg, #81b64c55 58deg 92deg, transparent 92deg 360deg);
+  filter: blur(26px);
+  animation: resultRaysSpin 7s linear infinite;
+}
+.roulette-box {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 26px 36px 24px; border-radius: 18px;
+  background: #262522f2; border: 1px solid var(--line-light);
+  box-shadow: 0 30px 80px #000000cc;
+  animation: roulettePop .4s cubic-bezier(.2,.9,.3,1.3) both;
+}
+@keyframes roulettePop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.roulette-title { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-muted); }
+.roulette-icon { font-size: 66px; line-height: 1; filter: drop-shadow(0 0 24px #f2c14e88); }
+.roulette-icon.tick { animation: iconTick .14s ease; }
+@keyframes iconTick { 50% { transform: scale(1.28) rotate(-8deg); } }
+.roulette-name { font-size: 27px; font-weight: 900; text-align: center; }
+.roulette-sub { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+.roulette.win .roulette-box { box-shadow: 0 0 0 2px var(--accent-green), 0 0 70px #81b64c66; }
+
+/* ═══ драма ферзя: чёрно-белые вспышки, молнии, разрыв ═══ */
+.queen-drama { position: fixed; inset: 0; z-index: 170; pointer-events: none; overflow: hidden; }
+.drama-flash { position: absolute; inset: 0; background: transparent; }
+.queen-drama.run .drama-flash { animation: dramaFlashes 1.05s steps(1, end) both; }
+@keyframes dramaFlashes {
+  0% { background: #000; opacity: .96; }
+  16% { background: #000; opacity: .96; }
+  18% { background: #fff; opacity: .98; }
+  34% { background: #fff; opacity: .98; }
+  36% { background: #000; opacity: .96; }
+  52% { background: #000; opacity: .9; }
+  54% { background: radial-gradient(circle at 50% 52%, #8b3ddb66, transparent 65%); opacity: 1; }
+  100% { background: transparent; opacity: 0; }
+}
+.drama-bolt {
+  position: absolute; width: 120px; height: 60vh;
+  filter: drop-shadow(0 0 10px #b06dff) drop-shadow(0 0 22px #7b2bd6);
+  opacity: 0;
+}
+.queen-drama.run .drama-bolt { animation: boltFlash .42s steps(2, end) both; }
+@keyframes boltFlash {
+  0% { opacity: 0; transform: translateY(-10%); }
+  25% { opacity: 1; }
+  60% { opacity: .25; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.drama-halves { position: absolute; inset: 0; }
+.drama-half {
+  position: absolute; left: 50%; top: 50%; width: 150px; height: 150px;
+  margin: -75px 0 0 -75px; opacity: 0;
+}
+.drama-half .pc-svg { width: 100%; height: 100%; display: block; }
+.drama-half.w { color: #fff; --edge: #141414; --detail: #404040; --sw: 2.2; }
+.drama-half.b { color: #2f2c28; --edge: #0b0b0b; --detail: #5b5751; --sw: 2.2; }
+.drama-half .pc-svg .body { fill: currentColor; stroke: var(--edge); stroke-width: var(--sw); }
+.drama-half .pc-svg .detail { fill: var(--detail); stroke: var(--detail); }
+.drama-half .pc-svg .line { fill: none; stroke: var(--detail); }
+.drama-half.top {
+  clip-path: polygon(0 0, 100% 0, 100% 47%, 91% 52%, 82% 46%, 73% 54%, 64% 47%, 55% 53%, 46% 46%, 37% 54%, 28% 48%, 19% 53%, 9% 47%, 0 52%);
+}
+.drama-half.bottom {
+  clip-path: polygon(0 52%, 9% 47%, 19% 53%, 28% 48%, 37% 54%, 46% 46%, 55% 53%, 64% 47%, 73% 54%, 82% 46%, 91% 52%, 100% 47%, 100% 100%, 0 100%);
+}
+.queen-drama.run .drama-half { animation: splitHalf .95s cubic-bezier(.25,.1,.7,1) .38s both; }
+@keyframes splitHalf {
+  0% { transform: translate(0, 0) rotate(0) scale(1); opacity: 1; }
+  55% { opacity: 1; }
+  100% { transform: translate(var(--dx, 60px), var(--dy, 100px)) rotate(var(--rot, 30deg)) scale(.86); opacity: 0; }
+}
+
+/* ═══ взрыв: искры и ударная волна ═══ */
+.boom { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 8; }
+.boom-ring {
+  position: absolute; left: 0; top: 0; transform: translate(-50%, -50%);
+  border: 3px solid #ffb347; border-radius: 50%;
+  animation: boomRing .55s cubic-bezier(.1,.7,.3,1) forwards;
+}
+@keyframes boomRing {
+  0% { transform: translate(-50%, -50%) scale(.2); opacity: .95; border-width: 5px; }
+  100% { transform: translate(-50%, -50%) scale(2.2); opacity: 0; border-width: 1px; }
+}
+.boom-spark {
+  position: absolute; left: 0; top: 0; width: 7px; height: 7px; border-radius: 2px;
+  transform: translate(-50%, -50%);
+  animation: boomSpark .65s cubic-bezier(.2,.6,.4,1) forwards;
+}
+@keyframes boomSpark {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.2) rotate(220deg); opacity: 0; }
+}
+
+/* ═══ зона радиуса и перебежчик ═══ */
+.sq.radius-zone { box-shadow: inset 0 0 0 1px #ffffff55; }
+.sq.radius-edge { box-shadow: inset 0 0 0 3px #ffffff, inset 0 0 16px #ffffff55, 0 0 8px #ffffff44; z-index: 2; }
+.sq.radius-zone.check { box-shadow: inset 0 0 0 3px #ff5a3c, inset 0 0 0 1px #fff; }
+.sq.converted { box-shadow: inset 0 0 0 3px #f2c14e, inset 0 0 18px #f2c14e66; animation: convertedPop .6s ease; }
+@keyframes convertedPop { 0% { transform: scale(.6); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
+
+/* ═══ переворот всего стола ═══ */
+.game-shell.flip-all { transform: rotate(180deg); }
+@media (max-width: 999px) { .game-shell.flip-all .panel-toggle { transform: rotate(180deg); } }
+
+/* ═══ пешка: падает и растворяется ═══ */
+.cap-ghost.soft .pc-svg { animation: capFade .45s ease-in both; }
+@keyframes capFade {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(60%) scale(.8); opacity: 0; }
+}
+
+/* ═══ стадии: дольше и аккуратнее на телефонах ═══ */
+.phase-splash.show { animation-duration: 3.2s !important; }
+.phase-badge {
+  font-size: clamp(24px, 6.4vw, 110px) !important;
+  letter-spacing: clamp(1px, .45vw, 6px) !important;
+  line-height: 1.03;
+  max-width: 96vw;
+  text-align: center;
+}
+.phase-sub {
+  font-size: clamp(9px, 1.5vw, 20px) !important;
+  letter-spacing: clamp(2px, .6vw, 8px) !important;
+  max-width: 96vw;
+  text-align: center;
+}
+@media (max-width: 700px) {
+  .phase-badge { font-size: clamp(20px, 8.4vw, 54px) !important; letter-spacing: 1px !important; }
+  .phase-sub { font-size: 8.5px !important; letter-spacing: 2.4px !important; }
+  .phase-rays { filter: blur(16px); opacity: .8; }
+  .flier.w, .flier.b { filter: drop-shadow(0 0 8px #b06dff66); }
+}
+
+/* ═══ мобильная оптимизация анимаций ═══ */
+@media (max-width: 700px) {
+  .confetti i:nth-child(n+19) { display: none; }
+  .res-flier:nth-child(n+11) { display: none; }
+  .result-rays { filter: blur(20px); }
+  .phase-fliers { contain: paint; }
+  .queen-drama .drama-bolt { width: 80px; }
+}
+
+/* ═══ кино-разворот телефона ═══ */
+@media (max-height: 480px) and (orientation: landscape) {
+  .app-sidebar { height: 40px; padding: 2px 6px; }
+  .main { height: calc(100dvh - 40px); }
+  .game-shell { padding: 2px 6px; gap: 6px; }
+  .side-panel { width: min(300px, 38vw); }
+  .player-capsule { height: 34px !important; min-height: 34px !important; max-height: 34px !important; }
+  .pc-avatar-wrap { width: 24px; height: 24px; }
+  .pc-avatar { width: 24px !important; height: 24px !important; }
+  .pc-avatar svg, .pc-avatar .pc-svg { width: 17px !important; height: 17px !important; }
+  .pc-name { font-size: 11px; }
+  .clock { font-size: 13px; min-width: 46px; padding: 1px 5px; }
+  .game-controls-bar { padding: 4px 6px; gap: 3px; }
+  .game-controls-bar .btn-action-icon { width: 26px; height: 26px; font-size: 12px; }
+  .tabs { padding-top: 2px; }
+  .tab { padding: 5px 2px; font-size: 11px; }
+  .side-panel-header { padding: 6px 8px; }
+  .game-status { font-size: 12px; }
+  .game-sub { font-size: 10px; }
+}

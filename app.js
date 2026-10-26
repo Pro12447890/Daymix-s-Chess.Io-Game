@@ -19,6 +19,7 @@ const DEFAULT_PROFILE = {
   theme: 'green',
   pieces: '1',
   flip: true,
+  flipAll: false,
   autoQueen: true,
   sound: true,
   side: 'w',
@@ -144,9 +145,8 @@ function startBotGame(level) {
   closeBotModal();
   ui.online = null;
   sound.click();
-  newGame({
+  startGameWithMode({
     mode: 'local',
-    modeId: profile.modeId,
     timeMs: profile.timeMs,
     splash: true,
     bot: { level, color: other(profile.side) },
@@ -380,6 +380,111 @@ function updateEval() {
 
 const CAP_TIER = { p: 1, n: 2, b: 2, r: 3, q: 4, k: 5 };
 
+function radiusDist(st, i) {
+  if (!st.flags.radiusCheck) return 99;
+  const x = fileOf(st, i);
+  const y = rankOf(st, i);
+  let best = 99;
+  for (const color of ['w', 'b']) {
+    const k = findKing(st, color);
+    if (k < 0) continue;
+    const d = Math.max(Math.abs(fileOf(st, k) - x), Math.abs(rankOf(st, k) - y));
+    best = Math.min(best, d);
+  }
+  return best;
+}
+
+function radiusEdge(st, i) {
+  const x = fileOf(st, i);
+  const y = rankOf(st, i);
+  for (const [dx, dy] of KING_DIRS) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!inside(st, nx, ny)) return true;
+    if (radiusDist(st, sqAt(st, nx, ny)) > 3) return true;
+  }
+  return false;
+}
+
+function queenDrama(item) {
+  const box = $('#queenDrama');
+  if (!box) return;
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) return;
+  box.classList.remove('hidden');
+  box.classList.remove('run');
+  const bolts = $('#dramaBolts');
+  const halves = $('#dramaHalves');
+  bolts.innerHTML = '';
+  halves.innerHTML = '';
+  for (let i = 0; i < 7; i++) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 100 300');
+    svg.setAttribute('class', 'drama-bolt');
+    const x = 8 + Math.random() * 70;
+    const pts = [];
+    let cx = x;
+    for (let y = -20; y <= 300; y += 40) {
+      cx += (Math.random() - .5) * 26;
+      pts.push(`${cx.toFixed(0)},${y}`);
+    }
+    svg.innerHTML = `<polyline points="${pts.join(' ')}" fill="none" stroke="#c78bff" stroke-width="${2 + Math.random() * 3}" stroke-linecap="round"/>`;
+    svg.style.left = (Math.random() * 92) + 'vw';
+    svg.style.top = (Math.random() * 30 - 20) + 'vh';
+    svg.style.animationDelay = (0.32 + Math.random() * 0.5).toFixed(2) + 's';
+    bolts.appendChild(svg);
+  }
+  const color = item && item.color === 'w' ? 'w' : 'b';
+  for (const part of ['top', 'bottom']) {
+    const half = document.createElement('div');
+    half.className = 'drama-half ' + part + ' ' + color;
+    half.innerHTML = pieceSvg('q', 'drama-piece');
+    half.style.setProperty('--dx', (part === 'top' ? -70 : 70) + 'px');
+    half.style.setProperty('--dy', (part === 'top' ? -90 : 120) + 'px');
+    half.style.setProperty('--rot', (part === 'top' ? -28 : 34) + 'deg');
+    halves.appendChild(half);
+  }
+  void box.offsetWidth;
+  box.classList.add('run');
+  clearTimeout(queenDrama.timer);
+  queenDrama.timer = setTimeout(() => {
+    box.classList.add('hidden');
+    box.classList.remove('run');
+    bolts.innerHTML = '';
+    halves.innerHTML = '';
+  }, 1500);
+}
+
+function explosionFx(st, center) {
+  const layer = $('#hints');
+  if (!layer || !st) return;
+  const sq = ui.sq;
+  const { dx, dy } = disp(st, center);
+  const cx = (dx + .5) * sq;
+  const cy = (dy + .5) * sq;
+  const boom = document.createElement('div');
+  boom.className = 'boom';
+  boom.style.left = cx + 'px';
+  boom.style.top = cy + 'px';
+  const ring = document.createElement('span');
+  ring.className = 'boom-ring';
+  ring.style.width = sq * .8 + 'px';
+  ring.style.height = sq * .8 + 'px';
+  boom.appendChild(ring);
+  for (let i = 0; i < 14; i++) {
+    const spark = document.createElement('i');
+    spark.className = 'boom-spark';
+    const a = Math.random() * Math.PI * 2;
+    const dist = sq * (0.4 + Math.random() * 1.1);
+    spark.style.setProperty('--dx', (Math.cos(a) * dist).toFixed(0) + 'px');
+    spark.style.setProperty('--dy', (Math.sin(a) * dist).toFixed(0) + 'px');
+    spark.style.background = Math.random() < .5 ? '#ffd27a' : '#ff7a3a';
+    boom.appendChild(spark);
+  }
+  layer.appendChild(boom);
+  setTimeout(() => boom.remove(), 900);
+}
+
 function captureFx(list) {
   if (!list || !list.length || !ui.st) return;
   const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -391,7 +496,7 @@ function captureFx(list) {
   for (const item of list) {
     const tier = CAP_TIER[item.type] || 1;
     topTier = Math.max(topTier, tier);
-    if (!layer) continue;
+    if (!layer || tier === 4) continue;
     const { dx, dy } = disp(st, item.square);
     const ghost = document.createElement('div');
     ghost.className = 'cap-ghost ' + (item.color === 'w' ? 'w' : 'b');
@@ -406,9 +511,18 @@ function captureFx(list) {
     setTimeout(() => ghost.remove(), 1400);
   }
 
+  if (topTier === 4) {
+    const queen = list.find((x) => x.type === 'q') || list[0];
+    queenDrama(queen);
+  }
+
   const board = $('#board');
   const shell = $('#gameShell');
   const flash = $('#fxFlash');
+  if (topTier === 1) {
+    for (const el of document.querySelectorAll('.cap-ghost')) el.classList.add('soft');
+    return;
+  }
   if (board) {
     for (let i = 1; i <= 5; i++) board.classList.remove('shake-' + i);
     void board.offsetWidth;
@@ -426,7 +540,7 @@ function captureFx(list) {
     captureFx.quakeTimer = setTimeout(() => shell.classList.remove('quake-4'), 700);
   }
   if (flash) {
-    if (topTier < 2) {
+    if (topTier < 2 || topTier >= 4) {
       flash.className = 'fx-flash';
     } else {
       flash.className = 'fx-flash';
@@ -563,6 +677,9 @@ const MODE_SHORT = {
   knights: 'Кони', rooks: 'Ладьи', pawnField: 'Пешки', pawnFieldQ: 'Пешки+Q',
   noPawns: 'Без пешек', center: 'Центр',
   touchMove: 'Взялся', openIntent: 'Намерения',
+  random: 'Рандом', chess960: '960', swapReplace: 'Замена', vanishEdge: 'Бездна',
+  pawnRush: 'Ракеты', backCapture: 'Хищник', convert20: 'Перебежчик',
+  radiusCheck: 'Радиус', horde: 'Орда', antichess: 'Антишахматы',
 };
 
 const THEMES = [
@@ -667,6 +784,7 @@ const ui = {
   movedId: null,
   gameLocked: false,
   remoteSelected: -1,
+  rotated: false,
   imported: false,
   names: null,
   startedAt: 0,
@@ -695,6 +813,7 @@ function renderProfile() {
   document.documentElement.dataset.pieces = profile.pieces;
   applySkin();
   $('#optFlip').checked = profile.flip;
+  if ($('#optFlipAll')) $('#optFlipAll').checked = !!profile.flipAll;
   $('#optAutoQueen').checked = profile.autoQueen;
   if ($('#gFlip')) {
     const botGame = !!(ui.bot && ui.st);
@@ -914,6 +1033,61 @@ function renderModeCard() {
   renderPreview();
 }
 
+const REAL_MODES = () => MODES.filter((m) => !m.flags.randomPick);
+
+function randomRealMode() {
+  const list = REAL_MODES();
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+function rollRandomMode(done) {
+  const overlay = $('#randomRoulette');
+  const icon = $('#rouletteIcon');
+  const name = $('#rouletteName');
+  const sub = $('#rouletteSub');
+  if (!overlay) { done(randomRealMode().id); return; }
+  const list = REAL_MODES();
+  const final = list[Math.floor(Math.random() * list.length)];
+  overlay.classList.remove('hidden', 'win');
+  sub.textContent = 'крутим барабан';
+  let tick = 0;
+  const step = () => {
+    const m = list[Math.floor(Math.random() * list.length)];
+    icon.textContent = m.icon;
+    name.textContent = m.name;
+    icon.classList.remove('tick');
+    void icon.offsetWidth;
+    icon.classList.add('tick');
+    tick += 1;
+    if (tick < 18) {
+      setTimeout(step, 38 + tick * 7);
+    } else {
+      icon.textContent = final.icon;
+      name.textContent = final.name;
+      sub.textContent = 'режим выбран';
+      overlay.classList.add('win');
+      sound.click();
+      setTimeout(() => {
+        overlay.classList.add('hidden');
+        done(final.id);
+      }, 600);
+    }
+  };
+  step();
+}
+
+function startGameWithMode(opts = {}) {
+  if (profile.modeId !== 'random') {
+    newGame({ ...opts, modeId: profile.modeId });
+    return;
+  }
+  closeBotModal();
+  rollRandomMode((modeId) => {
+    renderModeCard();
+    newGame({ ...opts, modeId });
+  });
+}
+
 const MODE_CATS = {
   popular: ['classic', 'fischer', 'threeChecks', 'kingCapture'],
   pieces: ['jester', 'boy', 'queens', 'pawnField', 'pawnFieldQ', 'knights', 'rooks', 'bishops'],
@@ -926,12 +1100,51 @@ function modesByFilter(filter) {
   return MODES.filter((m) => ids.includes(m.id));
 }
 
+const MODE_GROUP = {
+  random: 1, classic: 1, threeChecks: 1, kingCapture: 1, center: 1, fischer: 1, chess960: 1,
+  pawnRush: 1, backCapture: 1, radiusCheck: 1, vanishEdge: 1,
+  pawnRows: 2, kqp: 2, wide10: 2, tall10: 2, jester: 2, boy: 2, queens: 2, bishops: 2,
+  knights: 2, rooks: 2, pawnField: 2, pawnFieldQ: 2, noPawns: 2, blocks: 2, swapReplace: 2, convert20: 2,
+  explode: 3, fog: 3, race: 3, kingOnly: 3, queenPierce: 3, bishopKing: 3, crossCastle: 3,
+  touchMove: 3, openIntent: 3, horde: 3, antichess: 3,
+};
+const GROUP_TITLES = {
+  1: 'Классика и лёгкие изменения',
+  2: 'Средние изменения',
+  3: 'Сильные изменения и хаос',
+};
+
+function makeModeCard(m, mode) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'mode-tile big' + (profile.modeId === m.id ? ' active' : '') + (m.flags.randomPick ? ' random-tile' : '');
+  const size = m.square && profile.square ? `${m.W}×${m.W}` : `${m.W}×${m.H}`;
+  const group = MODE_GROUP[m.id] || 1;
+  card.innerHTML = `
+    <span class="mt-icon">${m.icon}</span>
+    <span class="mt-body">
+      <span class="mt-name full">${m.name}</span>
+      <span class="mt-name short">${MODE_SHORT[m.id] || m.name}</span>
+      <span class="mt-desc">${m.desc}</span>
+      <span class="mt-meta"><i class="mt-badge g${group}">${group === 1 ? 'лёгкий' : group === 2 ? 'средний' : 'сильный'}</i> ${size}${m.n ? ' · режим ' + m.n : ''}</span>
+    </span>`;
+  card.addEventListener('click', () => {
+    profile.modeId = m.id;
+    saveProfile();
+    renderModeCard();
+    renderModesGrid(mode);
+    toast(m.flags.randomPick ? 'Рандомный: каждый раз новый режим' : `Режим: ${m.name}`);
+    showScreen('home');
+  });
+  return card;
+}
+
 function renderModesGrid(filter) {
   const mode = filter || ui.modesFilter || 'all';
   ui.modesFilter = mode;
   const box = $('#modesGrid');
   box.innerHTML = '';
-  box.classList.toggle('filtered', mode !== 'all');
+  box.className = 'modes-groups';
   const list = modesByFilter(mode);
   for (const [label, count] of [['all', MODES.length], ['popular', MODE_CATS.popular.length], ['pieces', MODE_CATS.pieces.length], ['chaos', MODE_CATS.chaos.length]]) {
     const b = $(`.mode-filter[data-filter="${label}"]`);
@@ -942,28 +1155,27 @@ function renderModesGrid(filter) {
       b.classList.toggle('active', label === mode);
     }
   }
-  for (const m of list) {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'mode-tile' + (profile.modeId === m.id ? ' active' : '');
-    const size = m.square && profile.square ? `${m.W}×${m.W}` : `${m.W}×${m.H}`;
-    card.innerHTML = `
-      <span class="mt-icon">${m.icon}</span>
-      <span class="mt-body">
-        <span class="mt-name full">${m.name}</span>
-        <span class="mt-name short">${MODE_SHORT[m.id] || m.name}</span>
-        <span class="mt-desc">${m.desc}</span>
-        <span class="mt-meta">${size}${m.n ? ' · режим ' + m.n : ' · обычные шахматы'}</span>
-      </span>`;
-    card.addEventListener('click', () => {
-      profile.modeId = m.id;
-      saveProfile();
-      renderModeCard();
-      renderModesGrid(mode);
-      toast(`Режим: ${m.name}`);
-      showScreen('home');
-    });
-    box.appendChild(card);
+  const appendGrid = (parent, items) => {
+    const grid = document.createElement('div');
+    grid.className = 'modes-grid grouped';
+    for (const m of items) grid.appendChild(makeModeCard(m, mode));
+    parent.appendChild(grid);
+  };
+  if (mode === 'all') {
+    for (const g of [1, 2, 3]) {
+      const items = list.filter((m) => (MODE_GROUP[m.id] || 1) === g);
+      if (!items.length) continue;
+      const section = document.createElement('section');
+      section.className = 'modes-group';
+      const title = document.createElement('h3');
+      title.className = 'modes-group-title g' + g;
+      title.innerHTML = `<b>${GROUP_TITLES[g]}</b><span class="chip">${items.length}</span>`;
+      section.appendChild(title);
+      appendGrid(section, items);
+      box.appendChild(section);
+    }
+  } else {
+    appendGrid(box, list);
   }
 }
 
@@ -1121,7 +1333,8 @@ function layoutBoard() {
   if (!stage || !wrap) return;
   const topBar = $('#barTop');
   const bottomBar = $('#barBottom');
-  const barH = 96;   // фиксировано: плашки 44 + 44 + зазор, доска не дёргается при взятии
+  const cinema = window.matchMedia && window.matchMedia('(max-height: 480px) and (orientation: landscape)').matches;
+  const barH = cinema ? 68 : 96;   // фиксировано: плашки 38 + 38, доска не дёргается
   const gaps = 8;
   const shell = $('#gameShell');
   const panel = $('#sidePanel');
@@ -1222,6 +1435,14 @@ function renderSquares() {
     if (i === checkSq) cls.push('check');
     if (st.blocked.includes(i)) cls.push('blocked');
     if (centerCellsList && centerCellsList.includes(i)) cls.push('center-mark');
+    if (st.flags.radiusCheck) {
+      const dist = radiusDist(st, i);
+      if (dist <= 3) {
+        cls.push('radius-zone');
+        if (radiusEdge(st, i)) cls.push('radius-edge');
+      }
+    }
+    if (st.converted === i) cls.push('converted');
     if (st.flags.openIntent && ui.remoteSelected === i && ui.selected !== i) cls.push('intent-enemy');
     if (ui.hint && i === ui.hint.from) cls.push('hint-from');
     if (ui.hint && i === ui.hint.to) cls.push('hint-to');
@@ -1384,7 +1605,11 @@ function snap(st) {
 }
 
 function newGame(opts = {}) {
-  const mode = modeById(opts.modeId || profile.modeId);
+  const pickedMode = modeById(opts.modeId || profile.modeId);
+  const mode = pickedMode.flags.randomPick ? randomRealMode() : pickedMode;
+  ui.rotated = false;
+  const shellEl = $('#gameShell');
+  if (shellEl) shellEl.classList.remove('flip-all');
   ui.st = createState(mode.id, { square: opts.square != null ? opts.square : profile.square, seed: opts.seed });
   ui.frames = [snap(ui.st)];
   ui.moves = [];
@@ -1654,6 +1879,11 @@ function resultReason(res) {
 
 function onSquareClick(sq) {
   if (!ui.st || ui.st.status !== 'play') return;
+  if (ui.rotated) {
+    const y = Math.floor(sq / ui.st.W);
+    const x = sq % ui.st.W;
+    sq = (ui.st.H - 1 - y) * ui.st.W + (ui.st.W - 1 - x);
+  }
   if (ui.gameLocked) return;
   if (ui.paused) return;
   if (ui.imported) { toast('Импортированная партия — только просмотр'); return; }
@@ -1764,6 +1994,7 @@ function commitMove(m, opts = {}) {
     if (p) capInfo.push({ type: p.t, color: p.c, square: match.capture });
   }
   applyMove(st, match);
+  const explodedNow = !!st.exploded;
   if (st.flags.blocks) {
     const blockedSq = maybeBlock(st);
     if (blockedSq >= 0) {
@@ -1799,7 +2030,7 @@ function commitMove(m, opts = {}) {
     if (inCheck(st, st.turn)) sound.check();
   }
 
-  if (st.flags.explode && st.exploded) {
+  if (st.flags.explode && explodedNow) {
     const board = $('#board');
     board.classList.remove('shake');
     void board.offsetWidth;
@@ -1809,13 +2040,21 @@ function commitMove(m, opts = {}) {
 
   let flippedNow = false;
   if (ui.mode === 'local' && !ui.bot && profile.flip && !opts.remote && !opts.silent) {
-    const prevOrientation = ui.orientation;
-    ui.orientation = st.turn;
-    flippedNow = ui.orientation !== prevOrientation;
+    if (profile.flipAll) {
+      ui.rotated = !ui.rotated;
+      flippedNow = true;
+    } else {
+      const prevOrientation = ui.orientation;
+      ui.orientation = st.turn;
+      flippedNow = ui.orientation !== prevOrientation;
+    }
   }
   if (!opts.silent) {
+    const shellRot = $('#gameShell');
+    if (shellRot) shellRot.classList.toggle('flip-all', !!ui.rotated);
     renderAll(flippedNow ? false : !opts.noAnim);
     if (flippedNow) renderPlayers();
+    if (st.flags.explode && explodedNow) explosionFx(st, match.to);
     if (capInfo.length) captureFx(capInfo);
     renderMoves();
   }
@@ -1842,6 +2081,7 @@ const REASON_TEXT = {
   repetition: 'троекратное повторение', draw: 'ничья по согласию',
   king: 'король съеден', race: 'король на вершине', center: 'король в центре',
   checks: 'три шаха', kingOnly: 'остался один король', left: 'выход из партии',
+  antichess: 'все фигуры потеряны',
   abort: 'партия прервана',
 };
 
@@ -1984,7 +2224,7 @@ function spawnPhaseFliers() {
     box.appendChild(el);
   }
   clearTimeout(spawnPhaseFliers.timer);
-  spawnPhaseFliers.timer = setTimeout(() => { box.innerHTML = ''; }, 3800);
+  spawnPhaseFliers.timer = setTimeout(() => { box.innerHTML = ''; }, 5000);
 }
 
 function playBoardIntro() {
@@ -2021,7 +2261,7 @@ function showPhase(phase) {
   void el.offsetWidth;
   el.classList.add('show');
   clearTimeout(showPhase.timer);
-  showPhase.timer = setTimeout(() => el.classList.remove('show'), 2200);
+  showPhase.timer = setTimeout(() => el.classList.remove('show'), 3200);
 }
 
 /* ───────────────────────── 11. СПИСОК ХОДОВ ───────────────────────────── */
@@ -2244,6 +2484,16 @@ function setLobby(text) { $('#lobbyLine').textContent = text || ''; }
 async function createRoom() {
   if (!ui.online) {
     ui.online = { code: '', role: 'host', sid: Math.random().toString(36).slice(2, 10) };
+  }
+  if (profile.modeId === 'random') {
+    const pick = randomRealMode();
+    ui.online.modeId = pick.id;
+    profile.modeId = pick.id;
+    saveProfile();
+    renderModeCard();
+    toast('Случайный режим: ' + pick.name);
+  } else {
+    ui.online.modeId = profile.modeId;
   }
   const code = randomCode();
   ui.online.code = code;
@@ -2690,6 +2940,11 @@ function bindEvents() {
     saveProfile();
   });
 
+  if ($('#optFlipAll')) $('#optFlipAll').addEventListener('change', (e) => {
+    profile.flipAll = e.target.checked;
+    saveProfile();
+    toast(profile.flipAll ? 'Переворачиваться будет весь игровой стол' : 'Переворачивается только доска');
+  });
   $('#optFlip').addEventListener('change', (e) => {
     profile.flip = e.target.checked;
     $('#gFlip').checked = profile.flip;
@@ -2723,7 +2978,8 @@ function bindEvents() {
 
   $('#btnPlayLocal').addEventListener('click', () => {
     ui.online = null;
-    newGame({ mode: 'local', modeId: profile.modeId, timeMs: profile.timeMs, splash: true });
+    sound.click();
+    startGameWithMode({ mode: 'local', timeMs: profile.timeMs, splash: true });
   });
 
   $$('.bot-level').forEach((b) => b.addEventListener('click', () => startBotGame(b.dataset.level)));
@@ -2792,6 +3048,12 @@ function bindEvents() {
   $('#confirmLeave').addEventListener('click', confirmLeaveGame);
   $('#railSound').addEventListener('click', () => setSound(profile.sound === false));
   $('#railFlip').addEventListener('click', () => {
+    if (profile.flipAll) {
+      ui.rotated = !ui.rotated;
+      $('#gameShell').classList.toggle('flip-all', ui.rotated);
+      renderAll(false);
+      return;
+    }
     ui.orientation = other(ui.orientation);
     renderAll(false);
     renderPlayers();

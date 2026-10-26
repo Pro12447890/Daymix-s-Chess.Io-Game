@@ -8,7 +8,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Daymix's Chess</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23262421'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%2381b64c'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=20261026-7">
+  <link rel="stylesheet" href="style.css?v=20261026-9">
 </head>
 <body>
 
@@ -179,6 +179,7 @@
               <label class="toggle"><input type="checkbox" id="optAutoQueen"><span>Авто-ферзь при превращении</span></label>
               <label class="toggle"><input type="checkbox" id="optSound"><span>Звуки и вибрация</span></label>
               <label class="toggle" id="optSquareWrap"><input type="checkbox" id="optSquare"><span>Квадратная доска 12×12 и 14×14</span></label>
+              <label class="toggle"><input type="checkbox" id="optFlipAll"><span>Переворачивать весь интерфейс, а не только доску</span></label>
             </div>
             <div class="field">
               <span class="field-label">В локальной игре я играю за</span>
@@ -188,7 +189,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-26-7 · локальный переворот включён</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-26-9 · 38 режимов, новые эффекты</div>
           </div>
         </div>
       </div>
@@ -201,7 +202,7 @@
           <button class="btn btn-sm btn-ghost back-btn" id="modesBack" type="button">← Назад</button>
           <div class="screen-head-text">
             <h2>Режимы</h2>
-            <p id="modesLead">Классика и 27 режимов — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
+            <p id="modesLead">Классика, 37 режимов и рандомный выбор — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
           </div>
           <span class="chip" id="modesCurrent">Классика</span>
         </div>
@@ -438,6 +439,24 @@
 </div>
 
 <div class="fx-flash" id="fxFlash"></div>
+
+<!-- рулетка случайного режима -->
+<div class="roulette hidden" id="randomRoulette" aria-hidden="true">
+  <div class="roulette-rays"></div>
+  <div class="roulette-box">
+    <div class="roulette-title">Судьба выбирает режим</div>
+    <div class="roulette-icon" id="rouletteIcon">🎲</div>
+    <div class="roulette-name" id="rouletteName">…</div>
+    <div class="roulette-sub" id="rouletteSub">крутим барабан</div>
+  </div>
+</div>
+
+<!-- драма ферзя: молнии и разрыв на две части -->
+<div class="queen-drama hidden" id="queenDrama" aria-hidden="true">
+  <div class="drama-flash" id="dramaFlash"></div>
+  <div class="drama-bolts" id="dramaBolts"></div>
+  <div class="drama-halves" id="dramaHalves"></div>
+</div>
 <div class="toast" id="toast"></div>
 
 <!-- выбор бота -->
@@ -516,7 +535,7 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261026-7"></script>
-<script src="app.js?v=20261026-7"></script>
+<script src="engine.js?v=20261026-9"></script>
+<script src="app.js?v=20261026-9"></script>
 </body>
 </html>
