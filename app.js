@@ -583,7 +583,12 @@ function renderProfile() {
   applySkin();
   $('#optFlip').checked = profile.flip;
   $('#optAutoQueen').checked = profile.autoQueen;
-  $('#gFlip').checked = profile.flip;
+  if ($('#gFlip')) {
+    const botGame = !!(ui.bot && ui.st);
+    $('#gFlip').disabled = botGame;
+    $('#gFlip').checked = botGame ? false : profile.flip;
+    $('#gFlip').title = botGame ? 'С ботом доска не переворачивается' : '';
+  }
   $('#gAutoQueen').checked = profile.autoQueen;
   if ($('#optSound')) $('#optSound').checked = profile.sound !== false;
   if ($('#gSound')) $('#gSound').checked = profile.sound !== false;
