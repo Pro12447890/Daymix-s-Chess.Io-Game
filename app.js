@@ -469,6 +469,7 @@ const MODE_SHORT = {
   fischer: '960', blocks: 'Блоки', queens: 'Ферзи', bishops: 'Слоны',
   knights: 'Кони', rooks: 'Ладьи', pawnField: 'Пешки', pawnFieldQ: 'Пешки+Q',
   noPawns: 'Без пешек', center: 'Центр',
+  touchMove: 'Взялся', openIntent: 'Намерения',
 };
 
 const THEMES = [
@@ -571,6 +572,8 @@ const ui = {
   botThinking: false,
   paused: false,
   movedId: null,
+  gameLocked: false,
+  remoteSelected: -1,
   imported: false,
   names: null,
   startedAt: 0,
@@ -1126,6 +1129,7 @@ function renderSquares() {
     if (i === checkSq) cls.push('check');
     if (st.blocked.includes(i)) cls.push('blocked');
     if (centerCellsList && centerCellsList.includes(i)) cls.push('center-mark');
+    if (st.flags.openIntent && ui.remoteSelected === i && ui.selected !== i) cls.push('intent-enemy');
     if (ui.hint && i === ui.hint.from) cls.push('hint-from');
     if (ui.hint && i === ui.hint.to) cls.push('hint-to');
     el.className = cls.join(' ');
@@ -1243,6 +1247,7 @@ function updateClockEls(override) {
 }
 
 function tickClocks() {
+  if (ui.gameLocked) return;
   if (!ui.st || !ui.timeMs || !ui.running) return;
   if (ui.st.status !== 'play') return;
   if (ui.viewPly !== ui.frames.length - 1) return;
@@ -1310,6 +1315,8 @@ function newGame(opts = {}) {
   ui.bot = opts.bot ? { ...opts.bot, name: 'Бот · ' + (BOT_LABELS[opts.bot.level] || 'средний') } : null;
   ui.paused = false;
   ui.movedId = null;
+  ui.gameLocked = false;
+  ui.remoteSelected = -1;
   if ($('#pauseOverlay')) $('#pauseOverlay').classList.add('hidden');
   if ($('#railPause')) {
     $('#railPause').classList.remove('paused');
@@ -1343,11 +1350,28 @@ function newGame(opts = {}) {
   $('#gameSub').textContent = mode.name + ' · ' + (ui.timeMs ? profile.timeLabel : 'без ограничений');
 
   if (opts.splash !== false) {
+    // заморозка: пока играет «Дебют», ходы и часы стоят
+    ui.gameLocked = true;
+    ui.running = false;
     ui.phase = 'opening';
-    setTimeout(() => showPhase('opening'), 350);
+    showPhase('opening');
+    clearTimeout(newGame.unlockTimer);
+    newGame.unlockTimer = setTimeout(() => {
+      if (!ui.st || ui.st.status !== 'play') { ui.gameLocked = false; return; }
+      ui.gameLocked = false;
+      if (!ui.paused) {
+        ui.running = true;
+        ui.turnStart = performance.now();
+      }
+      renderStatus();
+      if (ui.bot && ui.st.turn === ui.bot.color) maybeBotTurn();
+    }, 2200);
+  } else {
+    ui.gameLocked = false;
+    startClocks();
+    if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
   }
   updateNav();
-  if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
 }
 
 function renderMeta() {
@@ -1415,25 +1439,56 @@ function updateLinkDots() {
   }
 }
 
+const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, j: 5, g: 5, k: 0 };
+
 function renderCaptured() {
   const st = ui.st;
   if (!st || !ui.frames.length) return;
-  const start = ui.frames[0].board;
+  const startBoard = ui.frames[0].board;
   const count = (board) => {
     const map = {};
     for (const p of board) if (p) map[p.c + p.t] = (map[p.c + p.t] || 0) + 1;
     return map;
   };
-  const a = count(start);
+  const a = count(startBoard);
   const b = count(st.board);
   const lost = { w: [], b: [] };
-  for (const key of Object.keys(a)) {
+  const lostValue = { w: 0, b: 0 };
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
     const diff = (a[key] || 0) - (b[key] || 0);
-    for (let i = 0; i < diff; i++) lost[key[0]].push(key[1]);
+    const color = key[0];
+    const type = key[1];
+    if (diff > 0) {
+      for (let i = 0; i < diff; i++) lost[color].push(type);
+      lostValue[color] += diff * (PIECE_VALUES[type] || 0);
+    } else if (diff < 0) {
+      // превращение добавило фигуру — уменьшаем «потери» на её стоимость
+      lostValue[color] += diff * (PIECE_VALUES[type] || 0);
+    }
   }
-  const mark = (types) => types.map((t) => pieceSvg(t, 'cap-pc')).join('');
-  $('#bottomCaptured').innerHTML = mark(lost[other(ui.orientation === 'w' ? 'w' : 'b')]);
-  $('#topCaptured').innerHTML = mark(lost[ui.orientation === 'w' ? 'w' : 'b']);
+
+  // Порядок как на Chess.com: пешки → слоны → кони → ладьи → ферзи
+  const ORDER = { p: 1, b: 2, n: 3, r: 4, q: 5, j: 6, g: 7, k: 8 };
+  lost.w.sort((x, y) => (ORDER[x] || 0) - (ORDER[y] || 0));
+  lost.b.sort((x, y) => (ORDER[x] || 0) - (ORDER[y] || 0));
+
+  const bottomColor = ui.orientation === 'w' ? 'w' : 'b';
+  const topColor = other(bottomColor);
+
+  const build = (types, color) => types
+    .map((type) => `<span class="cap-item ${color === 'w' ? 'w' : 'b'}">${pieceSvg(type, 'cap-pc')}</span>`)
+    .join('');
+
+  $('#topCaptured').innerHTML = build(lost[bottomColor], bottomColor);
+  $('#bottomCaptured').innerHTML = build(lost[topColor], topColor);
+
+  const diffTop = lostValue[bottomColor] - lostValue[topColor];
+  const diffBottom = -diffTop;
+  const topEl = $('#topMaterial');
+  const bottomEl = $('#bottomMaterial');
+  if (topEl) topEl.textContent = diffTop > 0 ? `+${diffTop}` : '';
+  if (bottomEl) bottomEl.textContent = diffBottom > 0 ? `+${diffBottom}` : '';
 }
 
 function renderAll(animate) {
@@ -1505,6 +1560,7 @@ function resultReason(res) {
 
 function onSquareClick(sq) {
   if (!ui.st || ui.st.status !== 'play') return;
+  if (ui.gameLocked) return;
   if (ui.paused) return;
   if (ui.imported) { toast('Импортированная партия — только просмотр'); return; }
   if (ui.bot && ui.st.turn === ui.bot.color) return;
@@ -1514,6 +1570,20 @@ function onSquareClick(sq) {
   if (st.turn !== myColor() && ui.mode !== 'local') return;
 
   const legal = legalMoves(st, st.turn);
+
+  // «Взялся — ходи»: выбор фигуры с ходами отменить нельзя
+  if (st.flags.touchMove && ui.selected >= 0) {
+    const currentLegal = legal.filter((m) => m.from === ui.selected);
+    if (currentLegal.length > 0) {
+      const isCandidate = currentLegal.some((m) => m.to === sq);
+      if (!isCandidate) {
+        buzz([40, 40]);
+        toast('«Взялся — ходи»: обязаны ходить выбранной фигурой!');
+        return;
+      }
+    }
+  }
+
   if (ui.selected >= 0) {
     const candidates = legal.filter((m) => m.from === ui.selected && m.to === sq);
     if (candidates.length) {
@@ -1531,6 +1601,7 @@ function onSquareClick(sq) {
     }
   }
   const p = st.board[sq];
+  const prevSelected = ui.selected;
   if (p && p.c === st.turn) {
     ui.selected = sq;
     renderSquares();
@@ -1539,6 +1610,9 @@ function onSquareClick(sq) {
     ui.selected = -1;
     renderSquares();
     renderHints();
+  }
+  if (st.flags.openIntent && ui.mode === 'online' && ui.selected !== prevSelected) {
+    netPublish({ t: 'intent', sq: ui.selected });
   }
 }
 
@@ -1602,6 +1676,7 @@ function commitMove(m, opts = {}) {
   });
   ui.lastMove = { from: match.from, to: match.to };
   ui.selected = -1;
+  ui.remoteSelected = -1;
   ui.hint = null;
   ui.movedId = st.board[match.to] ? st.board[match.to].id : null;
 
@@ -2141,6 +2216,12 @@ function handleNet(text) {
   if (msg.t === 'room' && ui.online.role === 'guest') {
     if (!ui.online.started) setLobby(`Комната ${ui.online.code}: ${msg.name || 'соперник'} ждёт. Подключаемся…`);
     netPublish({ t: 'join', name: profile.name, avatar: profile.avatar });
+    return;
+  }
+
+  if (msg.t === 'intent' && ui.st && ui.st.flags.openIntent) {
+    ui.remoteSelected = Number.isFinite(msg.sq) ? msg.sq : -1;
+    renderSquares();
     return;
   }
 

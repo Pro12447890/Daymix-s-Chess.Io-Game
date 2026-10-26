@@ -199,7 +199,7 @@
           <button class="btn btn-sm btn-ghost back-btn" id="modesBack" type="button">← Назад</button>
           <div class="screen-head-text">
             <h2>Режимы</h2>
-            <p id="modesLead">Классика и 25 режимов — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
+            <p id="modesLead">Классика и 27 режимов — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
           </div>
           <span class="chip" id="modesCurrent">Классика</span>
         </div>
@@ -237,14 +237,21 @@
         <!-- ИГРОВОЙ СТОЛ (ПО ЦЕНТРУ) -->
         <div class="stage" id="stage">
           <div class="player-capsule top" id="barTop">
-            <div class="pc-user">
-              <span class="pc-avatar" id="topAvatar"></span>
-              <div class="pc-meta">
-                <span class="pc-name" id="topName">Соперник</span>
-                <span class="pc-role" id="topRole">чёрные</span>
-                <span class="captured" id="topCaptured"></span>
+            <div class="pc-left">
+              <div class="pc-avatar-wrap">
+                <span class="pc-avatar" id="topAvatar"></span>
+                <span class="link-dot" id="topLink" title="связь"></span>
               </div>
-              <span class="link-dot" id="topLink" title="связь"></span>
+              <div class="pc-info">
+                <div class="pc-title-line">
+                  <span class="pc-name" id="topName">Соперник</span>
+                  <span class="pc-role" id="topRole">чёрные</span>
+                </div>
+                <div class="captured-bar">
+                  <div class="captured-pieces" id="topCaptured"></div>
+                  <span class="material-lead" id="topMaterial"></span>
+                </div>
+              </div>
             </div>
             <div class="clock" id="topClock">—</div>
           </div>
@@ -265,14 +272,21 @@
           </div>
 
           <div class="player-capsule bottom" id="barBottom">
-            <div class="pc-user">
-              <span class="pc-avatar" id="bottomAvatar"></span>
-              <div class="pc-meta">
-                <span class="pc-name" id="bottomName">Вы</span>
-                <span class="pc-role" id="bottomRole">белые</span>
-                <span class="captured" id="bottomCaptured"></span>
+            <div class="pc-left">
+              <div class="pc-avatar-wrap">
+                <span class="pc-avatar" id="bottomAvatar"></span>
+                <span class="link-dot" id="bottomLink" title="связь"></span>
               </div>
-              <span class="link-dot" id="bottomLink" title="связь"></span>
+              <div class="pc-info">
+                <div class="pc-title-line">
+                  <span class="pc-name" id="bottomName">Вы</span>
+                  <span class="pc-role" id="bottomRole">белые</span>
+                </div>
+                <div class="captured-bar">
+                  <div class="captured-pieces" id="bottomCaptured"></div>
+                  <span class="material-lead" id="bottomMaterial"></span>
+                </div>
+              </div>
             </div>
             <div class="clock" id="bottomClock">—</div>
           </div>

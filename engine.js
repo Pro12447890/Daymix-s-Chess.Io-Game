@@ -169,6 +169,16 @@ const MODES = [
     desc: 'Победа — провести короля на любое из четырёх центральных полей: d4, e4, d5, e5. Мат тоже побеждает.',
     W: 8, H: 8, flags: { classic: true, centerWin: true },
   },
+  {
+    id: 'touchMove', n: 26, name: 'Взялся — ходи', icon: '✋',
+    desc: 'Коснулся фигуры с ходами — обязан ходить только ей! Нельзя отменить выбор или передумать.',
+    W: 8, H: 8, flags: { classic: true, touchMove: true },
+  },
+  {
+    id: 'openIntent', n: 27, name: 'Открытые намерения', icon: '👁️',
+    desc: 'Соперник видит клетку, на которую вы нажали перед ходом. Блефуйте или читайте замысел противника!',
+    W: 8, H: 8, flags: { classic: true, openIntent: true },
+  },
 ];
 
 const MODE_BY_ID = Object.fromEntries(MODES.map((m) => [m.id, m]));
