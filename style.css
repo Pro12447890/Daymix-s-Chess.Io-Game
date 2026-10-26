@@ -2016,3 +2016,96 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
 
 
 .play-actions.one { grid-template-columns: 1fr; }
+
+
+/* ═══ пролетающие фигуры во время стадий ═══ */
+.phase-fliers {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+.flier {
+  position: absolute;
+  left: var(--x, 50vw);
+  top: var(--y, 50vh);
+  width: var(--s, 56px);
+  height: var(--s, 56px);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: flierFly var(--dur, 2.2s) cubic-bezier(.2, .55, .35, 1) var(--delay, 0s) both;
+}
+.flier .pc-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.flier .pc-svg .body {
+  fill: currentColor;
+  stroke: var(--edge);
+  stroke-width: var(--sw);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.flier .pc-svg .detail {
+  fill: var(--detail);
+  stroke: var(--detail);
+  stroke-width: calc(var(--sw) * .5);
+  stroke-linejoin: round;
+}
+.flier .pc-svg .line {
+  fill: none;
+  stroke: var(--detail);
+  stroke-width: calc(var(--sw) * .8);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.flier.w {
+  color: #ffffff;
+  --edge: #141414;
+  --detail: #3f3f3f;
+  --sw: 2.4;
+  filter: drop-shadow(0 0 16px #ffd76a99) drop-shadow(0 4px 10px #00000088);
+}
+.flier.b {
+  color: #2c2a26;
+  --edge: #0b0b0b;
+  --detail: #5d5952;
+  --sw: 2.4;
+  filter: drop-shadow(0 0 16px #81b64c77) drop-shadow(0 4px 10px #00000088);
+}
+@keyframes flierFly {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(.35); opacity: 0; }
+  12% { opacity: .95; }
+  72% { opacity: .9; }
+  100% { transform: translate3d(var(--dx, 60vw), var(--dy, 0vh), 0) rotate(var(--rot, 180deg)) scale(.7); opacity: 0; }
+}
+
+/* ═══ эпичное появление фигур на доске ═══ */
+.pieces.intro .piece .pc-svg {
+  animation: pieceDrop .8s cubic-bezier(.2, .9, .25, 1.25) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes pieceDrop {
+  0% { transform: translateY(-130%) scale(.2) rotate(-10deg); opacity: 0; filter: blur(4px); }
+  45% { transform: translateY(9%) scale(1.12) rotate(2deg); opacity: 1; filter: blur(0); }
+  70% { transform: translateY(-4%) scale(.97) rotate(0); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.board-wrap.intro::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  background: radial-gradient(circle at 50% 42%, rgba(255, 240, 190, .38), rgba(129, 182, 76, .16) 45%, transparent 68%);
+  animation: introFlash 1.05s ease-out forwards;
+}
+@keyframes introFlash {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flier { display: none; }
+  .pieces.intro .piece .pc-svg { animation: none; }
+  .board-wrap.intro::after { display: none; }
+}

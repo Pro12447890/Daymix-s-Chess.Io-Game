@@ -1355,6 +1355,7 @@ function newGame(opts = {}) {
     ui.running = false;
     ui.phase = 'opening';
     showPhase('opening');
+    playBoardIntro();
     clearTimeout(newGame.unlockTimer);
     newGame.unlockTimer = setTimeout(() => {
       if (!ui.st || ui.st.status !== 'play') { ui.gameLocked = false; return; }
@@ -1842,8 +1843,66 @@ const PHASES = {
   endgame: { title: 'Эндшпиль', sub: 'развязка близко' },
 };
 
+const FLIER_TYPES = ['q', 'r', 'b', 'n', 'p', 'k'];
+
+function spawnPhaseFliers() {
+  const box = $('#phaseFliers');
+  if (!box) return;
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) return;
+  box.innerHTML = '';
+  const count = window.innerWidth < 700 ? 10 : 18;
+  for (let i = 0; i < count; i++) {
+    const type = FLIER_TYPES[Math.floor(Math.random() * FLIER_TYPES.length)];
+    const el = document.createElement('span');
+    el.className = 'flier ' + (Math.random() < 0.5 ? 'w' : 'b');
+    const size = Math.round(34 + Math.random() * 86);
+    const fromLeft = Math.random() < 0.5;
+    const startX = fromLeft ? -8 - Math.random() * 12 : 100 + Math.random() * 12;
+    const startY = Math.random() * 108 - 4;
+    const dx = (fromLeft ? 1 : -1) * (55 + Math.random() * 70);
+    const dy = -25 + Math.random() * 50;
+    el.style.setProperty('--x', startX.toFixed(1) + 'vw');
+    el.style.setProperty('--y', startY.toFixed(1) + 'vh');
+    el.style.setProperty('--s', size + 'px');
+    el.style.setProperty('--dx', dx.toFixed(1) + 'vw');
+    el.style.setProperty('--dy', dy.toFixed(1) + 'vh');
+    el.style.setProperty('--rot', Math.round(-240 + Math.random() * 480) + 'deg');
+    el.style.setProperty('--dur', (1.7 + Math.random() * 1.1).toFixed(2) + 's');
+    el.style.setProperty('--delay', (Math.random() * 0.9).toFixed(2) + 's');
+    el.innerHTML = pieceSvg(type, 'flier-pc');
+    box.appendChild(el);
+  }
+  clearTimeout(spawnPhaseFliers.timer);
+  spawnPhaseFliers.timer = setTimeout(() => { box.innerHTML = ''; }, 3800);
+}
+
+function playBoardIntro() {
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) return;
+  const pieces = $('#pieces');
+  const wrap = $('#boardWrap');
+  if (!pieces || !wrap) return;
+  const kids = Array.from(pieces.children);
+  kids.forEach((el, i) => {
+    const wave = kids.length > 1 ? i / (kids.length - 1) : 0;
+    el.style.setProperty('--d', (wave * 0.8 + Math.random() * 0.06).toFixed(3) + 's');
+  });
+  pieces.classList.remove('intro');
+  wrap.classList.remove('intro');
+  void pieces.offsetWidth;
+  pieces.classList.add('intro');
+  wrap.classList.add('intro');
+  clearTimeout(playBoardIntro.timer);
+  playBoardIntro.timer = setTimeout(() => {
+    pieces.classList.remove('intro');
+    wrap.classList.remove('intro');
+  }, 1900);
+}
+
 function showPhase(phase) {
   const info = PHASES[phase] || PHASES.opening;
+  spawnPhaseFliers();
   const el = $('#phaseSplash');
   $('#phaseBadge').textContent = info.title;
   $('#phaseSub').textContent = info.sub;
