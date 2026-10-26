@@ -20,6 +20,7 @@ const DEFAULT_PROFILE = {
   pieces: '1',
   flip: true,
   autoQueen: true,
+  sound: true,
   side: 'w',
   modeId: 'classic',
   square: false,
@@ -56,6 +57,113 @@ function saveProfile(immediate) {
   if (immediate) write(); else saveTimer = setTimeout(write, 250);
 }
 
+
+/* ───────────────────────── 1б. ЗВУК И ВИБРАЦИЯ ───────────────────────── */
+
+const sound = {
+  ctx: null,
+  get on() { return profile.sound !== false; },
+  ensure() {
+    if (!this.on) return null;
+    if (!this.ctx) {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return null;
+      try { this.ctx = new Ctor(); } catch (error) { return null; }
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+    return this.ctx;
+  },
+  tone(freq, dur, type = 'sine', gain = 0.05, delay = 0) {
+    const ctx = this.ensure();
+    if (!ctx) return;
+    const t0 = ctx.currentTime + delay;
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    amp.gain.setValueAtTime(0.0001, t0);
+    amp.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(amp);
+    amp.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.03);
+  },
+  move() { if (this.on) this.tone(320, 0.06, 'triangle', 0.045); },
+  capture() { if (!this.on) return; this.tone(150, 0.1, 'square', 0.04); this.tone(95, 0.16, 'triangle', 0.05, 0.02); },
+  check() { if (!this.on) return; this.tone(680, 0.09, 'sine', 0.05); this.tone(900, 0.12, 'sine', 0.045, 0.09); },
+  win() { if (!this.on) return; [523, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.2, 'triangle', 0.055, i * 0.12)); },
+  lose() { if (!this.on) return; [392, 330, 262].forEach((f, i) => this.tone(f, 0.22, 'sine', 0.05, i * 0.14)); },
+  click() { if (this.on) this.tone(220, 0.03, 'sine', 0.028); },
+};
+
+function buzz(pattern) {
+  if (profile.sound === false) return;
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (error) { /* без вибрации */ }
+}
+
+function updateSoundIcon() {
+  const icon = $('#soundIcon');
+  if (!icon) return;
+  const on = profile.sound !== false;
+  icon.textContent = on ? '🔊' : '🔇';
+  const btn = $('#btnSound');
+  if (btn) btn.classList.toggle('off', !on);
+}
+
+/* ──────────────────── 1в. ПОДСКАЗКА, ОЦЕНКА, КОНФЕТТИ ────────────────── */
+
+function showHint() {
+  const st = ui.st;
+  if (!st || st.status !== 'play') return;
+  if (ui.viewPly !== ui.frames.length - 1) { toast('Вернитесь в конец партии'); return; }
+  if (ui.mode === 'online' && st.turn !== myColor()) { toast('Сейчас ход соперника'); return; }
+  sound.click();
+  const found = bestMove(st, 2);
+  if (!found || !found.move) return;
+  const m = found.move;
+  ui.hint = { from: m.from, to: m.to };
+  renderSquares();
+  const p = st.board[m.from];
+  toast(`Совет: ${p ? PIECE_NAMES[p.t] : 'фигура'} ${sqName(st, m.from)}→${sqName(st, m.to)}`);
+  clearTimeout(showHint.timer);
+  showHint.timer = setTimeout(() => { ui.hint = null; renderSquares(); }, 2600);
+}
+
+function updateEval() {
+  const st = ui.st;
+  const fill = $('#evalFill');
+  if (!st || !fill) return;
+  let score = 0;
+  try { score = evaluateWhite(st); } catch (error) { score = 0; }
+  const shown = ui.orientation === 'w' ? score : -score;
+  const pct = Math.max(5, Math.min(95, 50 + shown * 4));
+  fill.style.width = pct + '%';
+  const label = (shown > 0 ? '+' : '') + shown.toFixed(1);
+  $('#evalText').textContent = label;
+  const mini = $('#evalMini');
+  if (mini) {
+    mini.textContent = label;
+    mini.style.color = shown > 0 ? '#ffe3b8' : shown < 0 ? '#c9a0a0' : '#c9b39a';
+  }
+}
+
+function celebrate() {
+  const layer = document.createElement('div');
+  layer.className = 'confetti';
+  const colors = ['#f2c14e', '#e2705a', '#96c985', '#6fb3e0', '#f7f785', '#d9a566', '#f4f0e7'];
+  for (let i = 0; i < 40; i++) {
+    const bit = document.createElement('i');
+    bit.style.left = Math.random() * 100 + '%';
+    bit.style.background = colors[i % colors.length];
+    bit.style.animationDelay = (Math.random() * 0.5).toFixed(2) + 's';
+    bit.style.animationDuration = (1.6 + Math.random() * 1.3).toFixed(2) + 's';
+    bit.style.transform = `rotate(${Math.round(Math.random() * 360)}deg)`;
+    layer.appendChild(bit);
+  }
+  document.body.appendChild(layer);
+  setTimeout(() => layer.remove(), 3200);
+}
 /* ─────────────────────────── 2. КОНТРОЛИ ВРЕМЕНИ ──────────────────────── */
 
 const TIME_GROUPS = [
@@ -163,6 +271,7 @@ const ui = {
   timer: 0,
   lastMove: null,
   chat: [],
+  hint: null,
   tab: 'moves',
   scored: false,
   promo: null,
@@ -190,6 +299,9 @@ function renderProfile() {
   $('#optAutoQueen').checked = profile.autoQueen;
   $('#gFlip').checked = profile.flip;
   $('#gAutoQueen').checked = profile.autoQueen;
+  if ($('#optSound')) $('#optSound').checked = profile.sound !== false;
+  if ($('#gSound')) $('#gSound').checked = profile.sound !== false;
+  updateSoundIcon();
   $$('#sideSeg button').forEach((b) => b.classList.toggle('active', b.dataset.side === profile.side));
   $('#optSquare').checked = profile.square;
   const m = modeById(profile.modeId);
@@ -479,14 +591,27 @@ function disp(st, i) {
 function layoutBoard() {
   const st = ui.st;
   if (!st) return;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  // clientWidth не раздувается, когда мобильный браузер пытается вписать контент
+  const vw = document.documentElement.clientWidth || window.innerWidth;
+  const vh = document.documentElement.clientHeight || window.innerHeight;
   const pad = 20;
+  const leftPanel = document.querySelector('.game-side.left');
+  const rightPanel = document.querySelector('.game-side.right');
+  const topbar = document.querySelector('.topbar');
+  const portrait = vw < 1000 && vh >= vw;
+  const landscapePhone = vw < 1000 && vw > vh;
   let availW;
-  if (vw >= 1200) availW = vw - 2 * (312 + 18) - 48;
-  else if (vw >= 1000) availW = vw - 2 * (270 + 14) - 36;
-  else availW = vw - 24;
-  const availH = vh - (vw < 1000 ? 300 : 250);
+  if (vw >= 1200) availW = vw - 2 * ((leftPanel ? leftPanel.offsetWidth : 300) + 18) - 44;
+  else if (vw >= 1000) availW = vw - 2 * ((leftPanel ? leftPanel.offsetWidth : 260) + 16) - 40;
+  else if (landscapePhone) availW = Math.max(220, vw - 24);   // ширину всё равно ограничит высота
+  else availW = vw - 20;
+
+  const chrome = (topbar && getComputedStyle(topbar).display !== 'none' ? topbar.offsetHeight : 0)
+    + (($('#barTop') || {}).offsetHeight || 0)
+    + (($('#barBottom') || {}).offsetHeight || 0)
+    + (($('.game-actions') || {}).offsetHeight || 0)
+    + (($('.board-tools') || {}).offsetHeight || 0);
+  const availH = portrait ? 100000 : vh - chrome - 34;
   const sq = Math.max(16, Math.min(96,
     Math.floor((availW - pad * 2) / st.W),
     Math.floor((availH - pad * 2) / st.H)));
@@ -565,6 +690,8 @@ function renderSquares() {
     if (i === ui.selected) cls.push('sel');
     if (i === checkSq) cls.push('check');
     if (st.blocked.includes(i)) cls.push('blocked');
+    if (ui.hint && i === ui.hint.from) cls.push('hint-from');
+    if (ui.hint && i === ui.hint.to) cls.push('hint-to');
     el.className = cls.join(' ');
     el.style.width = sq + 'px';
     el.style.height = sq + 'px';
@@ -722,6 +849,7 @@ function newGame(opts = {}) {
   ui.moves = [];
   ui.viewPly = 0;
   ui.selected = -1;
+  ui.hint = null;
   ui.lastMove = null;
   ui.chat = [];
   ui.scored = false;
@@ -737,6 +865,7 @@ function newGame(opts = {}) {
   ui.mode = opts.mode || 'local';
   ui.role = opts.role || null;
 
+  showScreen('game');        // сначала показываем экран: иначе замеры панелей нулевые
   buildSquares();
   renderAll(false);
   renderMoves();
@@ -745,7 +874,7 @@ function newGame(opts = {}) {
   renderPlayers();
   startClocks();
   switchTab('moves');
-  showScreen('game');
+  requestAnimationFrame(() => { if (ui.st) renderBoard(false); });
 
   $('#result').classList.add('hidden');
   $('#gameStatus').textContent = 'Ход белых';
@@ -769,6 +898,7 @@ function renderMeta() {
   if (st.flags.crossCastle) bits.push('обмены короля: 3');
   if (st.flags.blocks) bits.push('случайные блоки');
   if (st.flags.race) bits.push('гонка к верхнему ряду');
+  if (st.flags.centerWin) bits.push('победа королём в центре');
   if (st.flags.jester) bits.push('Шуты: 5 ходов');
   if (st.flags.boy) bits.push('Пацанчики берут две');
   if (st.flags.kingFree) bits.push('короля можно съесть');
@@ -845,6 +975,7 @@ function renderAll(animate) {
   if (!ui.st) return;
   renderBoard(animate);
   updateClockEls();
+  updateEval();
   renderStatus();
   updateNav();
   renderCaptured();
@@ -871,6 +1002,7 @@ function renderStatus() {
   if (st.flags.checksToWin) bits.push(`шахи ${st.mv.w.checks}:${st.mv.b.checks}`);
   if (st.flags.crossCastle) bits.push(`обмены ${st.mv.w.cross}/${st.flags.crossCastle}`);
   if (st.flags.race) bits.push('цель: верхний ряд');
+  if (st.flags.centerWin) bits.push('цель: d4, e4, d5, e5');
   const open = openingName();
   if (open) bits.push(open);
   sub.textContent = bits.join(' · ');
@@ -888,7 +1020,7 @@ function resultReason(res) {
     mate: 'мат', time: 'время истекло', resign: 'сдался', stalemate: 'пат',
     fifty: 'правило 50 ходов', material: 'недостаточно материала',
     repetition: 'троекратное повторение', draw: 'ничья по согласию',
-    king: 'король съеден', race: 'король дошёл до верхнего ряда',
+    king: 'король съеден', race: 'король дошёл до верхнего ряда', center: 'король в центре',
     checks: 'три шаха', kingOnly: 'у соперника остался один король',
     abort: 'партия прервана',
   };
@@ -986,9 +1118,11 @@ function commitMove(m, opts = {}) {
   }
   ui.frames.push(snap(st));
   ui.viewPly = ui.frames.length - 1;
-  ui.moves.push({ san, from: match.from, to: match.to, color: mover, spent, clock: ui.clocks[mover] });
+  const captured = !!match.capture || (match.caps && match.caps.length) || match.ep;
+  ui.moves.push({ san, from: match.from, to: match.to, color: mover, spent, clock: ui.clocks[mover], captured });
   ui.lastMove = { from: match.from, to: match.to };
   ui.selected = -1;
+  ui.hint = null;
 
   if (st.flags.checksToWin && inCheck(st, st.turn)) st.mv[mover].checks += 1;
 
@@ -997,6 +1131,11 @@ function commitMove(m, opts = {}) {
     res = { winner: mover, reason: 'checks' };
     st.status = 'over';
     st.result = res;
+  }
+
+  if (!opts.silent && !opts.remote) {
+    if (captured) { sound.capture(); buzz([12, 24, 12]); } else { sound.move(); buzz(8); }
+    if (inCheck(st, st.turn)) sound.check();
   }
 
   if (st.flags.explode && st.exploded) {
@@ -1034,7 +1173,7 @@ const REASON_TEXT = {
   mate: 'мат', time: 'время истекло', resign: 'сдача', stalemate: 'пат',
   fifty: 'правило 50 ходов', material: 'недостаточно материала',
   repetition: 'троекратное повторение', draw: 'ничья по согласию',
-  king: 'король съеден', race: 'король на вершине',
+  king: 'король съеден', race: 'король на вершине', center: 'король в центре',
   checks: 'три шаха', kingOnly: 'остался один король',
   abort: 'партия прервана',
 };
@@ -1097,6 +1236,12 @@ function finishGame(res) {
 
   renderProfile();
   renderMiniStats();
+
+  if (res.reason !== 'abort') {
+    if (win) { sound.win(); buzz([20, 40, 20, 40, 40]); celebrate(); }
+    else if (lost) { sound.lose(); buzz([40, 60, 80]); }
+    else { sound.click(); }
+  }
 
   $('#resultTitle').textContent = res.reason === 'abort' ? 'Партия прервана'
     : !res.winner ? 'Ничья' : (res.winner === side ? 'Победа' : 'Поражение');
@@ -1657,6 +1802,16 @@ function leaveGame() {
 
 /* ───────────────────────────── 15. СОБЫТИЯ ────────────────────────────── */
 
+function setSound(on) {
+  profile.sound = !!on;
+  if ($('#optSound')) $('#optSound').checked = profile.sound;
+  if ($('#gSound')) $('#gSound').checked = profile.sound;
+  updateSoundIcon();
+  saveProfile();
+  if (profile.sound) sound.click();
+  toast(profile.sound ? 'Звук включён' : 'Звук выключен');
+}
+
 function bindEvents() {
   $('#brandHome').addEventListener('click', () => { if (ui.st) leaveGame(); else showScreen('home'); });
   $('#profChip').addEventListener('click', () => showScreen('stats'));
@@ -1727,6 +1882,16 @@ function bindEvents() {
 
   $('#btnJoin').addEventListener('click', () => joinRoom($('#joinCode').value.trim()));
   $('#joinCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(e.target.value.trim()); });
+
+  $('#btnHint').addEventListener('click', showHint);
+  $('#btnFlip2').addEventListener('click', () => {
+    ui.orientation = other(ui.orientation);
+    renderAll(false);
+    renderPlayers();
+  });
+  $('#btnSound').addEventListener('click', () => setSound(profile.sound === false));
+  $('#optSound').addEventListener('change', (e) => setSound(e.target.checked));
+  $('#gSound').addEventListener('change', (e) => setSound(e.target.checked));
 
   $('#btnFlip').addEventListener('click', () => {
     ui.orientation = other(ui.orientation);
@@ -1814,7 +1979,7 @@ function boot() {
   $('#joinCode').value = '';
   showScreen('home');
   window.ChessApp = {
-    engine: { createState, legalMoves, genPseudo, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, attacked, materialOf, visSet, maybeBlock, MODES, modeById },
+    engine: { createState, legalMoves, genPseudo, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, attacked, materialOf, visSet, maybeBlock, centerCells, evaluateWhite, bestMove, MODES, modeById },
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     setProfile: (patch) => { Object.assign(profile, patch); renderProfile(); renderThemeRows(); renderPieceRows(); renderPreview(); saveProfile(true); },

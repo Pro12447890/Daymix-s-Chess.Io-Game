@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Daymix's Chess — шахматы в браузере: 24 режима, пять тем доски, пять наборов фигур, часы, статистика и игра по коду из пяти цифр.">
+  <meta name="description" content="Daymix's Chess — шахматы в браузере: 25 режимов, пять тем доски, пять наборов фигур, часы, статистика и игра по коду из пяти цифр.">
   <meta name="theme-color" content="#1d100c">
   <title>Daymix's Chess</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233a241b'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%23f2e2c8'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
@@ -69,6 +69,7 @@
             <div class="field toggles">
               <label class="toggle"><input type="checkbox" id="optFlip" checked><span>Переворачивать доску после хода</span></label>
               <label class="toggle"><input type="checkbox" id="optAutoQueen" checked><span>Авто-ферзь при превращении</span></label>
+              <label class="toggle"><input type="checkbox" id="optSound" checked><span>Звуки и вибрация</span></label>
               <label class="toggle" id="optSquareWrap"><input type="checkbox" id="optSquare"><span>Квадратная доска (12×12 и 14×14)</span></label>
             </div>
 
@@ -132,7 +133,7 @@
           <button class="btn btn-sm btn-ghost back-btn" id="modesBack" type="button">← Назад</button>
           <div class="screen-head-text">
             <h2>Режимы</h2>
-            <p id="modesLead">Классика и 24 режима — от трёх шахов и пешечного поля до Пацанчиков на доске 14×10.</p>
+            <p id="modesLead">Классика и 25 режимов — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
           </div>
           <span class="chip" id="modesCurrent">Классика</span>
         </div>
@@ -177,6 +178,7 @@
             <div class="g-block toggles">
               <label class="toggle"><input type="checkbox" id="gFlip"><span>Переворот после хода</span></label>
               <label class="toggle"><input type="checkbox" id="gAutoQueen"><span>Авто-ферзь</span></label>
+              <label class="toggle"><input type="checkbox" id="gSound" checked><span>Звуки</span></label>
             </div>
             <div class="g-block">
               <span class="field-label">Партия</span>
@@ -225,6 +227,13 @@
             <span class="clock" id="bottomClock">—</span>
           </div>
 
+          <div class="board-tools">
+            <button class="tool-btn" id="btnHint" type="button" title="Подсказать ход"><span class="tb-ico">💡</span><span class="tb-text">Подсказка</span></button>
+            <button class="tool-btn" id="btnFlip2" type="button" title="Перевернуть доску"><span class="tb-ico">⇅</span><span class="tb-text">Переворот</span></button>
+            <button class="tool-btn" id="btnSound" type="button" title="Звук"><span class="tb-ico" id="soundIcon">🔊</span><span class="tb-text">Звук</span></button>
+            <span class="eval-mini" id="evalMini" title="Оценка позиции">0.0</span>
+          </div>
+
           <div class="game-actions">
             <button class="btn" id="btnAbort" type="button">Прервать</button>
             <button class="btn" id="btnDraw" type="button">Ничья</button>
@@ -241,6 +250,11 @@
               <div class="game-sub" id="gameSub">Начальное положение</div>
             </div>
             <button class="icon-btn" id="btnFlip" type="button" title="Перевернуть доску">⇅</button>
+          </div>
+
+          <div class="eval-bar" id="evalBar" title="Оценка позиции: белые сверху">
+            <span class="eval-fill" id="evalFill"></span>
+            <em class="eval-num" id="evalText">0.0</em>
           </div>
 
           <div class="tabs" id="tabs">

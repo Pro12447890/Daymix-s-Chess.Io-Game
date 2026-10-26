@@ -164,6 +164,11 @@ const MODES = [
     desc: 'Полный набор фигур, но ни одной пешки: линии открыты с первого хода.',
     W: 8, H: 8, flags: { classic: true, noPawns: true },
   },
+  {
+    id: 'center', n: 25, name: 'Центр', icon: '⊕',
+    desc: 'Победа — провести короля на любое из четырёх центральных полей: d4, e4, d5, e5. Мат тоже побеждает.',
+    W: 8, H: 8, flags: { classic: true, centerWin: true },
+  },
 ];
 
 const MODE_BY_ID = Object.fromEntries(MODES.map((m) => [m.id, m]));
@@ -905,6 +910,17 @@ function updateStatus(st) {
       }
     }
   }
+  if (st.flags.centerWin) {
+    const cells = centerCells(st);
+    for (const c of ['w', 'b']) {
+      const k = findKing(st, c);
+      if (k >= 0 && cells.includes(k)) {
+        st.status = 'over';
+        st.result = { winner: c, reason: 'center' };
+        return st.result;
+      }
+    }
+  }
 
   const color = st.turn;
   const moves = legalMoves(st, color);
@@ -1039,6 +1055,75 @@ function perft(st, depth) {
   return nodes;
 }
 
+
+/* ══════════════════════════════ ЦЕНТР ══════════════════════════════════ */
+
+/** Четыре центральные клетки поля (для режима «Центр»). */
+function centerCells(st) {
+  const cx = Math.floor(st.W / 2);
+  const cy = Math.floor(st.H / 2);
+  const out = [];
+  for (const x of [cx - 1, cx]) {
+    for (const y of [cy - 1, cy]) {
+      if (inside(st, x, y)) out.push(sqAt(st, x, y));
+    }
+  }
+  return out;
+}
+
+/* ═══════════════════════════ ПОДСКАЗКА ХОДА ════════════════════════════ */
+
+/** Оценка позиции с точки зрения белых: материал плюс тяга к центру. */
+function evaluateWhite(st) {
+  let score = 0;
+  for (let i = 0; i < st.board.length; i++) {
+    const p = st.board[i];
+    if (!p) continue;
+    let v = PIECE_VALUE[p.t] || 0;
+    const x = fileOf(st, i);
+    const y = rankOf(st, i);
+    const dx = Math.abs(x - (st.W - 1) / 2);
+    const dy = Math.abs(y - (st.H - 1) / 2);
+    v += Math.max(0, 3 - (dx + dy)) * 0.06;
+    score += p.c === 'w' ? v : -v;
+  }
+  return score;
+}
+
+function negamax(st, depth, alpha, beta) {
+  const color = st.turn;
+  if (depth === 0) return (color === 'w' ? 1 : -1) * evaluateWhite(st);
+  const moves = legalMoves(st, color);
+  if (!moves.length) return inCheck(st, color) ? -90000 + (4 - depth) : 0;
+  moves.sort((a, b) => (b.capture ? 1 : 0) - (a.capture ? 1 : 0));
+  let best = -Infinity;
+  for (const m of moves) {
+    const undo = applyMove(st, m);
+    const score = -negamax(st, depth - 1, -beta, -alpha);
+    undoMove(st, undo);
+    if (score > best) best = score;
+    if (best > alpha) alpha = best;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+/** Лучший ход по оценке на пару полуходов вперёд. */
+function bestMove(st, depth = 2) {
+  const color = st.turn;
+  const moves = legalMoves(st, color);
+  if (!moves.length) return null;
+  moves.sort((a, b) => (b.capture ? 1 : 0) - (a.capture ? 1 : 0));
+  let best = null;
+  let bestScore = -Infinity;
+  for (const m of moves) {
+    const undo = applyMove(st, m);
+    const score = -negamax(st, depth - 1, -Infinity, Infinity);
+    undoMove(st, undo);
+    if (score > bestScore) { bestScore = score; best = m; }
+  }
+  return { move: best, score: bestScore };
+}
 function cloneState(st) {
   const copy = {
     ...st,
