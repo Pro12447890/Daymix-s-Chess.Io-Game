@@ -281,7 +281,7 @@ input::placeholder { color: #8f735c; }
 }
 .swatch .sw-light { border-radius: 6px 6px 0 0; }
 .swatch .sw-dark { border-radius: 0 0 6px 6px; }
-.swatch .sw-name { font-size: 9.5px; color: var(--muted); letter-spacing: .2px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.swatch .sw-name { font-size: 9px; color: var(--muted); letter-spacing: 0; white-space: nowrap; text-align: center; }
 .swatch.active { border-color: var(--accent); box-shadow: 0 0 0 2px #d9a56633; }
 .swatch.active .sw-name { color: var(--text); }
 .theme-row.compact .swatch { width: 54px; }
