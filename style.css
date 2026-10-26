@@ -1976,7 +1976,15 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
   --sw: 3.4;
 }
 .captured-pieces .cap-item.b svg, .captured-pieces .cap-item.b .pc-svg {
-  color: #2f2c29;
-  --edge: #0d0d0d;
+  color: #6b6660;
+  --edge: #141210;
+  --detail: #8a847c;
   --sw: 3.4;
 }
+
+
+/* чуть плотнее карточки режимов, чтобы плавающая «Назад» не перекрывала текст */
+.modes-grid { gap: 7px; }
+.mode-tile { padding: 5px 8px; }
+.mt-desc { font-size: 9.3px; }
+.modes-float-back { bottom: 12px; right: 16px; height: 34px; padding: 6px 14px; }
