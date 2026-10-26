@@ -1815,6 +1815,7 @@ function commitMove(m, opts = {}) {
   }
   if (!opts.silent) {
     renderAll(flippedNow ? false : !opts.noAnim);
+    if (flippedNow) renderPlayers();
     if (capInfo.length) captureFx(capInfo);
     renderMoves();
   }
