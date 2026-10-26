@@ -2290,3 +2290,5 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+.build-stamp { color: var(--accent-green); opacity: .85; }
