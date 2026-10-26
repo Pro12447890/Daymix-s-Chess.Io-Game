@@ -638,6 +638,8 @@ const ui = {
   mode: null,          // 'local' | 'online'
   time: null,          // {label, ms}
   state: null,
+  viewState: null,     // позиция при просмотре истории (null — идёт партия)
+  viewPly: 0,
   status: null,
   legal: [],
   orientation: 'w',
@@ -646,6 +648,7 @@ const ui = {
   clocks: { w: 0, b: 0 },
   running: false,
   lastTick: 0,
+  moveStartedAt: 0,
   result: null,
   myColor: 'w',        // для сети: за кого играем
   opponentColor: 'b',
@@ -653,7 +656,12 @@ const ui = {
   pieceEls: new Map(),
   squareSize: 64,
   requestDrawSent: false,
+  chat: [],            // сообщения чата партии
+  tab: 'moves',
 };
+
+/** Позиция, которую сейчас видно: живая партия или просмотр истории. */
+const boardState = () => ui.viewState || ui.state;
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -674,7 +682,9 @@ const el = {
   pieces: $('pieces'),
   hints: $('hints'),
   coordFiles: $('coordFiles'),
+  coordFilesTop: $('coordFilesTop'),
   coordRanks: $('coordRanks'),
+  coordRanksRight: $('coordRanksRight'),
   promo: $('promo'),
   promoRow: $('promoRow'),
   topName: $('topName'),
@@ -687,10 +697,26 @@ const el = {
   bottomClock: $('bottomClock'),
   barTop: $('barTop'),
   barBottom: $('barBottom'),
+  topLink: $('topLink'),
+  bottomLink: $('bottomLink'),
   gameStatus: $('gameStatus'),
+  gameSub: $('gameSub'),
   gameInfo: $('gameInfo'),
   moves: $('moves'),
   flipToggle: $('flipToggle'),
+  tabs: $('tabs'),
+  tabMoves: $('tabMoves'),
+  tabChat: $('tabChat'),
+  tabInfo: $('tabInfo'),
+  chat: $('chat'),
+  chatForm: $('chatForm'),
+  chatInput: $('chatInput'),
+  pgnBox: $('pgnBox'),
+  infoLine: $('infoLine'),
+  navStart: $('navStart'),
+  navPrev: $('navPrev'),
+  navNext: $('navNext'),
+  navEnd: $('navEnd'),
   result: $('result'),
   resultTitle: $('resultTitle'),
   resultSub: $('resultSub'),
@@ -743,7 +769,7 @@ function layoutBoard() {
   if (!wrap) return;
   const width = wrap.clientWidth;
   if (!width) return;
-  const size = Math.max(24, (width - 32) / 8);
+  const size = Math.max(24, (width - 36) / 8);
   if (Math.abs(size - ui.squareSize) < 0.1) return;
   ui.squareSize = size;
   document.documentElement.style.setProperty('--sq', size + 'px');
@@ -817,6 +843,8 @@ function chooseTime(item) {
 function startGame({ mode, fen, clocks, myColor = 'w', online = null, keepOnline = false }) {
   ui.mode = mode;
   ui.state = createState(fen || START_FEN);
+  ui.viewState = null;
+  ui.viewPly = 0;
   ui.status = gameStatus(ui.state);
   ui.legal = ui.status.legal;
   ui.selected = -1;
@@ -830,10 +858,16 @@ function startGame({ mode, fen, clocks, myColor = 'w', online = null, keepOnline
   };
   ui.running = !ui.status.over;
   ui.lastTick = performance.now();
+  ui.moveStartedAt = performance.now();
   ui.pieceEls.clear();
   el.pieces.innerHTML = '';
   if (online) ui.online = online;
   else if (!keepOnline) ui.online = null;
+
+  // Новая партия: чат и вкладка ходов начинаются с чистого листа.
+  ui.chat = [];
+  renderChat();
+  switchTab('moves');
 
   el.result.classList.remove('show');
   el.promo.classList.remove('show');
@@ -845,6 +879,7 @@ function startGame({ mode, fen, clocks, myColor = 'w', online = null, keepOnline
   showScreen('game');
   updateNames();
   updateInfo();
+  updateNav();
   tickClock(true);
   if (ui.clockTimer) clearInterval(ui.clockTimer);
   ui.clockTimer = setInterval(tickClock, 100);
@@ -861,13 +896,26 @@ function updateNames() {
     el.bottomName.textContent = bottomColor === 'w' ? 'Белые' : 'Чёрные';
     el.topName.textContent = topColor === 'w' ? 'Белые' : 'Чёрные';
   }
-  el.bottomRole.textContent = ui.mode === 'local' ? '' : labelForRole(bottomColor);
+  el.bottomRole.textContent = ui.mode === 'local' ? (ui.flip ? 'ход за ходом' : '') : labelForRole(bottomColor);
   el.topRole.textContent = ui.mode === 'local' ? '' : labelForRole(topColor);
   el.topMode.textContent = ui.mode === 'online' && ui.online
     ? 'Партия по сети · код ' + ui.online.code
     : 'Игра вдвоём за одним экраном';
   el.barTop.classList.toggle('active', ui.state.turn === topColor && !ui.status.over);
   el.barBottom.classList.toggle('active', ui.state.turn === bottomColor && !ui.status.over);
+  updateLinkDots();
+}
+
+/** Индикаторы связи в сетевой партии. */
+function updateLinkDots() {
+  const online = ui.mode === 'online' && ui.online;
+  const state = online ? (ui.online.paused ? 'off' : (ui.online.relay && ui.online.relay.ws ? 'on' : '')) : '';
+  for (const dot of [el.topLink, el.bottomLink]) {
+    if (!dot) continue;
+    dot.classList.toggle('on', state === 'on');
+    dot.classList.toggle('off', state === 'off');
+    dot.style.visibility = online ? 'visible' : 'hidden';
+  }
 }
 
 function updateInfo() {
@@ -896,7 +944,7 @@ function buildSquares() {
   renderCoords();
 }
 
-/** Буквы файлов и цифры рангов по краям доски. */
+/** Буквы файлов и цифры рангов по всем четырём краям доски. */
 function renderCoords() {
   const files = [];
   const ranks = [];
@@ -906,8 +954,12 @@ function renderCoords() {
     files.push(FILES[file]);
     ranks.push(String(rank + 1));
   }
-  el.coordFiles.innerHTML = files.map((text) => `<span>${text}</span>`).join('');
-  el.coordRanks.innerHTML = ranks.map((text) => `<span>${text}</span>`).join('');
+  const filesHtml = files.map((text) => `<span>${text}</span>`).join('');
+  const ranksHtml = ranks.map((text) => `<span>${text}</span>`).join('');
+  el.coordFiles.innerHTML = filesHtml;
+  el.coordFilesTop.innerHTML = filesHtml;
+  el.coordRanks.innerHTML = ranksHtml;
+  el.coordRanksRight.innerHTML = ranksHtml;
 }
 
 function squareToXY(square) {
@@ -917,10 +969,11 @@ function squareToXY(square) {
 }
 
 function renderPieces(animate = true) {
-  if (!ui.state) return;
+  const state = boardState();
+  if (!state) return;
   const seen = new Set();
   for (let square = 0; square < 64; square += 1) {
-    const piece = ui.state.board[square];
+    const piece = state.board[square];
     if (!piece) continue;
     seen.add(piece.id);
     let node = ui.pieceEls.get(piece.id);
@@ -962,20 +1015,21 @@ function renderHints() {
   for (const square of el.squares.children) {
     square.classList.remove('selected', 'last', 'check');
   }
-  if (!ui.state) return;
+  const state = boardState();
+  if (!state) return;
 
-  const lastMove = ui.state.history[ui.state.history.length - 1];
+  const lastMove = state.history[state.history.length - 1];
   if (lastMove) {
     const { move } = lastMove;
     markSquare(move.from, 'last');
     markSquare(move.to, 'last');
   }
 
-  const kingSquare = findKing(ui.state, ui.state.turn);
-  if (ui.status && ui.status.check && kingSquare >= 0) markSquare(kingSquare, 'check');
+  const kingSquare = findKing(state, state.turn);
+  if (ui.status && ui.status.check && kingSquare >= 0 && !ui.viewState) markSquare(kingSquare, 'check');
   if (ui.selected >= 0) markSquare(ui.selected, 'selected');
 
-  if (ui.selected < 0) return;
+  if (ui.selected < 0 || ui.viewState) return;
   for (const move of ui.legal) {
     if (move.from !== ui.selected) continue;
     const { x, y } = squareToXY(move.to);
@@ -1003,23 +1057,165 @@ function findKing(state, color) {
   return -1;
 }
 
+/* Небольшой справочник дебютов: показываем название по первым ходам. */
+const OPENINGS = [
+  [['e4'], 'Дебют королевской пешки'],
+  [['e4', 'e5'], 'Открытая игра'],
+  [['e4', 'e5', 'Nf3'], 'Дебют коня'],
+  [['e4', 'e5', 'Nf3', 'Nc6'], 'Открытая игра'],
+  [['e4', 'e5', 'Nf3', 'Nc6', 'Bc4'], 'Итальянская партия'],
+  [['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'], 'Испанская партия'],
+  [['e4', 'e5', 'Nf3', 'Nf6'], 'Русская партия'],
+  [['e4', 'e5', 'Nf3', 'd6'], 'Защита Филидора'],
+  [['e4', 'e5', 'Nf3', 'Nc6', 'd4'], 'Шотландская партия'],
+  [['e4', 'e5', 'f4'], 'Королевский гамбит'],
+  [['e4', 'e5', 'Bc4'], 'Дебют слона'],
+  [['e4', 'c5'], 'Сицилианская защита'],
+  [['e4', 'c5', 'Nf3', 'd6'], 'Сицилианская защита'],
+  [['e4', 'c5', 'Nf3', 'Nc6'], 'Сицилианская защита'],
+  [['e4', 'e6'], 'Французская защита'],
+  [['e4', 'c6'], 'Защита Каро-Канн'],
+  [['e4', 'd5'], 'Скандинавская защита'],
+  [['e4', 'd6'], 'Защита Пирца'],
+  [['e4', 'g6'], 'Современная защита'],
+  [['e4', 'Nf6'], 'Защита Алехина'],
+  [['d4'], 'Дебют ферзевой пешки'],
+  [['d4', 'd5'], 'Закрытая игра'],
+  [['d4', 'd5', 'c4'], 'Ферзевый гамбит'],
+  [['d4', 'd5', 'c4', 'e6'], 'Отказанный ферзевый гамбит'],
+  [['d4', 'd5', 'c4', 'dxc4'], 'Принятый ферзевый гамбит'],
+  [['d4', 'd5', 'c4', 'c6'], 'Славянская защита'],
+  [['d4', 'Nf6'], 'Индийская защита'],
+  [['d4', 'Nf6', 'c4', 'e6'], 'Новоиндийская защита'],
+  [['d4', 'Nf6', 'c4', 'g6'], 'Староиндийская защита'],
+  [['d4', 'Nf6', 'c4', 'e5'], 'Защита Бенони'],
+  [['c4'], 'Английское начало'],
+  [['Nf3'], 'Дебют Рети'],
+  [['g3'], 'Дебют Бенко'],
+  [['b3'], 'Дебют Ларсена'],
+  [['f4'], 'Дебют Берда'],
+  [['e3'], 'Дебют Ван Гейта'],
+  [['d3'], 'Дебют ферзевой пешки'],
+  [['a3'], 'Дебют Андерсена'],
+  [['Nh3'], 'Дебют Амара'],
+];
+
+/** Название дебюта по списку ходов SAN (самое длинное совпадение). */
+function openingName(sanList) {
+  let best = '';
+  let bestLength = 0;
+  for (const [line, name] of OPENINGS) {
+    if (line.length > sanList.length) continue;
+    let match = true;
+    for (let i = 0; i < line.length; i += 1) {
+      if (sanList[i] !== line[i]) { match = false; break; }
+    }
+    if (match && line.length > bestLength) {
+      best = name;
+      bestLength = line.length;
+    }
+  }
+  return best || 'Начальное положение';
+}
+
 function renderMoves() {
   if (!ui.state || !ui.state.sanList.length) {
     el.moves.innerHTML = '<div class="moves-empty">Пока пусто</div>';
     return;
   }
+  const list = ui.state.sanList;
+  const history = ui.state.history;
+  const currentPly = ui.viewState ? ui.viewPly : list.length;
   const rows = [];
-  for (let i = 0; i < ui.state.sanList.length; i += 2) {
-    const white = ui.state.sanList[i];
-    const black = ui.state.sanList[i + 1] || '';
-    const lastWhite = i === ui.state.sanList.length - 1;
-    const lastBlack = i + 1 === ui.state.sanList.length - 1;
-    rows.push(`<tr><td class="num">${i / 2 + 1}.</td>`
-      + `<td class="san${lastWhite ? ' last' : ''}">${white}</td>`
-      + `<td class="san${lastBlack ? ' last' : ''}">${black}</td></tr>`);
+  for (let i = 0; i < list.length; i += 2) {
+    const whiteTime = history[i] && history[i].time ? formatMoveTime(history[i].time) : '';
+    const blackTime = history[i + 1] && history[i + 1].time ? formatMoveTime(history[i + 1].time) : '';
+    const lastWhite = i === list.length - 1;
+    const lastBlack = i + 1 === list.length - 1;
+    const whiteCurrent = currentPly === i + 1;
+    const blackCurrent = currentPly === i + 2;
+    rows.push(
+      `<tr class="${whiteCurrent || blackCurrent ? 'current' : ''}">`
+      + `<td class="num">${i / 2 + 1}.</td>`
+      + `<td class="san${lastWhite ? ' last' : ''}">${list[i]}</td>`
+      + `<td class="time">${whiteTime}</td>`
+      + `<td class="san${lastBlack ? ' last' : ''}">${list[i + 1] || ''}</td>`
+      + `<td class="time">${blackTime}</td></tr>`,
+    );
   }
   el.moves.innerHTML = `<table>${rows.join('')}</table>`;
-  el.moves.scrollTop = el.moves.scrollHeight;
+  if (!ui.viewState) el.moves.scrollTop = el.moves.scrollHeight;
+  updateNav();
+}
+
+function formatMoveTime(seconds) {
+  if (seconds >= 10) return Math.round(seconds) + 'с';
+  return seconds.toFixed(1) + 'с';
+}
+
+/* ── просмотр истории партии ─────────────────────────────────────────── */
+
+function gotoPly(ply) {
+  if (!ui.state) return;
+  const total = ui.state.sanList.length;
+  const target = Math.max(0, Math.min(total, ply));
+  if (target >= total) {
+    ui.viewState = null;
+    ui.viewPly = total;
+  } else {
+    const fen = target === 0 ? START_FEN : ui.state.history[target - 1].fenAfter;
+    ui.viewState = createState(fen);
+    ui.viewPly = target;
+  }
+  ui.selected = -1;
+  renderAll();
+}
+
+function updateNav() {
+  if (!ui.state) return;
+  const total = ui.state.sanList.length;
+  const ply = ui.viewState ? ui.viewPly : total;
+  el.navStart.disabled = ply === 0;
+  el.navPrev.disabled = ply === 0;
+  el.navNext.disabled = ply >= total;
+  el.navEnd.disabled = ply >= total;
+  const pgn = buildPgn();
+  if (el.pgnBox) el.pgnBox.value = pgn;
+  if (el.infoLine) {
+    const moves = Math.ceil(total / 2);
+    el.infoLine.textContent = `${moves} ход(ов) · ${openingName(ui.state.sanList)}`;
+  }
+}
+
+function buildPgn() {
+  if (!ui.state) return '';
+  const status = ui.status || {};
+  let result = '*';
+  if (status.over) {
+    if (!status.winner) result = '1/2-1/2';
+    else result = status.winner === 'w' ? '1-0' : '0-1';
+  }
+  const names = ui.mode === 'online'
+    ? { white: ui.myColor === 'w' ? 'Вы' : 'Соперник', black: ui.myColor === 'b' ? 'Вы' : 'Соперник' }
+    : { white: 'Белые', black: 'Чёрные' };
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+  const seconds = ui.time ? Math.round(ui.time.ms / 1000) : 0;
+  const head = [
+    `[Event "Daymix's Chess"]`,
+    `[Site "Браузер"]`,
+    `[Date "${date}"]`,
+    `[White "${names.white}"]`,
+    `[Black "${names.black}"]`,
+    `[Result "${result}"]`,
+    `[TimeControl "${seconds}+0"]`,
+    '',
+  ].join('\n');
+  const body = [];
+  const list = ui.state.sanList;
+  for (let i = 0; i < list.length; i += 2) {
+    body.push(`${i / 2 + 1}. ${list[i]} ${list[i + 1] || ''}`.trim());
+  }
+  return head + body.join(' ') + (body.length ? ' ' : '') + result + '\n';
 }
 
 function renderAll(animatePieces = false) {
@@ -1034,9 +1230,10 @@ function renderAll(animatePieces = false) {
 }
 
 function updateCaptured() {
-  if (!ui.state) return;
+  const state = boardState();
+  if (!state) return;
   const counts = { w: {}, b: {} };
-  for (const piece of ui.state.board) {
+  for (const piece of state.board) {
     if (piece) counts[piece.c][piece.t] = (counts[piece.c][piece.t] || 0) + 1;
   }
   const initial = { p: 8, n: 2, b: 2, r: 2, q: 1, k: 1 };
@@ -1055,10 +1252,18 @@ function updateCaptured() {
 
 function updateStatus() {
   if (!ui.state) return;
+  if (ui.viewState) {
+    const total = ui.state.sanList.length;
+    el.gameStatus.className = 'game-status';
+    el.gameStatus.textContent = `Просмотр: ход ${ui.viewPly} из ${total}`;
+    updateSubtitle();
+    return;
+  }
   const status = ui.status;
   if (status.over) {
     el.gameStatus.className = 'game-status over';
     el.gameStatus.textContent = resultText(status);
+    updateSubtitle();
     return;
   }
   el.gameStatus.className = 'game-status' + (status.check ? ' check' : '');
@@ -1067,6 +1272,22 @@ function updateStatus() {
   el.gameStatus.textContent = status.check
     ? `${side}: шах${mine ? ' — ваш король' : ''}`
     : `${side} ходят${mine ? ' — ваш ход' : ''}`;
+  updateSubtitle();
+}
+
+/** Строка под статусом: дебют и подсказка о просмотре. */
+function updateSubtitle() {
+  if (!el.gameSub) return;
+  if (ui.viewState) {
+    el.gameSub.textContent = 'История партии · нажмите ⏭, чтобы вернуться к игре';
+    return;
+  }
+  const total = ui.state.sanList.length;
+  if (!total) {
+    el.gameSub.textContent = 'Начальное положение';
+    return;
+  }
+  el.gameSub.textContent = openingName(ui.state.sanList);
 }
 
 function resultText(status) {
@@ -1081,6 +1302,7 @@ function resultText(status) {
   if (status.reason === 'resign') return `${status.winner === 'w' ? 'Белые' : 'Чёрные'} победили — соперник сдался`;
   if (status.reason === 'abandon') return 'Соперник отключился';
   if (status.reason === 'agreement') return 'Ничья по договорённости';
+  if (status.reason === 'aborted') return 'Партия прервана до второго хода';
   return 'Партия окончена';
 }
 
@@ -1122,6 +1344,7 @@ function updateClocks() {
 
 function canMoveNow() {
   if (!ui.state || ui.status.over) return false;
+  if (ui.viewState) return false;
   if (ui.mode !== 'online') return true;
   return ui.state.turn === ui.myColor && ui.online && ui.online.started && !isPaused();
 }
@@ -1179,9 +1402,13 @@ function commitMove(move) {
   const capturedPiece = move.ep
     ? ui.state.board[move.to + (move.color === 'w' ? -8 : 8)]
     : ui.state.board[move.to];
+  const spent = Math.max(0, (performance.now() - ui.moveStartedAt) / 1000);
   applyMove(ui.state, move);
   ui.state.sanList.push(san);
-  ui.state.history.push({ move, san, captured: capturedPiece });
+  ui.state.history.push({ move, san, captured: capturedPiece, time: spent, fenAfter: toFen(ui.state) });
+  ui.moveStartedAt = performance.now();
+  ui.viewState = null;
+  ui.viewPly = ui.state.sanList.length;
 
   ui.selected = -1;
   ui.status = gameStatus(ui.state);
@@ -1202,7 +1429,8 @@ function commitMove(move) {
     ui.orientation = ui.state.turn;
   }
 
-  renderAll(ui.mode === 'local' && ui.flip);
+  // Переворот без анимации: доска просто встаёт на новую сторону.
+  renderAll(false);
   if (ui.status.over) finishGame(ui.status);
 }
 
@@ -1224,10 +1452,12 @@ function finishGame(status) {
   else if (status.reason === 'fifty') title = 'Ничья';
   else if (status.reason === 'material') title = 'Ничья';
   else if (status.reason === 'abandon') title = 'Соперник отключился';
+  else if (status.reason === 'aborted') title = 'Партия прервана';
 
   el.resultTitle.textContent = title;
   el.resultSub.textContent = resultText(status);
   el.result.classList.add('show');
+  updateNav();
 }
 
 function saveHistory(status) {
@@ -1417,6 +1647,16 @@ function handleNetMessage(raw, role) {
     return;
   }
 
+  if (message.t === 'abort') {
+    finishGame({ over: true, winner: null, reason: 'aborted' });
+    return;
+  }
+
+  if (message.t === 'chat') {
+    addChat('Соперник', message.text);
+    return;
+  }
+
   if (message.t === 'draw-offer') {
     if (ui.status.over) return;
     if (window.confirm('Соперник предлагает ничью. Согласны?')) {
@@ -1451,12 +1691,13 @@ function handleNetMessage(raw, role) {
   }
 }
 
-function currentFen() {
+/** FEN любой позиции. */
+function toFen(state) {
   let placement = '';
   for (let rank = 7; rank >= 0; rank -= 1) {
     let empty = 0;
     for (let file = 0; file < 8; file += 1) {
-      const piece = ui.state.board[idx(file, rank)];
+      const piece = state.board[idx(file, rank)];
       if (!piece) { empty += 1; continue; }
       if (empty) { placement += empty; empty = 0; }
       placement += piece.c === 'w' ? piece.t.toUpperCase() : piece.t;
@@ -1464,9 +1705,13 @@ function currentFen() {
     if (empty) placement += empty;
     if (rank) placement += '/';
   }
-  const rights = (ui.state.castling.wK ? 'K' : '') + (ui.state.castling.wQ ? 'Q' : '')
-    + (ui.state.castling.bK ? 'k' : '') + (ui.state.castling.bQ ? 'q' : '') || '-';
-  return `${placement} ${ui.state.turn} ${rights} ${ui.state.ep >= 0 ? sqName(ui.state.ep) : '-'} ${ui.state.halfmove} ${ui.state.fullmove}`;
+  const rights = (state.castling.wK ? 'K' : '') + (state.castling.wQ ? 'Q' : '')
+    + (state.castling.bK ? 'k' : '') + (state.castling.bQ ? 'q' : '') || '-';
+  return `${placement} ${state.turn} ${rights} ${state.ep >= 0 ? sqName(state.ep) : '-'} ${state.halfmove} ${state.fullmove}`;
+}
+
+function currentFen() {
+  return toFen(ui.state);
 }
 
 function applyRemoteMove(message) {
@@ -1480,9 +1725,13 @@ function applyRemoteMove(message) {
   }
   const move = candidates[0];
   const san = moveToSan(ui.state, move, legal);
+  const spent = Math.max(0, (performance.now() - ui.moveStartedAt) / 1000);
   applyMove(ui.state, move);
   ui.state.sanList.push(san);
-  ui.state.history.push({ move, san, captured: null });
+  ui.state.history.push({ move, san, captured: null, time: spent, fenAfter: toFen(ui.state) });
+  ui.moveStartedAt = performance.now();
+  ui.viewState = null;
+  ui.viewPly = ui.state.sanList.length;
   ui.legal = generateLegal(ui.state);
   ui.status = gameStatus(ui.state);
   ui.selected = -1;
@@ -1498,6 +1747,7 @@ function applyRemoteMove(message) {
 function onSocketClosed(role) {
   if (!ui.online || ui.online.role !== role) return;
   ui.online.paused = true;
+  updateLinkDots();
   toast('Связь с соперником потеряна — часы остановлены');
   if (!ui.status.over) el.gameStatus.textContent = 'Ожидание связи…';
   scheduleReconnect();
@@ -1661,6 +1911,115 @@ el.flipToggle.addEventListener('change', () => {
     ui.orientation = ui.flip ? (ui.state ? ui.state.turn : 'w') : 'w';
     renderAll();
   }
+});
+
+/* ── вкладки, чат, навигация, PGN ────────────────────────────────────── */
+
+function switchTab(name) {
+  ui.tab = name;
+  for (const button of el.tabs.querySelectorAll('.tab')) {
+    button.classList.toggle('active', button.dataset.tab === name);
+  }
+  el.tabMoves.classList.toggle('hidden', name !== 'moves');
+  el.tabChat.classList.toggle('hidden', name !== 'chat');
+  el.tabInfo.classList.toggle('hidden', name !== 'info');
+  if (name === 'info') updateNav();
+}
+
+function renderChat() {
+  if (!el.chat) return;
+  if (!ui.chat.length) {
+    el.chat.innerHTML = '<div class="chat-empty">' +
+      (ui.mode === 'online' ? 'Сообщений пока нет' : 'Чат доступен в партии по сети') + '</div>';
+    return;
+  }
+  el.chat.innerHTML = ui.chat
+    .map((entry) => `<div class="msg"><b>${entry.who}</b>${escapeHtml(entry.text)}</div>`)
+    .join('');
+  el.chat.scrollTop = el.chat.scrollHeight;
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function addChat(who, text) {
+  const clean = String(text || '').slice(0, 200).trim();
+  if (!clean) return;
+  ui.chat.push({ who, text: clean });
+  if (ui.chat.length > 100) ui.chat.shift();
+  renderChat();
+}
+
+el.tabs.addEventListener('click', (event) => {
+  const button = event.target.closest('.tab');
+  if (button) switchTab(button.dataset.tab);
+});
+
+el.chatForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const text = el.chatInput.value.trim();
+  if (!text) return;
+  if (ui.mode !== 'online' || !ui.online || !ui.online.started) {
+    toast('Чат работает только в партии по сети');
+    return;
+  }
+  sendNet({ t: 'chat', text });
+  addChat('Вы', text);
+  el.chatInput.value = '';
+});
+
+$('btnFlip').addEventListener('click', () => {
+  ui.orientation = otherColor(ui.orientation);
+  renderAll();
+  updateNames();
+});
+
+el.navStart.addEventListener('click', () => gotoPly(0));
+el.navPrev.addEventListener('click', () => gotoPly((ui.viewState ? ui.viewPly : ui.state.sanList.length) - 1));
+el.navNext.addEventListener('click', () => gotoPly((ui.viewState ? ui.viewPly : ui.state.sanList.length) + 1));
+el.navEnd.addEventListener('click', () => gotoPly(ui.state.sanList.length));
+
+document.addEventListener('keydown', (event) => {
+  if (ui.screen !== 'game' || !ui.state) return;
+  if (event.target && /input|textarea/i.test(event.target.tagName)) return;
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault();
+    gotoPly((ui.viewState ? ui.viewPly : ui.state.sanList.length) - 1);
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault();
+    gotoPly((ui.viewState ? ui.viewPly : ui.state.sanList.length) + 1);
+  } else if (event.key === 'Home') {
+    event.preventDefault();
+    gotoPly(0);
+  } else if (event.key === 'End') {
+    event.preventDefault();
+    gotoPly(ui.state.sanList.length);
+  }
+});
+
+$('btnCopyPgn').addEventListener('click', async () => {
+  const pgn = buildPgn();
+  try {
+    await navigator.clipboard.writeText(pgn);
+    toast('PGN скопирован');
+  } catch (error) {
+    el.pgnBox.value = pgn;
+    toast('Скопируйте текст из поля');
+  }
+});
+
+/* ── партия: сдача, ничья, прервать ──────────────────────────────────── */
+
+$('btnAbort').addEventListener('click', () => {
+  if (!ui.state || ui.status.over) return;
+  const plies = ui.state.sanList.length;
+  if (plies >= 2 && ui.mode === 'online') {
+    toast('Прервать можно только до второго хода — сдавайтесь');
+    return;
+  }
+  if (ui.mode === 'online') sendNet({ t: 'abort' });
+  finishGame({ over: true, winner: null, reason: 'aborted' });
 });
 
 $('btnResign').addEventListener('click', () => {

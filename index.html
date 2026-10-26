@@ -21,7 +21,7 @@
       </div>
     </a>
     <div class="top-actions">
-      <span class="muted" id="topMode">Игра вдвоём за одним экраном</span>
+      <span class="muted" id="topMode"></span>
     </div>
   </header>
 
@@ -96,6 +96,7 @@
             <span id="topRole">чёрные</span>
             <div class="captured" id="topCaptured"></div>
           </div>
+          <span class="link-dot" id="topLink" title="связь"></span>
           <div class="clock" id="topClock">—</div>
         </div>
 
@@ -105,8 +106,10 @@
             <div class="pieces" id="pieces"></div>
             <div class="hints" id="hints"></div>
           </div>
-          <div class="coords files" id="coordFiles"></div>
-          <div class="coords ranks" id="coordRanks"></div>
+          <div class="coords files top" id="coordFilesTop"></div>
+          <div class="coords files bottom" id="coordFiles"></div>
+          <div class="coords ranks left" id="coordRanks"></div>
+          <div class="coords ranks right" id="coordRanksRight"></div>
           <div class="promo" id="promo">
             <div class="promo-card">
               <div class="side-title">Превращение</div>
@@ -122,28 +125,63 @@
             <span id="bottomRole">белые</span>
             <div class="captured" id="bottomCaptured"></div>
           </div>
+          <span class="link-dot" id="bottomLink" title="связь"></span>
           <div class="clock" id="bottomClock">—</div>
         </div>
       </div>
 
       <aside class="side">
         <div class="side-card panel">
-          <div class="game-status" id="gameStatus">Ход белых</div>
+          <div class="game-head">
+            <div>
+              <div class="game-status" id="gameStatus">Ход белых</div>
+              <div class="game-sub" id="gameSub">Начальное положение</div>
+            </div>
+            <button class="icon-btn" id="btnFlip" type="button" title="Перевернуть доску">⇅</button>
+          </div>
+
+          <div class="tabs" id="tabs">
+            <button class="tab active" data-tab="moves" type="button">Ходы</button>
+            <button class="tab" data-tab="chat" type="button">Чат</button>
+            <button class="tab" data-tab="info" type="button">Информация</button>
+          </div>
+
+          <div class="tab-panel" id="tabMoves">
+            <div class="moves" id="moves"><div class="moves-empty">Пока пусто</div></div>
+            <div class="nav-row">
+              <button class="icon-btn" id="navStart" type="button" title="В начало">⏮</button>
+              <button class="icon-btn" id="navPrev" type="button" title="Назад">‹</button>
+              <button class="icon-btn" id="navNext" type="button" title="Вперёд">›</button>
+              <button class="icon-btn" id="navEnd" type="button" title="В конец">⏭</button>
+            </div>
+          </div>
+
+          <div class="tab-panel hidden" id="tabChat">
+            <div class="chat" id="chat"><div class="chat-empty">Чат доступен в партии по сети</div></div>
+            <form class="chat-form" id="chatForm">
+              <input id="chatInput" placeholder="Сообщение…" maxlength="200" autocomplete="off">
+              <button class="btn btn-sm" type="submit">→</button>
+            </form>
+          </div>
+
+          <div class="tab-panel hidden" id="tabInfo">
+            <textarea class="pgn" id="pgnBox" readonly spellcheck="false"></textarea>
+            <div class="info-row">
+              <button class="btn btn-sm" id="btnCopyPgn" type="button">Копировать PGN</button>
+              <span class="muted" id="infoLine"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="side-card panel">
           <label class="toggle" for="flipToggle">Переворачивать доску
             <input type="checkbox" id="flipToggle" checked>
           </label>
-        </div>
-
-        <div class="side-card panel">
-          <div class="side-title">Ходы</div>
-          <div class="moves" id="moves"><div class="moves-empty">Пока пусто</div></div>
-        </div>
-
-        <div class="side-card panel">
           <div class="side-actions">
-            <button class="btn btn-danger" id="btnResign" type="button">Сдаться</button>
+            <button class="btn" id="btnAbort" type="button">Прервать</button>
             <button class="btn" id="btnDraw" type="button">Ничья</button>
-            <button class="btn" id="btnNew" type="button">Новая партия</button>
+            <button class="btn btn-danger" id="btnResign" type="button">Сдаться</button>
+            <button class="btn btn-ghost" id="btnNew" type="button">Новая партия</button>
             <button class="btn btn-ghost" id="btnLeave" type="button">В меню</button>
           </div>
           <div class="muted" id="gameInfo" style="font-size:12.5px"></div>
