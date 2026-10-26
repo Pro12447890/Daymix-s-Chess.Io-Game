@@ -129,6 +129,41 @@ const MODES = [
     desc: 'Каждый третий ход с шансом 20% на доске запирается случайная пустая клетка.',
     W: 8, H: 8, flags: { classic: true, blocks: true },
   },
+  {
+    id: 'queens', n: 18, name: 'Только ферзи', icon: '♛',
+    desc: 'По три ферзя и королю у каждой стороны. Поле простреливается насквозь, ошибка стоит ферзя.',
+    W: 8, H: 8, flags: { classic: true, only: 'q' },
+  },
+  {
+    id: 'bishops', n: 19, name: 'Только слоны', icon: '♝',
+    desc: 'По четыре слона на разных цветах и королю. Диагональная война.',
+    W: 8, H: 8, flags: { classic: true, only: 'b' },
+  },
+  {
+    id: 'knights', n: 20, name: 'Только кони', icon: '♞',
+    desc: 'По четыре коня и королю. Прыжки через всё поле, никаких линий.',
+    W: 8, H: 8, flags: { classic: true, only: 'n' },
+  },
+  {
+    id: 'rooks', n: 21, name: 'Только ладьи', icon: '♜',
+    desc: 'По четыре ладьи и королю. Рокировка открывается, как только освободятся линии.',
+    W: 8, H: 8, flags: { classic: true, only: 'r' },
+  },
+  {
+    id: 'pawnField', n: 22, name: 'Пешечное поле', icon: '♟',
+    desc: 'Поле забито пешками под завязку: по четыре полных ряда у каждой стороны, впереди сплошная стена.',
+    W: 8, H: 8, flags: { classic: true, pawnField: true },
+  },
+  {
+    id: 'pawnFieldQ', n: 23, name: 'Пешечное поле с ферзём', icon: '♛♟',
+    desc: 'То же море пешек, но у каждого ещё и ферзь — он решает исход прорыва.',
+    W: 8, H: 8, flags: { classic: true, pawnField: true, withQueen: true },
+  },
+  {
+    id: 'noPawns', n: 24, name: 'Без пешек', icon: '♜♞',
+    desc: 'Полный набор фигур, но ни одной пешки: линии открыты с первого хода.',
+    W: 8, H: 8, flags: { classic: true, noPawns: true },
+  },
 ];
 
 const MODE_BY_ID = Object.fromEntries(MODES.map((m) => [m.id, m]));
@@ -199,9 +234,11 @@ function createState(modeId, opts = {}) {
 
 function setupBoard(st) {
   const { W, H, board, flags } = st;
-  const clear = () => board.fill(null);
 
   if (flags.race) return setupRace(st);
+  if (flags.only) return setupOnlyPiece(st, flags.only);
+  if (flags.pawnField) return setupPawnField(st, !!flags.withQueen);
+  if (flags.noPawns) return setupNoPawns(st);
 
   if (flags.fischer) {
     const back = fischerRank();
@@ -239,6 +276,57 @@ function setupRace(st) {
   for (const x of [W - 2, W - 1]) for (const y of [3, 4]) board[y * W + x] = newPiece('p', 'b');
   st.pawnStart = { w: [3, 4], b: [3, 4] };
   st.castling = { w: { k: null, q: null }, b: { k: null, q: null } };
+}
+
+/* ── режимы «только одна фигура»: ферзи, слоны, кони, ладьи ────────────── */
+
+function setupOnlyPiece(st, type) {
+  const { W, H, board } = st;
+  const kingFile = 4;
+  const files = type === 'q' ? [0, 2, 6]
+    : type === 'n' ? [0, 1, 6, 7]
+      : [0, 2, 5, 7];                        // слоны и ладьи
+  board[kingFile] = newPiece('k', 'w');
+  board[(H - 1) * W + kingFile] = newPiece('k', 'b');
+  for (const f of files) {
+    board[f] = newPiece(type, 'w');
+    board[(H - 1) * W + f] = newPiece(type, 'b');
+  }
+  st.pawnStart = { w: [], b: [] };
+  initCastling(st);                          // у ладей появляются права на рокировку
+}
+
+/* ── пешечное поле: три полных ряда пешек и короли впереди ─────────────── */
+
+function setupPawnField(st, withQueen) {
+  const { W, H, board } = st;
+  for (let y = 0; y < H / 2; y++) {
+    for (let x = 0; x < W; x++) board[y * W + x] = newPiece('p', 'w');
+  }
+  for (let y = H / 2; y < H; y++) {
+    for (let x = 0; x < W; x++) board[y * W + x] = newPiece('p', 'b');
+  }
+  board[4] = newPiece('k', 'w');
+  board[(H - 1) * W + 4] = newPiece('k', 'b');
+  if (withQueen) {
+    board[3] = newPiece('q', 'w');
+    board[(H - 1) * W + 3] = newPiece('q', 'b');
+  }
+  st.pawnStart = { w: [1], b: [H - 2] };
+  st.castling = { w: { k: null, q: null }, b: { k: null, q: null } };
+}
+
+/* ── полный набор фигур без пешек ──────────────────────────────────────── */
+
+function setupNoPawns(st) {
+  const { W, H, board } = st;
+  const back = BACK_RANKS[W] || 'rnbqkbnr';
+  for (let x = 0; x < Math.min(W, back.length); x++) {
+    board[x] = newPiece(back[x], 'w');
+    board[(H - 1) * W + x] = newPiece(back[x], 'b');
+  }
+  st.pawnStart = { w: [], b: [] };
+  initCastling(st);
 }
 
 function initCastling(st) {
