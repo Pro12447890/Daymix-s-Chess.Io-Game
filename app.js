@@ -16,9 +16,9 @@ const AVATARS = ['n', 'q', 'r', 'b', 'k', 'p', 'j', 'g'];
 const DEFAULT_PROFILE = {
   name: 'Игрок',
   avatar: 'n',
-  theme: 'brown',
+  theme: 'green',
   pieces: '1',
-  flip: true,
+  flip: false,
   autoQueen: true,
   sound: true,
   side: 'w',
@@ -39,6 +39,12 @@ function loadProfile() {
   merged.history = Array.isArray(saved.history) ? saved.history : [];
   if (!merged.modeId || !modeById(merged.modeId)) merged.modeId = 'classic';
   if (!AVATARS.includes(merged.avatar)) merged.avatar = 'n';
+  // переход на оформление Chess.com: старым профилям ставим зелёную доску
+  if ((merged.uiVersion || 1) < 2) {
+    merged.theme = 'green';
+    merged.flip = false;
+    merged.uiVersion = 2;
+  }
   return merged;
 }
 
@@ -463,7 +469,7 @@ const THEMES = [
 ];
 
 const PIECE_SKINS = [
-  { id: '1', name: 'Классика', w: '#fbf9f4', we: '#c3b69e', wd: '#b0a288', b: '#26292f', be: '#101216', bd: '#3a4049', sw: 2.2 },
+  { id: '1', name: 'Классика', w: '#ffffff', we: '#1f1f1f', wd: '#404040', b: '#312e2b', be: '#0d0d0d', bd: '#5a5652', sw: 2.2 },
   { id: '2', name: 'Жирные', w: '#fdfbf6', we: '#b9ab90', wd: '#a89a80', b: '#23262c', be: '#0d0f12', bd: '#343a43', sw: 4.2 },
   { id: '3', name: 'Контур', w: '#2a241d', we: '#2a241d', wd: '#2a241d', b: '#1d2026', be: '#1d2026', bd: '#1d2026', sw: 1.9, hollow: true },
   { id: '4', name: 'Металл', w: '#e8edf2', we: '#4a4640', wd: '#7d786f', b: '#3a4048', be: '#e9edf2', bd: '#d7dbe0', sw: 1.9, metal: true },
@@ -571,10 +577,10 @@ const ui = {
 /* ───────────────────────────── 4. ОТРИСОВКА ───────────────────────────── */
 
 function renderProfile() {
-  $('#nickInput').value = profile.name;
-  $('#profName').textContent = profile.name;
-  $('#profPoints').textContent = `${profile.points} очков`;
-  $('#profAvatar').innerHTML = pieceSvg(profile.avatar, 'av-pc');
+  if ($('#nickInput')) $('#nickInput').value = profile.name;
+  if ($('#sbName')) $('#sbName').textContent = profile.name;
+  if ($('#sbPoints')) $('#sbPoints').textContent = `${profile.points} очков`;
+  if ($('#sbAvatar')) $('#sbAvatar').innerHTML = pieceSvg(profile.avatar, 'av-pc');
   if ($('#homeAvatar')) $('#homeAvatar').innerHTML = pieceSvg(profile.avatar, 'av-pc');
   if ($('#homeName')) $('#homeName').textContent = profile.name;
   if ($('#homePoints')) $('#homePoints').textContent = `${profile.points} очков`;
@@ -836,7 +842,7 @@ function renderStats() {
   const rate = total ? Math.round((s.wins / total) * 100) : 0;
   $('#statsHero').innerHTML = `
     <div class="sh-points">${profile.points}<span>очков</span></div>
-    <div class="sh-name">${escapeHtml(profile.name)} <span class="sh-avatar">${profile.avatar}</span></div>
+    <div class="sh-name"><span class="sh-avatar">${pieceSvg(profile.avatar, 'av-pc')}</span> ${escapeHtml(profile.name)}</div>
     <div class="sh-rule">+5 мат · +4 мат по времени · +1 пат · −4 поражение · −5 поражение в первые 10 ходов</div>`;
   $('#statsGrid').innerHTML = [
     ['Партий', total], ['Побед', s.wins], ['Ничьих', s.draws], ['Поражений', s.losses],
@@ -919,11 +925,13 @@ function showScreen(name) {
   if (name !== 'game') { closeDrawer(); closePanel(); }
   ui.screen = name;
   $$('.screen').forEach((s) => s.classList.toggle('active', s.id === 'screen-' + name));
+  $$('.sb-btn').forEach((b) => b.classList.remove('active'));
+  const nav = name === 'home' ? $('#sbNavPlay') : $(`.sb-btn[data-screen="${name}"]`);
+  if (nav) nav.classList.add('active');
   if (name === 'stats') renderStats();
   if (name === 'settings') renderSettings();
   if (name === 'home') { renderProfile(); }
   if (name === 'modes') renderModesGrid();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 let toastTimer = 0;
@@ -979,25 +987,30 @@ function layoutBoard() {
   const stage = $('#stage');
   const wrap = $('#boardWrap');
   if (!stage || !wrap) return;
-  const pad = window.innerWidth < 560 ? 16 : 20;
-  const barH = ($('#barTop') ? $('#barTop').offsetHeight : 0) + ($('#barBottom') ? $('#barBottom').offsetHeight : 0);
-  const act = $('.stage-actions');
-  const actionsH = act ? act.offsetHeight : 0;
-  const gaps = 18;
-  const availW = Math.max(160, stage.clientWidth - 4);
-  const availH = Math.max(160, stage.clientHeight - barH - actionsH - gaps);
-  const sq = Math.max(12, Math.min(110,
-    Math.floor((availW - pad * 2) / st.W),
-    Math.floor((availH - pad * 2) / st.H)));
-  ui.sq = sq;
-  const widthPx = sq * st.W + pad * 2;
-  wrap.style.width = widthPx + 'px';
-  wrap.style.height = sq * st.H + pad * 2 + 'px';
-  wrap.style.padding = pad + 'px';
   const topBar = $('#barTop');
   const bottomBar = $('#barBottom');
+  const barH = (topBar ? topBar.offsetHeight : 0) + (bottomBar ? bottomBar.offsetHeight : 0);
+  const gaps = 8;
+  const availW = Math.max(160, stage.clientWidth);
+  const availH = Math.max(160, stage.clientHeight - barH - gaps);
+  const sq = Math.max(12, Math.min(110,
+    Math.floor(availW / st.W),
+    Math.floor(availH / st.H)));
+  ui.sq = sq;
+  const widthPx = sq * st.W;
+  const heightPx = sq * st.H;
+  wrap.style.width = widthPx + 'px';
+  wrap.style.height = heightPx + 'px';
+  wrap.style.padding = '0';
   if (topBar) topBar.style.width = widthPx + 'px';
   if (bottomBar) bottomBar.style.width = widthPx + 'px';
+  const panel = $('#sidePanel');
+  if (panel && window.innerWidth >= 1000) {
+    const need = barH + heightPx + 10;
+    panel.style.height = Math.min(need, stage.clientHeight) + 'px';
+  } else if (panel) {
+    panel.style.height = '';
+  }
   document.documentElement.style.setProperty('--sq', sq + 'px');
 }
 
@@ -1012,11 +1025,16 @@ function buildSquares() {
       const el = document.createElement('div');
       el.className = 'sq ' + ((x + y) % 2 === 0 ? 'dark' : 'light');
       el.dataset.sq = i;
+      const blk = document.createElement('span');
+      blk.className = 'blk';
+      blk.textContent = '▩';
+      const cm = document.createElement('span');
+      cm.className = 'cm';
+      el.append(blk, cm);
       layer.appendChild(el);
       ui.squareEls[i] = el;
     }
   }
-  buildCoords();
   positionSquares();
 }
 
@@ -1029,31 +1047,18 @@ function positionSquares() {
     el.style.transform = `translate(${dx * sq}px, ${dy * sq}px)`;
     el.style.width = sq + 'px';
     el.style.height = sq + 'px';
+
+    const x = i % st.W;
+    const y = Math.floor(i / st.W);
+    const showFile = ui.orientation === 'w' ? y === 0 : y === st.H - 1;
+    const showRank = ui.orientation === 'w' ? x === 0 : x === st.W - 1;
+    if (showFile) el.dataset.fileLabel = FILES[x];
+    else delete el.dataset.fileLabel;
+    if (showRank) el.dataset.rankLabel = String(y + 1);
+    else delete el.dataset.rankLabel;
   }
 }
 
-function buildCoords() {
-  const st = ui.st;
-  const files = [];
-  const ranks = [];
-  for (let x = 0; x < st.W; x++) files.push(FILES[ui.orientation === 'w' ? x : st.W - 1 - x]);
-  for (let y = 0; y < st.H; y++) ranks.push(String(ui.orientation === 'w' ? st.H - y : y + 1));
-  const pad = 20;
-  const sq = ui.sq;
-  for (const [id, list, cls] of [['#coordFiles', files, 'files'], ['#coordFilesTop', files, 'files'], ['#coordRanks', ranks, 'ranks'], ['#coordRanksRight', ranks, 'ranks']]) {
-    const box = $(id);
-    if (!box) continue;
-    box.innerHTML = list.map((l) => `<span style="width:${sq}px">${l}</span>`).join('');
-    if (box.classList.contains('files')) {
-      box.style.left = pad + 'px';
-      box.style.width = sq * st.W + 'px';
-    } else {
-      box.style.top = pad + 'px';
-      box.style.height = sq * st.H + 'px';
-      box.style.lineHeight = sq + 'px';
-    }
-  }
-}
 
 function renderSquares() {
   const st = viewState();
@@ -1151,7 +1156,6 @@ function renderBoard(animate) {
   layoutBoard();
   positionSquares();
   renderSquares();
-  buildCoords();
   renderPieces(animate);
   renderHints();
 }
@@ -1172,17 +1176,19 @@ function fmtClock(ms) {
 function updateClockEls(override) {
   if (!ui.st) return;
   const turn = ui.st.turn;
+  const bottomColor = ui.orientation === 'w' ? 'w' : 'b';
+  const topColor = other(bottomColor);
   const running = ui.running && ui.st.status === 'play' && ui.viewPly === ui.frames.length - 1;
   for (const color of ['w', 'b']) {
-    const el = color === 'w' ? $('#bottomClock') : $('#topClock');
+    const el = color === bottomColor ? $('#bottomClock') : $('#topClock');
     let ms = ui.clocks[color];
     if (override && override.color === color) ms = override.ms;
     else if (running && color === turn) ms = Math.max(0, ui.clocks[color] - (performance.now() - ui.turnStart));
     el.textContent = fmtClock(ms);
     el.classList.toggle('low', ui.timeMs > 0 && ms <= 20000);
   }
-  $('#barBottom').classList.toggle('active', turn === 'w' && ui.st.status === 'play');
-  $('#barTop').classList.toggle('active', turn === 'b' && ui.st.status === 'play');
+  $('#barBottom').classList.toggle('active', turn === bottomColor && ui.st.status === 'play');
+  $('#barTop').classList.toggle('active', turn === topColor && ui.st.status === 'play');
 }
 
 function tickClocks() {
@@ -2342,12 +2348,30 @@ function setSound(on) {
 }
 
 function bindEvents() {
-  $('#brandHome').addEventListener('click', () => { if (ui.st) askLeave(); else showScreen('home'); });
-  $('#profChip').addEventListener('click', () => openScreen('settings'));
-  $('#btnSettings').addEventListener('click', () => openScreen('settings'));
+  $$('.sb-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.id === 'sbNavBots') {
+        showScreen('home');
+        const row = $('.bot-row');
+        if (row) {
+          row.classList.add('flash');
+          setTimeout(() => row.classList.remove('flash'), 1400);
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        toast('Выберите уровень бота: лёгкий, средний или сложный');
+        return;
+      }
+      openScreen(btn.dataset.screen);
+    });
+  });
+  $('#sbBrand').addEventListener('click', () => { if (ui.st) askLeave(); else showScreen('home'); });
+  $('#sbProfile').addEventListener('click', () => openScreen('settings'));
+  if ($('#sbProfile')) $('#sbProfile').addEventListener('click', () => openScreen('settings'));
+  if ($('#homeSettings')) $('#homeSettings').addEventListener('click', () => openScreen('settings'));
   $('#homeSettings').addEventListener('click', () => openScreen('settings'));
-  $('#btnHomeModes').addEventListener('click', () => openScreen('modes'));
-  $('#btnHomeStats').addEventListener('click', () => openScreen('stats'));
+  $$('#btnPickMode, #homeSettings').forEach((b) => b.addEventListener('click', () => {
+    if (b.id === 'btnPickMode') openScreen('modes');
+  }));
   $('#settingsBack').addEventListener('click', backFromScreen);
   $('#modesBack').addEventListener('click', backFromScreen);
   $('#statsBack').addEventListener('click', backFromScreen);
@@ -2360,7 +2384,7 @@ function bindEvents() {
 
   $('#nickInput').addEventListener('input', (e) => {
     profile.name = e.target.value.trim().slice(0, 18) || 'Игрок';
-    $('#profName').textContent = profile.name;
+    if ($('#sbName')) $('#sbName').textContent = profile.name;
     if ($('#homeName')) $('#homeName').textContent = profile.name;
     saveProfile();
   });
@@ -2435,8 +2459,10 @@ function bindEvents() {
 
   $('#btnCreate').addEventListener('click', () => createRoom());
   $('#btnCopyCode').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText($('#roomCode').textContent); toast('Код скопирован'); }
-    catch (error) { toast('Код: ' + $('#roomCode').textContent); }
+    const code = $('#roomCode').textContent.trim();
+    const shareUrl = `${location.origin}${location.pathname}#${code}`;
+    try { await navigator.clipboard.writeText(shareUrl); toast('Ссылка скопирована — отправьте её другу'); }
+    catch (error) { toast('Код: ' + code); }
   });
   $('#btnCancelRoom').addEventListener('click', () => {
     leaveOnline(true);
@@ -2450,7 +2476,7 @@ function bindEvents() {
 
   $('#railHint').addEventListener('click', showHint);
   $('#railSettings').addEventListener('click', () => { closePanel(); toggleDrawer(); });
-  $('#railInfo').addEventListener('click', () => { closeDrawer(); togglePanel(); });
+  if ($('#panelToggle')) $('#panelToggle').addEventListener('click', () => { closeDrawer(); togglePanel(); });
   $('#railHome').addEventListener('click', askLeave);
   $('#railPause').addEventListener('click', () => togglePause());
   $('#resumeGame').addEventListener('click', () => togglePause(false));
@@ -2542,6 +2568,16 @@ function bindEvents() {
 /* ─────────────────────────────── 16. СТАРТ ────────────────────────────── */
 
 function boot() {
+  const roomHash = location.hash.replace('#', '').trim();
+  if (/^\d{5}$/.test(roomHash)) {
+    setTimeout(() => {
+      if (!ui.st) {
+        $('#joinCode').value = roomHash;
+        joinRoom(roomHash);
+        toast('Подключаемся к комнате ' + roomHash + '…');
+      }
+    }, 500);
+  }
   bindEvents();
   renderProfile();
   renderThemeRows();
