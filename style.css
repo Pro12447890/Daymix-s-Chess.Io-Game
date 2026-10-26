@@ -1591,7 +1591,7 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 calc(var(--sq) * .035)
 
 
 /* фигуры чуть меньше клетки — видно координаты по краям, как на Chess.com */
-.piece { padding: 6%; }
+.piece { padding: calc(var(--sq) * .035); }
 
 /* на телефоне главная по центру и описание режима в две строки */
 @media (max-width: 999px) {
