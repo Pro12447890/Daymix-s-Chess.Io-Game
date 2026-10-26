@@ -2109,3 +2109,184 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
   .pieces.intro .piece .pc-svg { animation: none; }
   .board-wrap.intro::after { display: none; }
 }
+
+
+/* ═══ выпадение съеденной фигуры и тряска по ценности ═══ */
+.cap-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 6;
+  will-change: transform;
+}
+.cap-ghost .pc-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transform-origin: 50% 70%;
+  animation: capFall var(--dur, .5s) cubic-bezier(.4, .05, .9, .6) both;
+}
+.cap-ghost.w { color: #ffffff; --edge: #1a1a1a; --detail: #404040; --sw: 2.2; }
+.cap-ghost.b { color: #312e2b; --edge: #0f0f0f; --detail: #5a5652; --sw: 2.2; }
+@keyframes capFall {
+  0% { transform: translateY(0) rotate(0) scale(1); opacity: 1; }
+  30% { opacity: .95; }
+  100% { transform: translateY(var(--fall, 40%)) rotate(var(--rot, 90deg)) scale(.55); opacity: 0; }
+}
+
+.board.shake-1 { animation: boardQuake .2s ease; --amp: 2px; }
+.board.shake-2 { animation: boardQuake .26s ease; --amp: 4px; }
+.board.shake-3 { animation: boardQuake .34s ease; --amp: 6px; }
+.board.shake-4 { animation: boardQuake .5s ease; --amp: 10px; }
+.board.shake-5 { animation: boardQuake .7s ease; --amp: 16px; }
+@keyframes boardQuake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  15% { transform: translate(calc(var(--amp) * -1), calc(var(--amp) * .5)) rotate(-.4deg); }
+  35% { transform: translate(var(--amp), calc(var(--amp) * -.6)) rotate(.5deg); }
+  55% { transform: translate(calc(var(--amp) * -.7), calc(var(--amp) * .3)) rotate(-.3deg); }
+  75% { transform: translate(calc(var(--amp) * .5), calc(var(--amp) * -.2)) rotate(.2deg); }
+}
+
+#gameShell.quake-4 { animation: shellQuake .55s ease; }
+@keyframes shellQuake {
+  0%, 100% { transform: translate(0, 0); }
+  12% { transform: translate(-7px, 4px); }
+  26% { transform: translate(8px, -5px); }
+  40% { transform: translate(-6px, -3px); }
+  58% { transform: translate(5px, 5px); }
+  76% { transform: translate(-3px, 2px); }
+}
+
+.fx-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 125;
+  pointer-events: none;
+  opacity: 0;
+  background: transparent;
+}
+.fx-flash.flash-2 { animation: fxTeal .3s ease-out; }
+.fx-flash.flash-3 { animation: fxAmber .42s ease-out; }
+.fx-flash.flash-4 { animation: fxPurple .95s ease-out; }
+.fx-flash.flash-5 { animation: fxWhite .9s ease-out; }
+@keyframes fxTeal {
+  0% { opacity: 0; background: radial-gradient(circle, #81b64c55, transparent 62%); }
+  30% { opacity: .7; }
+  100% { opacity: 0; }
+}
+@keyframes fxAmber {
+  0% { opacity: 0; background: radial-gradient(circle, #f2a54e88, transparent 64%); }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes fxPurple {
+  0% { opacity: 0; background: radial-gradient(circle at 50% 45%, #b06dffcc, #6a2bbf77 45%, transparent 72%); }
+  18% { opacity: 1; }
+  55% { opacity: .85; background: radial-gradient(circle at 48% 50%, #a25bffbb, #521a9b66 50%, transparent 76%); }
+  100% { opacity: 0; }
+}
+@keyframes fxWhite {
+  0% { opacity: 0; background: radial-gradient(circle, #ffffffcc, #f2c14e77 45%, transparent 72%); }
+  20% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ═══ эпичный финал: победа, поражение, ничья/пат ═══ */
+.result { overflow: hidden; }
+.result-rays {
+  position: absolute;
+  width: 150vmax;
+  height: 150vmax;
+  border-radius: 50%;
+  opacity: 0;
+  left: 50%;
+  top: 50%;
+  margin-left: -75vmax;
+  margin-top: -75vmax;
+  filter: blur(34px);
+  animation: resultRaysSpin 9s linear infinite;
+}
+.result.win .result-rays {
+  opacity: 1;
+  background: conic-gradient(from 0deg, #f2c14e44 0 25deg, transparent 25deg 60deg, #81b64c55 60deg 95deg, transparent 95deg 360deg);
+}
+.result.lose .result-rays {
+  opacity: 1;
+  background: conic-gradient(from 0deg, #fa412d44 0 28deg, transparent 28deg 70deg, #7b2bd655 70deg 110deg, transparent 110deg 360deg);
+}
+.result.draw .result-rays {
+  opacity: 1;
+  background: conic-gradient(from 0deg, #9fb3c844 0 26deg, transparent 26deg 64deg, #81b64c33 64deg 100deg, transparent 100deg 360deg);
+}
+@keyframes resultRaysSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.result-sprites { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.res-flier {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--s, 34px);
+  height: var(--s, 34px);
+  opacity: 0;
+  animation: resFly var(--dur, 1.6s) cubic-bezier(.2, .7, .4, 1) var(--delay, 0s) both;
+}
+.res-flier .pc-svg { width: 100%; height: 100%; display: block; }
+.res-flier.win { color: #ffd76a; --edge: #6b4a00; --detail: #fff1c0; --sw: 2; filter: drop-shadow(0 0 16px #ffd76a99); }
+.res-flier.lose { color: #b06dff; --edge: #2a0f4d; --detail: #d9b8ff; --sw: 2; filter: drop-shadow(0 0 16px #b06dff88); }
+.res-flier.draw { color: #b9c6d4; --edge: #2c3540; --detail: #e8eef5; --sw: 2; filter: drop-shadow(0 0 14px #9fb3c877); }
+@keyframes resFly {
+  0% { transform: translate(-50%, -50%) scale(.2) rotate(0deg); opacity: 0; }
+  14% { opacity: 1; }
+  70% { opacity: .95; }
+  100% { transform: translate(calc(-50% + var(--dx, 30vmin)), calc(-50% + var(--dy, -30vmin))) scale(.9) rotate(var(--rot, 220deg)); opacity: 0; }
+}
+.result .result-card { animation: resultPop .55s cubic-bezier(.2, .9, .25, 1.3) both; }
+@keyframes resultPop {
+  0% { transform: scale(.72) translateY(26px); opacity: 0; }
+  60% { transform: scale(1.04) translateY(-4px); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+.result.win .result-card { box-shadow: 0 30px 80px #000000aa, 0 0 60px #f2c14e55; }
+.result.lose .result-card { box-shadow: 0 30px 80px #000000bb, 0 0 60px #7b2bd644; }
+.result .result-title { animation: titleBlast .7s cubic-bezier(.2, .9, .3, 1.4) both; }
+@keyframes titleBlast {
+  0% { transform: scale(.6); letter-spacing: 2px; opacity: 0; }
+  55% { transform: scale(1.12); letter-spacing: 1px; opacity: 1; }
+  100% { transform: scale(1) translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cap-ghost, .fx-flash, .res-flier, .result-rays { display: none !important; }
+  .board.shake-1, .board.shake-2, .board.shake-3, .board.shake-4, .board.shake-5, #gameShell.quake-4 { animation: none !important; }
+}
+
+
+/* заливка призраков и финальных спрайтов (как у фигур) */
+.cap-ghost .pc-svg .body,
+.res-flier .pc-svg .body {
+  fill: currentColor;
+  stroke: var(--edge);
+  stroke-width: var(--sw, 2.2);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.cap-ghost .pc-svg .detail,
+.res-flier .pc-svg .detail {
+  fill: var(--detail, var(--edge));
+  stroke: var(--detail, var(--edge));
+  stroke-width: calc(var(--sw, 2.2) * .5);
+  stroke-linejoin: round;
+}
+.cap-ghost .pc-svg .line,
+.res-flier .pc-svg .line {
+  fill: none;
+  stroke: var(--detail, var(--edge));
+  stroke-width: calc(var(--sw, 2.2) * .8);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

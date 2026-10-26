@@ -374,6 +374,95 @@ function updateEval() {
   }
 }
 
+const CAP_TIER = { p: 1, n: 2, b: 2, r: 3, q: 4, k: 5 };
+
+function captureFx(list) {
+  if (!list || !list.length || !ui.st) return;
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) return;
+  const st = ui.st;
+  const sq = ui.sq;
+  const layer = $('#hints');
+  let topTier = 1;
+  for (const item of list) {
+    const tier = CAP_TIER[item.type] || 1;
+    topTier = Math.max(topTier, tier);
+    if (!layer) continue;
+    const { dx, dy } = disp(st, item.square);
+    const ghost = document.createElement('div');
+    ghost.className = 'cap-ghost ' + (item.color === 'w' ? 'w' : 'b');
+    ghost.style.width = sq + 'px';
+    ghost.style.height = sq + 'px';
+    ghost.style.transform = `translate(${dx * sq}px, ${dy * sq}px)`;
+    ghost.style.setProperty('--fall', Math.round(18 + tier * 22) + '%');
+    ghost.style.setProperty('--rot', Math.round((Math.random() < .5 ? -1 : 1) * (40 + tier * 55)) + 'deg');
+    ghost.style.setProperty('--dur', (0.3 + tier * 0.11).toFixed(2) + 's');
+    ghost.innerHTML = pieceSvg(item.type, 'cap-ghost-pc');
+    layer.appendChild(ghost);
+    setTimeout(() => ghost.remove(), 1400);
+  }
+
+  const board = $('#board');
+  const shell = $('#gameShell');
+  const flash = $('#fxFlash');
+  if (board) {
+    for (let i = 1; i <= 5; i++) board.classList.remove('shake-' + i);
+    void board.offsetWidth;
+    board.classList.add('shake-' + topTier);
+    clearTimeout(captureFx.shakeTimer);
+    captureFx.shakeTimer = setTimeout(() => {
+      for (let i = 1; i <= 5; i++) board.classList.remove('shake-' + i);
+    }, 900);
+  }
+  if (topTier >= 4 && shell) {
+    shell.classList.remove('quake-4');
+    void shell.offsetWidth;
+    shell.classList.add('quake-4');
+    clearTimeout(captureFx.quakeTimer);
+    captureFx.quakeTimer = setTimeout(() => shell.classList.remove('quake-4'), 700);
+  }
+  if (flash) {
+    if (topTier < 2) {
+      flash.className = 'fx-flash';
+    } else {
+      flash.className = 'fx-flash';
+      void flash.offsetWidth;
+      flash.classList.add('flash-' + topTier);
+      clearTimeout(captureFx.flashTimer);
+      captureFx.flashTimer = setTimeout(() => { flash.className = 'fx-flash'; }, topTier === 4 ? 1100 : 600);
+    }
+  }
+}
+
+function playResultFx(kind) {
+  const result = $('#result');
+  const box = $('#resultSprites');
+  if (!result || !box) return;
+  result.classList.remove('win', 'lose', 'draw');
+  result.classList.add(kind);
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  box.innerHTML = '';
+  if (reduced) return;
+  const types = ['q', 'r', 'b', 'n', 'p', 'k'];
+  const count = kind === 'win' ? 18 : kind === 'lose' ? 13 : 10;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('span');
+    el.className = 'res-flier ' + kind;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 30 + Math.random() * 48;
+    el.style.setProperty('--dx', (Math.cos(angle) * dist).toFixed(1) + 'vmin');
+    el.style.setProperty('--dy', (Math.sin(angle) * dist).toFixed(1) + 'vmin');
+    el.style.setProperty('--rot', Math.round(-540 + Math.random() * 1080) + 'deg');
+    el.style.setProperty('--s', Math.round(20 + Math.random() * 44) + 'px');
+    el.style.setProperty('--dur', (1.2 + Math.random() * 0.9).toFixed(2) + 's');
+    el.style.setProperty('--delay', (Math.random() * 0.3).toFixed(2) + 's');
+    el.innerHTML = pieceSvg(types[i % types.length], 'res-flier-pc');
+    box.appendChild(el);
+  }
+  clearTimeout(playResultFx.timer);
+  playResultFx.timer = setTimeout(() => { box.innerHTML = ''; }, 3200);
+}
+
 function celebrate() {
   const layer = document.createElement('div');
   layer.className = 'confetti';
@@ -1659,6 +1748,17 @@ function commitMove(m, opts = {}) {
   if (!opts.remote) ui.running = true;
 
   const san = moveToSan(st, match, legal);
+  const capInfo = [];
+  if (match.caps && match.caps.length) {
+    for (const i of match.caps) {
+      const p = st.board[i];
+      if (p) capInfo.push({ type: p.t, color: p.c, square: i });
+    }
+  }
+  if (match.capture != null && !capInfo.some((c) => c.square === match.capture)) {
+    const p = st.board[match.capture];
+    if (p) capInfo.push({ type: p.t, color: p.c, square: match.capture });
+  }
   applyMove(st, match);
   if (st.flags.blocks) {
     const blockedSq = maybeBlock(st);
@@ -1708,6 +1808,7 @@ function commitMove(m, opts = {}) {
   }
   if (!opts.silent) {
     renderAll(!opts.noAnim);
+    if (capInfo.length) captureFx(capInfo);
     renderMoves();
   }
 
@@ -1812,6 +1913,7 @@ function finishGame(res) {
     : `<span class="${points > 0 ? 'up' : points < 0 ? 'down' : ''}">${sign} очков</span> <em>всего ${profile.points}</em>`;
   ['#resultAgain', '#resultMenu', '#resultClose'].forEach((id) => $(id).classList.remove('hidden'));
   $('#result').classList.remove('hidden');
+  if (res.reason !== 'abort') playResultFx(!res.winner ? 'draw' : res.winner === side ? 'win' : 'lose');
   renderStatsIfOpen();
 }
 
@@ -2791,6 +2893,7 @@ function boot() {
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
+    captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),
     setProfile: (patch) => { Object.assign(profile, patch); renderProfile(); renderThemeRows(); renderPieceRows(); renderPreview(); saveProfile(true); },
