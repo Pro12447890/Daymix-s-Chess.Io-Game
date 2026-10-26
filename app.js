@@ -704,6 +704,9 @@ function showScreen(name) {
   for (const [key, node] of Object.entries(el.screens)) {
     node.classList.toggle('active', key === name);
   }
+  if (name === 'home') el.topMode.textContent = '';
+  else if (name === 'time') el.topMode.textContent = '';
+  else if (name === 'online') el.topMode.textContent = 'Партия по сети';
   if (name === 'game') layoutBoard();
 }
 
