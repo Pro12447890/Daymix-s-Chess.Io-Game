@@ -152,6 +152,7 @@ function chooseBotMove(st, level) {
 }
 
 function maybeBotTurn() {
+  if (ui.paused) return;
   if (!ui.bot || !ui.st || ui.st.status !== 'play' || ui.mode !== 'local') return;
   if (ui.st.turn !== ui.bot.color || ui.bot.busy) return;
   ui.bot.busy = true;
@@ -161,7 +162,7 @@ function maybeBotTurn() {
   setTimeout(() => {
     ui.bot.busy = false;
     ui.botThinking = false;
-    if (!ui.st || ui.st.status !== 'play' || !ui.bot || ui.st.turn !== ui.bot.color) { renderStatus(); return; }
+    if (ui.paused || !ui.st || ui.st.status !== 'play' || !ui.bot || ui.st.turn !== ui.bot.color) { renderStatus(); return; }
     const move = chooseBotMove(ui.st, level);
     if (move) commitMove(move, { bot: true });
     renderStatus();
@@ -551,6 +552,8 @@ const ui = {
   hint: null,
   bot: null,
   botThinking: false,
+  paused: false,
+  movedId: null,
   imported: false,
   names: null,
   startedAt: 0,
@@ -1101,6 +1104,11 @@ function renderPieces(animate) {
     el.style.transition = animate ? '' : 'none';
     el.style.transform = `translate(${dx * sq}px, ${dy * sq}px)`;
     el.style.zIndex = String(10 + dy);
+    if (animate && ui.movedId && p.id === ui.movedId) {
+      el.classList.add('lift');
+      clearTimeout(renderPieces.liftTimer);
+      renderPieces.liftTimer = setTimeout(() => el.classList.remove('lift'), 300);
+    }
   }
   for (const [id, el] of Array.from(ui.pieceNodes.entries())) {
     if (!seen.has(id)) {
@@ -1118,16 +1126,17 @@ function renderHints() {
   if (ui.selected < 0) return;
   const moves = legalMoves(ui.st, ui.st.turn).filter((m) => m.from === ui.selected);
   const sq = ui.sq;
-  for (const m of moves) {
+  moves.forEach((m, index) => {
     const { dx, dy } = disp(st, m.to);
     const dot = document.createElement('div');
     const capture = m.capture != null || m.ep || (m.caps && m.caps.length);
     dot.className = 'hint ' + (capture ? 'capture' : 'quiet');
+    dot.style.setProperty('--d', (index * 0.012).toFixed(3) + 's');
     dot.style.width = sq + 'px';
     dot.style.height = sq + 'px';
     dot.style.transform = `translate(${dx * sq}px, ${dy * sq}px)`;
     layer.appendChild(dot);
-  }
+  });
 }
 
 function renderBoard(animate) {
@@ -1233,10 +1242,17 @@ function newGame(opts = {}) {
   $('#promo').classList.add('hidden');
   ui.timeMs = opts.timeMs != null ? opts.timeMs : profile.timeMs;
   ui.clocks = { w: ui.timeMs, b: ui.timeMs };
-  ui.orientation = opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w');
+  ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
   ui.mode = opts.mode || 'local';
   ui.role = opts.role || null;
   ui.bot = opts.bot ? { ...opts.bot, name: 'Бот · ' + (BOT_LABELS[opts.bot.level] || 'средний') } : null;
+  ui.paused = false;
+  ui.movedId = null;
+  if ($('#pauseOverlay')) $('#pauseOverlay').classList.add('hidden');
+  if ($('#railPause')) {
+    $('#railPause').classList.remove('paused');
+    $('#railPause').classList.toggle('hidden', (opts.mode || 'local') === 'online');
+  }
   ui.botThinking = false;
   ui.imported = false;
   ui.startedAt = Date.now();
@@ -1427,6 +1443,7 @@ function resultReason(res) {
 
 function onSquareClick(sq) {
   if (!ui.st || ui.st.status !== 'play') return;
+  if (ui.paused) return;
   if (ui.imported) { toast('Импортированная партия — только просмотр'); return; }
   if (ui.bot && ui.st.turn === ui.bot.color) return;
   if (ui.viewPly !== ui.frames.length - 1) return;
@@ -1524,6 +1541,7 @@ function commitMove(m, opts = {}) {
   ui.lastMove = { from: match.from, to: match.to };
   ui.selected = -1;
   ui.hint = null;
+  ui.movedId = st.board[match.to] ? st.board[match.to].id : null;
 
   if (st.flags.checksToWin && inCheck(st, st.turn)) st.mv[mover].checks += 1;
 
@@ -1547,7 +1565,7 @@ function commitMove(m, opts = {}) {
     setTimeout(() => board.classList.remove('shake'), 450);
   }
 
-  if (ui.mode === 'local' && profile.flip && !opts.remote && !opts.silent) {
+  if (ui.mode === 'local' && !ui.bot && profile.flip && !opts.remote && !opts.silent) {
     ui.orientation = st.turn;
   }
   if (!opts.silent) {
@@ -1576,7 +1594,7 @@ const REASON_TEXT = {
   fifty: 'правило 50 ходов', material: 'недостаточно материала',
   repetition: 'троекратное повторение', draw: 'ничья по согласию',
   king: 'король съеден', race: 'король на вершине', center: 'король в центре',
-  checks: 'три шаха', kingOnly: 'остался один король',
+  checks: 'три шаха', kingOnly: 'остался один король', left: 'выход из партии',
   abort: 'партия прервана',
 };
 
@@ -2231,12 +2249,78 @@ function abortGame() {
   if (ui.mode === 'online') netPublish({ t: 'end', winner: null, reason: 'abort' });
 }
 
+function togglePause(force) {
+  if (!ui.st || ui.st.status !== 'play') return;
+  if (ui.mode !== 'local') { toast('Пауза доступна в игре на одном устройстве'); return; }
+  const next = force != null ? force : !ui.paused;
+  if (next === ui.paused) return;
+  if (next) {
+    if (ui.running && ui.timeMs) {
+      const now = performance.now();
+      ui.clocks[ui.st.turn] = Math.max(0, ui.clocks[ui.st.turn] - (now - ui.turnStart));
+    }
+    ui.paused = true;
+    ui.running = false;
+    $('#pauseOverlay').classList.remove('hidden');
+    $('#railPause').classList.add('paused');
+    updateClockEls();
+    renderStatus();
+    toast('Пауза — часы стоят');
+  } else {
+    ui.paused = false;
+    ui.turnStart = performance.now();
+    ui.running = ui.timeMs > 0 && ui.moves.length > 0;
+    $('#pauseOverlay').classList.add('hidden');
+    $('#railPause').classList.remove('paused');
+    renderStatus();
+    if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 400);
+    toast('Продолжаем');
+  }
+}
+
+function askLeave() {
+  if (!ui.st || ui.st.status !== 'play' || ui.scored) { leaveGame(); return; }
+  if (ui.paused) togglePause(false);
+  const side = ui.st.turn;
+  const who = side === 'w' ? 'белых' : 'чёрных';
+  $('#confirmTitle').textContent = 'Покинуть партию?';
+  $('#confirmText').textContent = `Сейчас ход ${who}. Если выйти, партия засчитается как поражение этого игрока (очки спишутся по правилам).`;
+  $('#confirmModal').classList.remove('hidden');
+}
+
+function closeConfirm() {
+  const modal = $('#confirmModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function confirmLeaveGame() {
+  closeConfirm();
+  if (!ui.st) { leaveGame(); return; }
+  if (ui.st.status === 'play') {
+    const side = ui.st.turn;
+    const result = { winner: other(side), reason: 'left' };
+    ui.st.status = 'over';
+    ui.st.result = result;
+    renderAll(false);
+    finishGame(result);
+    if (ui.mode === 'online') netPublish({ t: 'end', winner: result.winner, reason: 'left' });
+    $('#result').classList.add('hidden');
+    toast('Выход засчитан как поражение');
+  }
+  setTimeout(leaveGame, 260);
+}
+
 function leaveGame() {
   leaveOnline();
   ui.st = null;
   ui.running = false;
+  ui.paused = false;
+  ui.bot = null;
+  ui.movedId = null;
   clearInterval(ui.timer);
   $('#result').classList.add('hidden');
+  if ($('#pauseOverlay')) $('#pauseOverlay').classList.add('hidden');
+  if ($('#railPause')) $('#railPause').classList.remove('paused');
   showScreen('home');
 }
 
@@ -2253,7 +2337,7 @@ function setSound(on) {
 }
 
 function bindEvents() {
-  $('#brandHome').addEventListener('click', () => { if (ui.st) leaveGame(); else showScreen('home'); });
+  $('#brandHome').addEventListener('click', () => { if (ui.st) askLeave(); else showScreen('home'); });
   $('#profChip').addEventListener('click', () => openScreen('settings'));
   $('#btnSettings').addEventListener('click', () => openScreen('settings'));
   $('#homeSettings').addEventListener('click', () => openScreen('settings'));
@@ -2362,7 +2446,11 @@ function bindEvents() {
   $('#railHint').addEventListener('click', showHint);
   $('#railSettings').addEventListener('click', () => { closePanel(); toggleDrawer(); });
   $('#railInfo').addEventListener('click', () => { closeDrawer(); togglePanel(); });
-  $('#railHome').addEventListener('click', leaveGame);
+  $('#railHome').addEventListener('click', askLeave);
+  $('#railPause').addEventListener('click', () => togglePause());
+  $('#resumeGame').addEventListener('click', () => togglePause(false));
+  $('#confirmCancel').addEventListener('click', closeConfirm);
+  $('#confirmLeave').addEventListener('click', confirmLeaveGame);
   $('#railSound').addEventListener('click', () => setSound(profile.sound === false));
   $('#railFlip').addEventListener('click', () => {
     ui.orientation = other(ui.orientation);

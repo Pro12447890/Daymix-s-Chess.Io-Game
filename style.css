@@ -2050,3 +2050,63 @@ html[data-hollow="1"][data-skin-glow="1"] .piece { filter: drop-shadow(0 0 calc(
     line-height: 1.15;
   }
 }
+
+
+/* ── анимации точек и фигур ──────────────────────────────────────────── */
+
+.hint.quiet::before,
+.hint.capture::before {
+  animation: hintSpawn .18s cubic-bezier(.2, .9, .3, 1.4) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes hintSpawn {
+  from { transform: scale(.15); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.piece { transition: transform .18s cubic-bezier(.22, .8, .28, 1); }
+.piece.lift .pc-svg { animation: pieceLift .28s cubic-bezier(.2, .8, .3, 1); }
+@keyframes pieceLift {
+  0% { transform: scale(1); }
+  38% { transform: scale(1.17) translateY(-5%); }
+  100% { transform: scale(1); }
+}
+
+/* ── пауза ───────────────────────────────────────────────────────────── */
+
+.stage { position: relative; }
+.pause-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #0a0503c4;
+  backdrop-filter: blur(3px);
+}
+.pause-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 22px;
+  border-radius: 14px;
+  border: 1px solid var(--line-2);
+  background: linear-gradient(180deg, #3a2116, #21100a);
+  box-shadow: 0 20px 50px #000000aa;
+}
+.pause-card b { font-size: 26px; letter-spacing: 3px; text-transform: uppercase; color: #ffe3b8; }
+.pause-card span { font-size: 12px; color: var(--muted); }
+
+#railPause.paused { background: #6c452c; border-color: var(--accent); }
+
+.confirm-card { width: min(420px, 100%); }
+.confirm-card .modal-note { font-size: 13px; line-height: 1.5; }
+
+
+/* шторка настроек пошире и с заголовком */
+.drawer { width: min(360px, 92%); }
+.drawer-head b { font-size: 14.5px; letter-spacing: .2px; }
+.drawer-body { gap: 12px; }
+.drawer .g-meta { font-size: 12px; }

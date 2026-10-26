@@ -182,6 +182,7 @@
           <button class="rail-btn" id="railHome" type="button" title="В меню">⌂</button>
           <button class="rail-btn" id="railSettings" type="button" title="Настройки партии">⚙</button>
           <button class="rail-btn" id="railHint" type="button" title="Подсказка">💡</button>
+          <button class="rail-btn" id="railPause" type="button" title="Пауза (для игры на одном устройстве)">⏸</button>
           <button class="rail-btn" id="railFlip" type="button" title="Перевернуть доску">⇅</button>
           <button class="rail-btn" id="railSound" type="button" title="Звук"><span id="soundIcon">🔊</span></button>
           <button class="rail-btn rail-info" id="railInfo" type="button" title="Ходы и чат">≡</button>
@@ -219,6 +220,14 @@
             <span class="pb-who"><b id="bottomName">Вы</b><span id="bottomRole">белые</span><span class="captured" id="bottomCaptured"></span></span>
             <span class="link-dot" id="bottomLink" title="связь"></span>
             <span class="clock" id="bottomClock">—</span>
+          </div>
+
+          <div class="pause-overlay hidden" id="pauseOverlay">
+            <div class="pause-card">
+              <b>Пауза</b>
+              <span>Часы остановлены</span>
+              <button class="btn btn-primary btn-sm" id="resumeGame" type="button">Продолжить</button>
+            </div>
           </div>
 
           <div class="stage-actions">
@@ -285,7 +294,7 @@
 
         <div class="drawer" id="drawer">
           <div class="drawer-head">
-            <b>Партия</b>
+            <b>Настройки партии</b>
             <button class="icon-btn" id="drawerClose" type="button" title="Закрыть">✕</button>
           </div>
           <div class="drawer-body">
@@ -343,6 +352,18 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- подтверждение выхода -->
+<div class="modal hidden" id="confirmModal">
+  <div class="modal-card confirm-card">
+    <div class="modal-head"><b id="confirmTitle">Покинуть партию?</b></div>
+    <p class="modal-note" id="confirmText"></p>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-ghost" id="confirmCancel" type="button">Остаться</button>
+      <button class="btn btn-sm btn-danger" id="confirmLeave" type="button">Выйти</button>
+    </div>
+  </div>
+</div>
 
 <!-- импорт партии -->
 <div class="modal hidden" id="importModal">
