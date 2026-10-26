@@ -1961,3 +1961,92 @@ html[data-hollow="1"][data-skin-glow="1"] .piece { filter: drop-shadow(0 0 calc(
   background: linear-gradient(180deg, #f3e7cd, #e3d3b4);
   border-radius: 7px;
 }
+
+
+/* ── режимы: ровная сетка по 4 карточки, без прокрутки ───────────────── */
+
+#screen-modes.active { overflow: hidden; }
+.modes-scroll { flex: 1; min-height: 0; overflow: hidden; }
+.modes-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 8px;
+  height: 100%;
+}
+.mode-tile {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 9px 10px;
+  overflow: hidden;
+  min-height: 0;
+}
+.mt-icon { width: auto; font-size: 19px; line-height: 1; }
+.mt-body { gap: 2px; width: 100%; min-width: 0; }
+.mt-name { font-size: 13px; line-height: 1.15; }
+.mt-desc {
+  font-size: 10.5px;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mt-meta { font-size: 9px; letter-spacing: .3px; }
+
+@media (max-width: 560px) {
+  .modes-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .mode-tile { padding: 6px 4px; align-items: center; text-align: center; gap: 3px; }
+  .mt-desc, .mt-meta { display: none; }
+  .mt-name { font-size: 10px; line-height: 1.1; }
+  .mt-icon { font-size: 17px; }
+  .mt-body { align-items: center; }
+}
+
+
+/* карточки экранов режимов и статистики ограничены экраном */
+#screen-modes .wide-card,
+#screen-stats .wide-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+#screen-modes .modes-scroll { min-height: 0; }
+#screen-stats .history { flex: 1; min-height: 0; max-height: none; overflow: auto; }
+#screen-stats .stats-hero, #screen-stats .stats-grid, #screen-stats .list-title { flex: none; }
+
+
+@media (max-width: 560px) {
+  .mt-name {
+    font-size: 9.5px;
+    line-height: 1.1;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+  }
+  .mode-tile { justify-content: flex-start; }
+  #screen-modes .screen-head { margin-bottom: 8px; }
+  #screen-modes .screen-head-text p { display: none; }
+  #screen-modes .screen-head-text h2 { font-size: 17px; }
+  #screen-modes .chip { font-size: 10px; padding: 2px 8px; }
+}
+
+
+.mt-name.short { display: none; }
+
+@media (max-width: 560px) {
+  .mt-name.full { display: none; }
+  .mt-name.short {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 10.5px;
+    line-height: 1.15;
+  }
+}

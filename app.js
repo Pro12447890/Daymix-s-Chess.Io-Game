@@ -443,6 +443,16 @@ function openingName() {
   }
   return best ? best.name : null;
 }
+const MODE_SHORT = {
+  classic: 'Классика', threeChecks: 'Три шаха', kingCapture: 'Съедение', kingOnly: 'Король',
+  pawnRows: '2 ряда', kqp: 'K, Q, пешки', explode: 'Взрывы', queenPierce: 'Ферзь ✳',
+  bishopKing: 'Слон-К', race: 'Гонка', wide10: '10×8', tall10: '8×10',
+  jester: 'Шут', boy: 'Пацаны', crossCastle: 'Обмены', fog: 'Туман',
+  fischer: '960', blocks: 'Блоки', queens: 'Ферзи', bishops: 'Слоны',
+  knights: 'Кони', rooks: 'Ладьи', pawnField: 'Пешки', pawnFieldQ: 'Пешки+Q',
+  noPawns: 'Без пешек', center: 'Центр',
+};
+
 const THEMES = [
   { id: 'brown', name: 'Коричневая', light: '#f0d9b5', dark: '#9a6a47' },
   { id: 'green', name: 'Зелёная', light: '#eeeed2', dark: '#769656' },
@@ -794,7 +804,8 @@ function renderModesGrid() {
     card.innerHTML = `
       <span class="mt-icon">${m.icon}</span>
       <span class="mt-body">
-        <span class="mt-name">${m.name}</span>
+        <span class="mt-name full">${m.name}</span>
+        <span class="mt-name short">${MODE_SHORT[m.id] || m.name}</span>
         <span class="mt-desc">${m.desc}</span>
         <span class="mt-meta">${size}${m.n ? ' · режим ' + m.n : ' · обычные шахматы'}</span>
       </span>`;
@@ -1922,6 +1933,7 @@ async function createRoom() {
   ui.online.relay = new Relay();
   ui.online.relay.onMessage = (text) => handleNet(text);
   ui.online.relay.onClose = () => {
+    if (!ui.online) return;
     ui.online.connected = false;
     updateLinkDots();
     if (ui.online.sid) scheduleReconnect();
@@ -1937,9 +1949,10 @@ async function createRoom() {
   updateLinkDots();
   $('#roomCode').textContent = code;
   $('#roomRow').classList.remove('hidden');
-  setLobby('Код готов. Передайте его другу — он введёт код и присоединится.');
-  newGame({ mode: 'online', role: 'host', modeId: profile.modeId, timeMs: profile.timeMs, orientation: 'w', splash: true });
+  setLobby('Комната создана. Ждём соперника — партия начнётся, когда он присоединится.');
   ui.online.waiting = true;
+  ui.st = null;
+  showScreen('home');
   announceRoom();
   clearInterval(ui.online.announce);
   ui.online.announce = setInterval(announceRoom, 4000);   // реже: у ntfy есть лимит на публикации
@@ -1951,7 +1964,7 @@ function announceRoom() {
     t: 'room',
     modeId: ui.st ? ui.st.modeId : profile.modeId,
     square: !!profile.square,
-    timeMs: ui.timeMs,
+    timeMs: ui.st ? ui.timeMs : profile.timeMs,
     timeLabel: profile.timeLabel,
     seed: ui.st ? ui.st.seed : null,
     name: profile.name,
@@ -1969,6 +1982,7 @@ async function joinRoom(code) {
   ui.online.relay = new Relay();
   ui.online.relay.onMessage = (text) => handleNet(text);
   ui.online.relay.onClose = () => {
+    if (!ui.online) return;
     ui.online.connected = false;
     updateLinkDots();
     if (ui.st) scheduleReconnect();
@@ -2007,6 +2021,7 @@ function scheduleReconnect() {
     const relay = new Relay();
     relay.onMessage = (text) => handleNet(text);
     relay.onClose = () => {
+      if (!ui.online) return;
       ui.online.connected = false;
       updateLinkDots();
       delay = Math.min(delay * 1.6, 12000);
@@ -2049,17 +2064,25 @@ function handleNet(text) {
   }
 
   if (msg.t === 'join' && ui.online.role === 'host') {
-    if (ui.online.guestName === msg.name) return;
+    if (ui.online.guestName === msg.name && ui.st) return;
     ui.online.guestName = msg.name;
-    ui.online.names.b = msg.name || 'Соперник';
-    ui.online.avatars.b = msg.avatar || 'k';
+    ui.online.names = { w: profile.name, b: msg.name || 'Соперник' };
+    ui.online.avatars = { w: profile.avatar, b: msg.avatar || 'k' };
     ui.online.sid = ui.online.sid || Math.random().toString(36).slice(2, 10);
     ui.online.waiting = false;
     clearInterval(ui.online.announce);
-    setLobby(`Соперник: ${ui.online.names.b}. Игра началась!`);
+    setLobby('');
+    $('#roomRow').classList.add('hidden');
+    if (!ui.st) {
+      newGame({
+        mode: 'online', role: 'host', modeId: profile.modeId,
+        timeMs: profile.timeMs, orientation: 'w', splash: true,
+      });
+    }
     ui.chat.push({ name: 'Система', text: `${ui.online.names.b} присоединился к партии` });
     renderChat();
     renderPlayers();
+    toast('Соперник присоединился');
     netPublish({
       t: 'start',
       modeId: ui.st.modeId,
