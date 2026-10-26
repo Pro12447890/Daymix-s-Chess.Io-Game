@@ -1988,3 +1988,31 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
 .mode-tile { padding: 5px 8px; }
 .mt-desc { font-size: 9.3px; }
 .modes-float-back { bottom: 12px; right: 16px; height: 34px; padding: 6px 14px; }
+
+
+/* телефонный сайдбар: шесть вкладок помещаются без переносов */
+@media (max-width: 999px) {
+  .sb-brand { display: none !important; }
+  .sb-nav { gap: 0; flex: 1; }
+  .sb-btn {
+    flex: 1 1 0;
+    padding: 3px 2px;
+    min-width: 0;
+    align-items: center;
+  }
+  .sb-label {
+    font-size: 8.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    letter-spacing: -.2px;
+  }
+  .sb-icon { font-size: 15px; }
+  .sb-footer { flex: none; }
+  .sb-profile { padding: 2px; }
+  .sb-avatar { width: 28px; height: 28px; }
+}
+
+
+.play-actions.one { grid-template-columns: 1fr; }
