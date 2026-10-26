@@ -1605,3 +1605,10 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 calc(var(--sq) * .035)
 }
 
 .phase-rays { opacity: .7; }
+
+
+@media (max-width: 999px) {
+  .side-panel-header { padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
+  .panel-close { order: 3; margin-left: 2px; }
+  .eval-bar-inline { order: 2; }
+}

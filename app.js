@@ -926,7 +926,7 @@ function showScreen(name) {
   ui.screen = name;
   $$('.screen').forEach((s) => s.classList.toggle('active', s.id === 'screen-' + name));
   $$('.sb-btn').forEach((b) => b.classList.remove('active'));
-  const nav = name === 'home' ? $('#sbNavPlay') : $(`.sb-btn[data-screen="${name}"]`);
+  const nav = name === 'home' || name === 'game' ? $('#sbNavPlay') : $(`.sb-btn[data-screen="${name}"]`);
   if (nav) nav.classList.add('active');
   if (name === 'stats') renderStats();
   if (name === 'settings') renderSettings();
