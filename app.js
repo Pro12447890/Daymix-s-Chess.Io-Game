@@ -125,8 +125,19 @@ function updateSoundIcon() {
 const BOT_LABELS = { easy: 'лёгкий', medium: 'средний', hard: 'сложный' };
 const BOT_DELAY = { easy: 420, medium: 600, hard: 780 };
 
+function openBotModal() {
+  const modal = $('#botModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeBotModal() {
+  const modal = $('#botModal');
+  if (modal) modal.classList.add('hidden');
+}
+
 function startBotGame(level) {
   if (!BOT_LABELS[level]) level = 'medium';
+  closeBotModal();
   ui.online = null;
   sound.click();
   newGame({
@@ -807,10 +818,35 @@ function renderModeCard() {
   renderPreview();
 }
 
-function renderModesGrid() {
+const MODE_CATS = {
+  popular: ['classic', 'fischer', 'threeChecks', 'kingCapture'],
+  pieces: ['jester', 'boy', 'queens', 'pawnField', 'pawnFieldQ', 'knights', 'rooks', 'bishops'],
+  chaos: ['explode', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center'],
+};
+
+function modesByFilter(filter) {
+  if (filter === 'all') return MODES.slice();
+  const ids = MODE_CATS[filter] || [];
+  return MODES.filter((m) => ids.includes(m.id));
+}
+
+function renderModesGrid(filter) {
+  const mode = filter || ui.modesFilter || 'all';
+  ui.modesFilter = mode;
   const box = $('#modesGrid');
   box.innerHTML = '';
-  for (const m of MODES) {
+  box.classList.toggle('filtered', mode !== 'all');
+  const list = modesByFilter(mode);
+  for (const [label, count] of [['all', MODES.length], ['popular', MODE_CATS.popular.length], ['pieces', MODE_CATS.pieces.length], ['chaos', MODE_CATS.chaos.length]]) {
+    const b = $(`.mode-filter[data-filter="${label}"]`);
+    if (b) {
+      const em = b.querySelector('em') || document.createElement('em');
+      em.textContent = String(count);
+      b.appendChild(em);
+      b.classList.toggle('active', label === mode);
+    }
+  }
+  for (const m of list) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'mode-tile' + (profile.modeId === m.id ? ' active' : '');
@@ -827,7 +863,7 @@ function renderModesGrid() {
       profile.modeId = m.id;
       saveProfile();
       renderModeCard();
-      renderModesGrid();
+      renderModesGrid(mode);
       toast(`Режим: ${m.name}`);
       showScreen('home');
     });
@@ -989,11 +1025,14 @@ function layoutBoard() {
   if (!stage || !wrap) return;
   const topBar = $('#barTop');
   const bottomBar = $('#barBottom');
-  const barH = (topBar ? topBar.offsetHeight : 0) + (bottomBar ? bottomBar.offsetHeight : 0);
+  const barH = 96;   // фиксировано: плашки 44 + 44 + зазор, доска не дёргается при взятии
   const gaps = 8;
   const availW = Math.max(160, stage.clientWidth);
   const availH = Math.max(160, stage.clientHeight - barH - gaps);
-  const sq = Math.max(12, Math.min(110,
+  const layoutKey = `${availW}x${availH}x${st.W}x${st.H}`;
+  if (ui.layoutKey === layoutKey && wrap.style.width) return;
+  ui.layoutKey = layoutKey;
+  const sq = Math.max(16, Math.min(170,
     Math.floor(availW / st.W),
     Math.floor(availH / st.H)));
   ui.sq = sq;
@@ -1981,7 +2020,8 @@ async function createRoom() {
   setLobby('Комната создана. Ждём соперника — партия начнётся, когда он присоединится.');
   ui.online.waiting = true;
   ui.st = null;
-  showScreen('home');
+  showScreen('online');
+  $('#roomRow').classList.remove('hidden');
   announceRoom();
   clearInterval(ui.online.announce);
   ui.online.announce = setInterval(announceRoom, 4000);   // реже: у ntfy есть лимит на публикации
@@ -2351,14 +2391,7 @@ function bindEvents() {
   $$('.sb-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.id === 'sbNavBots') {
-        showScreen('home');
-        const row = $('.bot-row');
-        if (row) {
-          row.classList.add('flash');
-          setTimeout(() => row.classList.remove('flash'), 1400);
-          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        toast('Выберите уровень бота: лёгкий, средний или сложный');
+        openBotModal();
         return;
       }
       openScreen(btn.dataset.screen);
@@ -2372,6 +2405,12 @@ function bindEvents() {
   $$('#btnPickMode, #homeSettings').forEach((b) => b.addEventListener('click', () => {
     if (b.id === 'btnPickMode') openScreen('modes');
   }));
+  $$('.mode-filter').forEach((b) => b.addEventListener('click', () => {
+    $$('.mode-filter').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    renderModesGrid(b.dataset.filter);
+  }));
+  if ($('#modesBackFloat')) $('#modesBackFloat').addEventListener('click', backFromScreen);
   $('#settingsBack').addEventListener('click', backFromScreen);
   $('#modesBack').addEventListener('click', backFromScreen);
   $('#statsBack').addEventListener('click', backFromScreen);
@@ -2426,6 +2465,10 @@ function bindEvents() {
   });
 
   $$('.bot-level').forEach((b) => b.addEventListener('click', () => startBotGame(b.dataset.level)));
+  $$('#botModal .bot-choice').forEach((b) => b.addEventListener('click', () => startBotGame(b.dataset.level)));
+  if ($('#botClose')) $('#botClose').addEventListener('click', closeBotModal);
+  if ($('#botCancel')) $('#botCancel').addEventListener('click', closeBotModal);
+  if ($('#botModal')) $('#botModal').addEventListener('click', (e) => { if (e.target && e.target.id === 'botModal') closeBotModal(); });
 
   $('#btnExport').addEventListener('click', exportGameFile);
   $('#btnCopyGame').addEventListener('click', copyGameJson);
@@ -2457,7 +2500,8 @@ function bindEvents() {
   $('#skinClose').addEventListener('click', closeSkinModal);
   $('#skinModal').addEventListener('click', (e) => { if (e.target && e.target.id === 'skinModal') closeSkinModal(); });
 
-  $('#btnCreate').addEventListener('click', () => createRoom());
+  $('#btnCreateDirect').addEventListener('click', () => createRoom());
+
   $('#btnCopyCode').addEventListener('click', async () => {
     const code = $('#roomCode').textContent.trim();
     const shareUrl = `${location.origin}${location.pathname}#${code}`;
@@ -2471,8 +2515,10 @@ function bindEvents() {
     if (ui.st) leaveGame();
   });
 
-  $('#btnJoin').addEventListener('click', () => joinRoom($('#joinCode').value.trim()));
-  $('#joinCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(e.target.value.trim()); });
+  $('#btnJoinDirect').addEventListener('click', () => joinRoom($('#joinCodeDirect').value.trim()));
+  $('#joinCodeDirect').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(e.target.value.trim()); });
+  $('#onlineBack').addEventListener('click', backFromScreen);
+
 
   $('#railHint').addEventListener('click', showHint);
   $('#railSettings').addEventListener('click', () => { closePanel(); toggleDrawer(); });
@@ -2549,6 +2595,7 @@ function bindEvents() {
     if (e.key === 'Escape') {
       closeSkinModal();
       closeImport();
+      closeBotModal();
       closeDrawer();
       closePanel();
       ui.selected = -1;
@@ -2572,7 +2619,7 @@ function boot() {
   if (/^\d{5}$/.test(roomHash)) {
     setTimeout(() => {
       if (!ui.st) {
-        $('#joinCode').value = roomHash;
+        if ($('#joinCodeDirect')) $('#joinCodeDirect').value = roomHash;
         joinRoom(roomHash);
         toast('Подключаемся к комнате ' + roomHash + '…');
       }
@@ -2585,7 +2632,7 @@ function boot() {
   renderAvatarRow();
   renderTimeGroups();
   renderModeCard();
-  $('#joinCode').value = '';
+  if ($('#joinCodeDirect')) $('#joinCodeDirect').value = '';
   showScreen('home');
   window.ChessApp = {
     engine: { createState, legalMoves, genPseudo, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, attacked, materialOf, visSet, maybeBlock, centerCells, evaluateWhite, bestMove, MODES, modeById },

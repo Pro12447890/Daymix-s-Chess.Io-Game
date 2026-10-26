@@ -28,6 +28,10 @@
         <span class="sb-icon">🤖</span>
         <span class="sb-label">С ботом</span>
       </button>
+      <button class="sb-btn" id="sbNavOnline" data-screen="online" type="button">
+        <span class="sb-icon">🌐</span>
+        <span class="sb-label">Онлайн</span>
+      </button>
       <button class="sb-btn" id="sbNavModes" data-screen="modes" type="button">
         <span class="sb-icon">🔀</span>
         <span class="sb-label">Режимы</span>
@@ -76,9 +80,8 @@
           </div>
           <div class="time-groups" id="timeGroups"></div>
 
-          <div class="play-actions">
+          <div class="play-actions one">
             <button class="btn-game-green btn-lg" id="btnPlayLocal" type="button">Играть здесь</button>
-            <button class="btn-game-green btn-lg btn-accent-soft" id="btnCreate" type="button">Создать игру по сети</button>
           </div>
 
           <div class="bot-row">
@@ -86,18 +89,6 @@
             <button class="bot-level" data-level="easy" type="button">лёгкий</button>
             <button class="bot-level" data-level="medium" type="button">средний</button>
             <button class="bot-level" data-level="hard" type="button">сложный</button>
-          </div>
-
-          <div class="join-row">
-            <input class="code-input" id="joinCode" inputmode="numeric" maxlength="5" placeholder="код из 5 цифр" autocomplete="off" aria-label="Код комнаты">
-            <button class="btn" id="btnJoin" type="button">Присоединиться</button>
-          </div>
-
-          <div class="status-line" id="lobbyLine"></div>
-          <div class="room-row hidden" id="roomRow">
-            <div class="code-big" id="roomCode">00000</div>
-            <button class="btn btn-sm" id="btnCopyCode" type="button">Копировать ссылку</button>
-            <button class="btn btn-sm btn-danger" id="btnCancelRoom" type="button">Отменить</button>
           </div>
 
           <div class="home-foot">
@@ -108,6 +99,43 @@
             </span>
             <button class="btn btn-sm" id="homeSettings" type="button">⚙ Настройки</button>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────────────────────── ОНЛАЙН ────────────────────────── -->
+    <section class="screen" id="screen-online">
+      <div class="wide-card card online-card">
+        <div class="screen-head">
+          <button class="btn btn-sm btn-ghost back-btn" id="onlineBack" type="button">← Назад</button>
+          <div class="screen-head-text">
+            <h2>Игра по сети с другом</h2>
+            <p>Без регистрации и VPN. Отправьте ссылку другу или введите 5-значный код.</p>
+          </div>
+        </div>
+
+        <div class="online-grid">
+          <div class="online-box">
+            <h3>Создать комнату</h3>
+            <p>Будет сгенерирована ссылка. Друг просто перейдёт по ней — и партия начнётся, когда он присоединится.</p>
+            <button class="btn-game-green btn-lg" id="btnCreateDirect" type="button">Создать комнату</button>
+          </div>
+
+          <div class="online-box">
+            <h3>Присоединиться</h3>
+            <p>Если друг прислал 5 цифр кода:</p>
+            <div class="join-row">
+              <input class="code-input" id="joinCodeDirect" maxlength="5" placeholder="00000" inputmode="numeric" autocomplete="off" aria-label="Код комнаты">
+              <button class="btn-game-green" id="btnJoinDirect" type="button">Войти</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="status-line online-status" id="lobbyLine"></div>
+        <div class="room-row hidden" id="roomRow">
+          <div class="code-big" id="roomCode">00000</div>
+          <button class="btn btn-sm" id="btnCopyCode" type="button">Копировать ссылку</button>
+          <button class="btn btn-sm btn-danger" id="btnCancelRoom" type="button">Отменить</button>
         </div>
       </div>
     </section>
@@ -175,10 +203,17 @@
           </div>
           <span class="chip" id="modesCurrent">Классика</span>
         </div>
+        <div class="modes-filters" id="modesFilters">
+          <button class="mode-filter active" data-filter="all" type="button">Все <em>26</em></button>
+          <button class="mode-filter" data-filter="popular" type="button">Популярные</button>
+          <button class="mode-filter" data-filter="pieces" type="button">Фигуры</button>
+          <button class="mode-filter" data-filter="chaos" type="button">Хаос</button>
+        </div>
         <div class="modes-scroll" id="modesScroll">
           <div class="modes-grid" id="modesGrid"></div>
         </div>
       </div>
+      <button class="modes-float-back" id="modesBackFloat" type="button">← Назад</button>
     </section>
 
     <!-- ─────────────────────────── СТАТИСТИКА ─────────────────────── -->
@@ -384,6 +419,31 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- выбор бота -->
+<div class="modal hidden" id="botModal">
+  <div class="modal-card">
+    <div class="modal-head"><b>Игра с ботом</b><button class="icon-btn" id="botClose" type="button">✕</button></div>
+    <p class="modal-note">Бот играет за противоположный цвет и умеет все режимы.</p>
+    <div class="bot-modal-grid">
+      <button class="bot-choice" data-level="easy" type="button">
+        <span class="bc-icon">🙂</span>
+        <span><b>Лёгкий</b><span>случайные ходы с намёком на взятия — для новичков</span></span>
+      </button>
+      <button class="bot-choice" data-level="medium" type="button">
+        <span class="bc-icon">🙃</span>
+        <span><b>Средний</b><span>перебор на два полухода, выбирает из трёх лучших</span></span>
+      </button>
+      <button class="bot-choice" data-level="hard" type="button">
+        <span class="bc-icon">😈</span>
+        <span><b>Сложный</b><span>перебор на четыре полухода, без случайности</span></span>
+      </button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-ghost" id="botCancel" type="button">Отмена</button>
+    </div>
+  </div>
+</div>
 
 <!-- подтверждение выхода -->
 <div class="modal hidden" id="confirmModal">

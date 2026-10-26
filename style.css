@@ -1612,3 +1612,241 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 calc(var(--sq) * .035)
   .panel-close { order: 3; margin-left: 2px; }
   .eval-bar-inline { order: 2; }
 }
+
+
+/* ═══ 1.1. плашки игроков фиксированной высоты: доска не дёргается ═══ */
+.player-capsule {
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  box-sizing: border-box;
+  flex: none !important;
+  overflow: hidden;
+}
+.captured { height: 16px; overflow: hidden; }
+
+/* ═══ 1.2. аватары никогда не раздуваются ═══ */
+.pc-avatar, .sb-avatar {
+  width: 36px !important;
+  height: 36px !important;
+  max-width: 36px !important;
+  max-height: 36px !important;
+  position: relative !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden !important;
+  flex: none;
+}
+.pc-avatar svg, .sb-avatar svg, .pc-avatar .pc-svg, .sb-avatar .pc-svg {
+  width: 26px !important;
+  height: 26px !important;
+  max-width: 26px !important;
+  max-height: 26px !important;
+  position: static !important;
+  transform: none !important;
+  display: block;
+}
+
+/* ═══ 1.3. большие мониторы ═══ */
+@media (min-width: 1800px) {
+  :root { --panel-w: 420px; --sidebar-w: 180px; }
+  .side-panel { width: 420px; }
+  .clock { font-size: 28px; min-width: 95px; }
+  .game-status { font-size: 16px; }
+  .app-sidebar { padding: 16px 12px; }
+  .sb-btn { font-size: 15px; padding: 12px 14px; }
+  .sb-brand-name { font-size: 19px; }
+  .pc-avatar, .sb-avatar { width: 40px !important; height: 40px !important; }
+}
+
+/* ═══ 3.1. чёткие фигуры ═══ */
+.piece {
+  filter: none;
+  will-change: transform;
+}
+html[data-skin-glow="1"] .piece { filter: drop-shadow(0 0 calc(var(--sq) * .08) var(--skin-glow)); }
+html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
+.pc-svg {
+  shape-rendering: geometricPrecision;
+  text-rendering: geometricPrecision;
+}
+.pc-svg .body { stroke-width: var(--sw); stroke-linecap: round; stroke-linejoin: round; }
+
+/* ═══ 3.2. центрирование ═══ */
+.home { justify-content: center !important; margin: auto 0; }
+.game-shell { align-items: center !important; justify-content: center !important; }
+
+/* ═══ 3.3. стабильная граница сайдбара ═══ */
+.app-sidebar {
+  border-right: 1px solid rgba(255, 255, 255, .08) !important;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, .25) !important;
+}
+
+/* ═══ 5.1. плавный аккордеон времени ═══ */
+.time-group { transition: background .2s ease, border-color .2s ease; }
+.time-group[open] { border-color: var(--accent-green); }
+.time-group .tg-list { animation: slideDown .25s cubic-bezier(.16, 1, .3, 1); }
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══ 5.2. ультра-эпичный сплэш стадий ═══ */
+.phase-rays {
+  width: 160vmax;
+  height: 160vmax;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 215, 0, .28) 0deg 30deg,
+    transparent 30deg 60deg,
+    rgba(129, 182, 76, .3) 60deg 90deg,
+    transparent 90deg 180deg,
+    rgba(255, 215, 0, .28) 180deg 210deg,
+    transparent 210deg 360deg
+  );
+  filter: blur(28px);
+  animation: cosmicRaySpin 8s linear infinite;
+  opacity: 1;
+}
+.phase-badge {
+  font-size: clamp(52px, 9vw, 110px) !important;
+  font-weight: 900 !important;
+  letter-spacing: 6px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #fff176 30%, #f59e0b 70%, #b45309 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  filter: drop-shadow(0 0 35px rgba(245, 158, 11, .9)) drop-shadow(0 15px 40px rgba(0, 0, 0, .95)) !important;
+}
+
+/* ═══ 2. онлайн-экран ═══ */
+.online-card { max-width: 900px; margin: 0 auto; }
+.online-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 4px;
+}
+.online-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel-card);
+}
+.online-box h3 { margin: 0; font-size: 16px; }
+.online-box p { margin: 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.45; }
+.online-box .btn-game-green { margin-top: auto; }
+.online-box .join-row { margin-top: auto; }
+.online-status { margin-top: 12px; }
+#screen-online .room-row { margin-top: 10px; }
+
+/* ═══ 2.3. модалка выбора бота ═══ */
+.bot-modal-grid { display: flex; flex-direction: column; gap: 8px; }
+.bot-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel-card);
+  text-align: left;
+  transition: background .12s ease, border-color .12s ease, transform .08s ease;
+}
+.bot-choice:hover { background: var(--panel-card-hover); border-color: var(--accent-green); }
+.bot-choice:active { transform: translateY(1px); }
+.bot-choice b { display: block; font-size: 14px; }
+.bot-choice span { display: block; font-size: 11.5px; color: var(--text-muted); }
+.bot-choice .bc-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--bg-darker);
+  font-size: 20px;
+  flex: none;
+}
+
+/* ═══ 4. режимы: фильтры и полный текст ═══ */
+.modes-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.mode-filter {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-darker);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mode-filter:hover { color: var(--text); border-color: var(--line-light); }
+.mode-filter.active { background: var(--accent-green); border-color: var(--accent-green); color: #fff; }
+.mode-filter em { font-style: normal; opacity: .7; margin-left: 4px; font-size: 10.5px; }
+
+.mt-desc {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  font-size: 10px;
+  line-height: 1.22;
+}
+.mode-tile { padding: 8px 9px; gap: 4px; }
+.modes-scroll { overflow: auto; padding-right: 4px; }
+
+.modes-float-back {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 60;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line-light);
+  background: var(--panel-card);
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: 0 10px 26px #00000088;
+  display: none;
+}
+.modes-float-back:hover { background: var(--panel-card-hover); }
+
+@media (max-width: 999px) {
+  .online-grid { grid-template-columns: 1fr; }
+  .modes-float-back { display: block; }
+  .player-capsule { height: 38px !important; min-height: 38px !important; max-height: 38px !important; }
+  .pc-avatar, .sb-avatar { width: 30px !important; height: 30px !important; }
+  .pc-avatar svg, .sb-avatar svg, .pc-avatar .pc-svg, .sb-avatar .pc-svg {
+    width: 22px !important; height: 22px !important;
+  }
+  .mt-desc { font-size: 9.5px; }
+}
+
+
+/* полный текст режимов: карточки по контенту, без обрезки многоточием */
+.modes-grid {
+  height: auto;
+  grid-auto-rows: auto;
+  align-content: start;
+}
+.modes-grid.filtered { height: auto; }
+.modes-scroll { min-height: 0; }
+.mode-tile { padding: 7px 8px; gap: 4px; }
+.mt-desc { font-size: 9.5px; line-height: 1.2; }
+.mt-name { font-size: 12.5px; }
+.mt-meta { font-size: 8.5px; }
+#screen-online .online-card { margin: auto 0; }
+
+
+/* плавающая кнопка «Назад» на экране режимов — всегда */
+.modes-float-back { display: block; }
+@media (max-width: 999px) {
+  .modes-float-back { bottom: 70px; right: 14px; }
+}
