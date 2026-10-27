@@ -21,6 +21,7 @@ const DEFAULT_PROFILE = {
   flip: true,
   flipAll: false,
   tableFlip: true,
+  epicFx: false,
   autoQueen: true,
   sound: true,
   side: 'w',
@@ -217,7 +218,7 @@ function chooseBotMove(st, level) {
 }
 
 function maybeBotTurn() {
-  if (ui.paused) return;
+  if (ui.paused || ui.away) return;
   if (!ui.bot || !ui.st || ui.st.status !== 'play' || ui.mode !== 'local') return;
   if (ui.st.turn !== ui.bot.color || ui.bot.busy) return;
   ui.bot.busy = true;
@@ -227,7 +228,7 @@ function maybeBotTurn() {
   setTimeout(() => {
     ui.bot.busy = false;
     ui.botThinking = false;
-    if (ui.paused || !ui.st || ui.st.status !== 'play' || !ui.bot || ui.st.turn !== ui.bot.color) { renderStatus(); return; }
+    if (ui.paused || ui.away || !ui.st || ui.st.status !== 'play' || !ui.bot || ui.st.turn !== ui.bot.color) { renderStatus(); return; }
     const move = chooseBotMove(ui.st, level);
     if (move) commitMove(move, { bot: true });
     renderStatus();
@@ -682,7 +683,8 @@ function explosionFx(st, center) {
   ring.style.width = sq * .8 + 'px';
   ring.style.height = sq * .8 + 'px';
   boom.appendChild(ring);
-  for (let i = 0; i < 14; i++) {
+  const sparkCount = profile.epicFx ? 26 : 14;
+  for (let i = 0; i < sparkCount; i++) {
     const spark = document.createElement('i');
     spark.className = 'boom-spark';
     const a = Math.random() * Math.PI * 2;
@@ -1040,6 +1042,8 @@ const ui = {
   remoteSelected: -1,
   rotated: false,
   tableRotated: false,
+  themesExpanded: false,
+  away: false,
   confirmAction: null,
   sameStreak: 0,
   lastPieceId: null,
@@ -1087,6 +1091,9 @@ function renderProfile() {
   $('#optFlip').checked = profile.flip;
   if ($('#optFlipAll')) $('#optFlipAll').checked = !!profile.flipAll;
   if ($('#optTableFlip')) $('#optTableFlip').checked = profile.tableFlip !== false;
+  if ($('#optEpicFx')) $('#optEpicFx').checked = !!profile.epicFx;
+  if ($('#quickEpicFx')) $('#quickEpicFx').checked = !!profile.epicFx;
+  document.documentElement.classList.toggle('epic-fx', !!profile.epicFx);
   $('#optAutoQueen').checked = profile.autoQueen;
   if ($('#gFlip')) {
     const botGame = !!(ui.bot && ui.st);
@@ -1143,7 +1150,8 @@ function renderThemeRows() {
   for (const box of [$('#settingsThemeRow'), $('#drawerThemeRow')]) {
     if (!box) continue;
     box.innerHTML = '';
-    for (const t of THEMES) {
+    const shown = ui.themesExpanded ? THEMES : THEMES.slice(0, 5);
+    for (const t of shown) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'swatch' + (profile.theme === t.id ? ' active' : '');
@@ -1153,7 +1161,24 @@ function renderThemeRows() {
       b.addEventListener('click', () => setTheme(t.id));
       box.appendChild(b);
     }
+    if (!ui.themesExpanded && THEMES.length > 5) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'swatch swatch-more';
+      more.innerHTML = `<span class="sw-plus">+</span><span class="sw-name">ещё ${THEMES.length - 5}</span>`;
+      more.title = 'Показать все доски';
+      more.addEventListener('click', () => { ui.themesExpanded = true; renderThemeRows(); });
+      box.appendChild(more);
+    } else if (ui.themesExpanded) {
+      const less = document.createElement('button');
+      less.type = 'button';
+      less.className = 'swatch swatch-more';
+      less.innerHTML = `<span class="sw-plus">−</span><span class="sw-name">свернуть</span>`;
+      less.addEventListener('click', () => { ui.themesExpanded = false; renderThemeRows(); });
+      box.appendChild(less);
+    }
   }
+  renderThemePreview();
 }
 
 function renderPieceRows() {
@@ -1250,6 +1275,24 @@ function setTheme(id) {
   $$('.swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === id));
   renderPreview();
   saveProfile();
+}
+
+function renderThemePreview() {
+  const box = $('#themePreview');
+  if (!box) return;
+  const theme = THEMES.find((t) => t.id === profile.theme) || THEMES[0];
+  let cells = '';
+  for (let y = 0; y < 4; y++) {
+    for (let x = 0; x < 4; x++) {
+      const light = (x + y) % 2 === 0;
+      cells += `<span class="tp-sq" style="background:${light ? theme.light : theme.dark}"></span>`;
+    }
+  }
+  box.innerHTML = `<div class="tp-board">${cells}
+    <span class="tp-piece tp-w">${pieceSvg('q')}</span>
+    <span class="tp-piece tp-b">${pieceSvg('n')}</span>
+  </div>
+  <div class="tp-caption">${theme.name} · ${PIECE_SKINS.find((s) => s.id === profile.pieces)?.name || 'Классика'}</div>`;
 }
 
 function setPieces(id) {
@@ -1595,6 +1638,10 @@ function updateOnlineModeLine() {
 
 function showScreen(name) {
   if (name !== 'game') { closeDrawer(); closePanel(); }
+  const wasGame = ui.screen === 'game';
+  const activeGame = ui.st && ui.st.status === 'play' && !ui.scored;
+  if (wasGame && name !== 'game' && activeGame && !ui.away) suspendGame();
+  if (name === 'game' && ui.away) resumeGame();
   ui.screen = name;
   $$('.screen').forEach((s) => s.classList.toggle('active', s.id === 'screen-' + name));
   $$('.sb-btn').forEach((b) => b.classList.remove('active'));
@@ -1602,6 +1649,7 @@ function showScreen(name) {
   if (nav) nav.classList.add('active');
   if (name === 'online') updateOnlineModeLine();
   if (name === 'stats') renderStats();
+  updateResumeFloat();
   if (name === 'settings') renderSettings();
   if (name === 'home') { renderProfile(); }
   if (name === 'modes') renderModesGrid();
@@ -1945,6 +1993,7 @@ function newGame(opts = {}) {
   const mode = pickedMode.flags.randomPick ? randomRealMode() : pickedMode;
   ui.rotated = false;
   ui.tableRotated = false;
+  ui.away = false;
   const boardEl = $('#board');
   if (boardEl) boardEl.classList.remove('board-rotated');
   ui.pieceStreak = null;
@@ -2453,7 +2502,19 @@ function commitMove(m, opts = {}) {
     renderAll(flippedNow ? false : !opts.noAnim);
     if (flippedNow) renderPlayers();
     if (st.flags.explode && explodedNow) explosionFx(st, match.to);
-    if (capInfo.length) captureFx(capInfo);
+    if (capInfo.length) {
+      captureFx(capInfo);
+      if (profile.epicFx && !capInfo.some((c) => c.type === 'q')) {
+        const boardFx = $('#board');
+        if (boardFx) {
+          boardFx.classList.remove('shake-2');
+          void boardFx.offsetWidth;
+          boardFx.classList.add('shake-2');
+          setTimeout(() => boardFx.classList.remove('shake-2'), 420);
+        }
+        explosionFx(st, match.to);
+      }
+    }
     renderMoves();
     saveCurrentGame();
   }
@@ -2633,7 +2694,7 @@ function spawnPhaseFliers() {
   const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reduced) return;
   box.innerHTML = '';
-  const count = window.innerWidth < 700 ? 10 : 18;
+  const count = Math.round((window.innerWidth < 700 ? 10 : 18) * (profile.epicFx ? 1.8 : 1));
   for (let i = 0; i < count; i++) {
     const type = FLIER_TYPES[Math.floor(Math.random() * FLIER_TYPES.length)];
     const el = document.createElement('span');
@@ -3364,6 +3425,32 @@ function confirmLeaveGame() {
   setTimeout(leaveGame, 260);
 }
 
+function suspendGame() {
+  if (!ui.st || ui.st.status !== 'play') return;
+  ui.away = true;
+  ui.running = false;
+  renderStatus();
+  updateResumeFloat();
+  toast('Партия ждёт вас — часы остановлены');
+}
+
+function resumeGame() {
+  if (!ui.st || ui.st.status !== 'play') return;
+  ui.away = false;
+  ui.turnStart = performance.now();
+  if (ui.timeMs) ui.running = true;
+  renderAll(false);
+  updateResumeFloat();
+  if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 500);
+}
+
+function updateResumeFloat() {
+  const btn = $('#resumeFloat');
+  if (!btn) return;
+  const show = !!(ui.st && ui.st.status === 'play' && ui.screen !== 'game' && !ui.scored);
+  btn.classList.toggle('hidden', !show);
+}
+
 function leaveGame() {
   try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
   leaveOnline();
@@ -3401,7 +3488,7 @@ function bindEvents() {
       openScreen(btn.dataset.screen);
     });
   });
-  $('#sbBrand').addEventListener('click', () => { if (ui.st) askLeave(); else showScreen('home'); });
+  $('#sbBrand').addEventListener('click', () => showScreen('home'));
   $('#sbProfile').addEventListener('click', () => openScreen('settings'));
   if ($('#sbProfile')) $('#sbProfile').addEventListener('click', () => openScreen('settings'));
   if ($('#homeSettings')) $('#homeSettings').addEventListener('click', () => openScreen('settings'));
@@ -3432,6 +3519,17 @@ function bindEvents() {
     saveProfile();
   });
 
+  const setEpic = (on) => {
+    profile.epicFx = !!on;
+    document.documentElement.classList.toggle('epic-fx', !!on);
+    if ($('#optEpicFx')) $('#optEpicFx').checked = !!on;
+    if ($('#quickEpicFx')) $('#quickEpicFx').checked = !!on;
+    saveProfile();
+    toast(on ? 'Эпичные эффекты включены' : 'Эпичные эффекты выключены');
+  };
+  if ($('#quickEpicFx')) $('#quickEpicFx').addEventListener('change', (e) => setEpic(e.target.checked));
+  if ($('#optEpicFx')) $('#optEpicFx').addEventListener('change', (e) => setEpic(e.target.checked));
+  if ($('#resumeFloat')) $('#resumeFloat').addEventListener('click', () => showScreen('game'));
   if ($('#optTableFlip')) $('#optTableFlip').addEventListener('change', (e) => {
     profile.tableFlip = e.target.checked;
     saveProfile();

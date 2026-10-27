@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261027-7">
+  <link rel="stylesheet" href="style.css?v=20261027-8">
 </head>
 <body>
 
@@ -78,6 +78,8 @@
     </div>
   </aside>
 
+  <button class="resume-float hidden" id="resumeFloat" type="button">▶ Вернуться в партию</button>
+
   <main class="main">
 
     <!-- ─────────────────────────── ГЛАВНАЯ ─────────────────────────── -->
@@ -107,6 +109,9 @@
             <button class="side-pick" data-side="b" type="button">Чёрные</button>
             <button class="side-pick" data-side="random" type="button">🎲 Случайно</button>
             <button class="btn btn-sm" id="btnRandomBoard" type="button" title="Случайная доска">🎨</button>
+            <label class="epic-toggle" title="Усиленные эффекты на ПК">
+              <input type="checkbox" id="quickEpicFx"><span>✨ Эпично</span>
+            </label>
           </div>
 
           <div class="play-actions one">
@@ -227,6 +232,7 @@
               <span class="field-label">Тема доски</span>
               <div class="theme-row" id="settingsThemeRow"></div>
               <button class="btn btn-sm" id="btnRandomTheme" type="button">🎲 Случайная доска</button>
+              <div class="theme-preview" id="themePreview"></div>
             </div>
             <div class="field">
               <span class="field-label">Набор фигур</span>
@@ -242,6 +248,7 @@
               <label class="toggle" id="optSquareWrap"><input type="checkbox" id="optSquare"><span>Квадратная доска 12×12 и 14×14</span></label>
               <label class="toggle"><input type="checkbox" id="optFlipAll"><span>Переворачивать весь интерфейс, а не только доску</span></label>
               <label class="toggle"><input type="checkbox" id="optTableFlip"><span>Физически переворачивать доску (как на столе)</span></label>
+              <label class="toggle"><input type="checkbox" id="optEpicFx"><span>✨ Эпичные эффекты (как в мобильной версии)</span></label>
             </div>
             <div class="field">
               <span class="field-label">В локальной игре я играю за</span>
@@ -251,7 +258,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-7 · подготовка домена</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-8 · эпик-эффекты, свёрнутые темы, возврат в партию</div>
           </div>
         </div>
       </div>
@@ -617,6 +624,6 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261027-7"></script>
+<script src="app.js?v=20261027-8"></script>
 </body>
 </html>
