@@ -27,9 +27,50 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261027-20">
+  <link rel="stylesheet" href="style.css?v=20261027-21">
 </head>
 <body>
+
+<div class="welcome hidden" id="welcome">
+  <div class="welcome-step" id="welcomeLang">
+    <button class="welcome-lang" data-lang="ru" type="button">
+      <b>Русский</b><span>Играть на русском</span>
+    </button>
+    <button class="welcome-lang" data-lang="en" type="button">
+      <b>English</b><span>Play in English</span>
+    </button>
+  </div>
+
+  <div class="welcome-step hidden" id="welcomeSetup">
+    <h1 id="welcomeTitle">Настройка профиля</h1>
+    <p class="welcome-sub" id="welcomeSub">Как тебя зовут и как всё будет выглядеть?</p>
+
+    <label class="field welcome-field">
+      <span class="field-label" id="welcomeNameLabel">Ник</span>
+      <input id="welcomeName" maxlength="18" autocomplete="off" spellcheck="false">
+    </label>
+
+    <div class="field welcome-field">
+      <span class="field-label" id="welcomeAvatarLabel">Аватар</span>
+      <div class="avatar-row" id="welcomeAvatars"></div>
+    </div>
+
+    <div class="field welcome-field">
+      <span class="field-label" id="welcomePiecesLabel">Фигуры</span>
+      <div class="pieces-row compact" id="welcomePieces"></div>
+    </div>
+
+    <div class="field welcome-field">
+      <span class="field-label" id="welcomeThemesLabel">Доска</span>
+      <div class="theme-row" id="welcomeThemes"></div>
+    </div>
+
+    <div class="welcome-actions">
+      <button class="btn btn-sm" id="welcomeSettings" type="button">Настройки</button>
+      <button class="btn-game-green btn-lg" id="welcomeStart" type="button">Начать</button>
+    </div>
+  </div>
+</div>
 
 <div class="app">
 
@@ -247,6 +288,7 @@
             <h2>Настройки</h2>
             <p>Имя, аватар, вид доски и фигур, помощники. Сохраняется автоматически.</p>
           </div>
+          <button class="btn btn-sm" id="btnRefreshGame" type="button">↻ Обновить</button>
           <button class="btn btn-sm btn-danger" id="btnResetStats" type="button">Сбросить прогресс</button>
         </div>
 
@@ -281,6 +323,14 @@
               <label class="toggle"><input type="checkbox" id="optFlipAll"><span>Переворачивать весь интерфейс, а не только доску</span></label>
               <label class="toggle"><input type="checkbox" id="optTableFlip"><span>Физически переворачивать доску (как на столе)</span></label>
               <label class="toggle"><input type="checkbox" id="optEpicFx"><span>✨ Эпичные эффекты (как в мобильной версии)</span></label>
+              <label class="toggle"><input type="checkbox" id="optCalm"><span>🌿 Спокойный режим (без лишних эффектов)</span></label>
+              <label class="field">
+                <span class="field-label">Язык / Language</span>
+                <select id="langSelect">
+                  <option value="ru">Русский</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
             </div>
             <div class="field">
               <span class="field-label">В локальной игре я играю за</span>
@@ -290,7 +340,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-20 · 57 режимов</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-21 · приветствие и язык</div>
           </div>
         </div>
       </div>
@@ -656,6 +706,6 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261027-20"></script>
+<script src="app.js?v=20261027-21"></script>
 </body>
 </html>

@@ -3053,3 +3053,50 @@ html.epic-fx .flier { display: block !important; }
 .online-bottom { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .lobby-list.mini { max-height: 150px; }
 .lobby-list.mini .lobby-item { padding: 6px 9px; }
+
+
+/* ═══ стартовое приветствие ═══ */
+.welcome { position: fixed; inset: 0; z-index: 300; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+.welcome.hidden { display: none; }
+#welcomeLang { width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+.welcome-lang {
+  border: 0; border-right: 1px solid var(--line); background: var(--bg-darker);
+  color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; font-family: inherit; cursor: pointer; transition: background .2s ease;
+}
+.welcome-lang:last-child { border-right: 0; }
+.welcome-lang:hover { background: var(--panel-card); }
+.welcome-lang b { font-size: clamp(26px, 3.4vw, 46px); }
+.welcome-lang span { color: var(--text-muted); font-size: 13px; }
+#welcomeSetup {
+  width: min(560px, calc(100vw - 24px)); max-height: 92vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line-light); border-radius: var(--radius-lg);
+  padding: 22px;
+}
+#welcomeSetup h1 { margin: 0 0 4px; font-size: 24px; }
+.welcome-sub { margin: 0 0 14px; color: var(--text-muted); font-size: 12.5px; }
+.welcome-field { margin-bottom: 12px; }
+.welcome-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 8px; }
+.welcome-actions .btn-game-green { flex: 1 1 auto; }
+@media (max-width: 999px) {
+  #welcomeSetup { padding: 16px; }
+  .welcome-lang b { font-size: 28px; }
+}
+
+/* спокойный режим */
+html.calm *, html.calm *::before, html.calm *::after {
+  animation-duration: .001s !important;
+  animation-delay: 0s !important;
+  transition-duration: .01s !important;
+}
+html.calm .phase-flier, html.calm .confetti-piece, html.calm .res-flier,
+html.calm .result-rays, html.calm .cap-ghost, html.calm .boom,
+html.calm #fxFlash, html.calm .wave-ring, html.calm .extreme-diff { display: none !important; }
+html.calm .board.shake, html.calm .board.shake-2, html.calm .board.shake-3,
+html.calm .board.shake-4, html.calm .board.shake-5 { animation: none !important; }
+
+/* на телефоне нет тумблера ПК-эффектов */
+@media (max-width: 999px) {
+  label.toggle:has(#optEpicFx) { display: none; }
+  .epic-toggle { display: none; }
+}

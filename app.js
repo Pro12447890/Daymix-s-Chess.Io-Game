@@ -16,6 +16,9 @@ const AVATARS = ['n', 'q', 'r', 'b', 'k', 'p', 'j', 'g'];
 const DEFAULT_PROFILE = {
   name: 'Игрок',
   avatar: 'n',
+  language: null,
+  onboarded: false,
+  calm: false,
   theme: 'green',
   pieces: '1',
   flip: true,
@@ -676,6 +679,7 @@ function radiusEdge(st, i) {
 }
 
 function queenDrama(item) {
+  if (profile.calm) return;
   const box = $('#queenDrama');
   if (!box) return;
   box.classList.remove('hidden');
@@ -780,6 +784,7 @@ function softBurst(st, sq) {
 }
 
 function captureFx(list) {
+  if (profile.calm) return;
   if (!list || !list.length || !ui.st) return;
   const st = ui.st;
   const sq = ui.sq;
@@ -1174,7 +1179,11 @@ function renderProfile() {
   if ($('#optTableFlip')) $('#optTableFlip').checked = profile.tableFlip !== false;
   if ($('#optEpicFx')) $('#optEpicFx').checked = !!profile.epicFx;
   if ($('#quickEpicFx')) $('#quickEpicFx').checked = !!profile.epicFx;
-  document.documentElement.classList.toggle('epic-fx', !!profile.epicFx);
+  document.documentElement.classList.toggle('epic-fx', !!profile.epicFx && !profile.calm);
+  if ($('#optCalm')) $('#optCalm').checked = !!profile.calm;
+  document.documentElement.classList.toggle('calm', !!profile.calm);
+  if ($('#langSelect')) $('#langSelect').value = profile.language || 'ru';
+  document.documentElement.lang = profile.language || 'ru';
   $('#optAutoQueen').checked = profile.autoQueen;
   if ($('#gFlip')) {
     const botGame = !!(ui.bot && ui.st);
@@ -1718,6 +1727,229 @@ function updateOnlineModeLine() {
   el.innerHTML = `Режим: <b>${escapeHtml(m.name)}</b> · ${m.W}×${m.H} · ${escapeHtml(profile.timeLabel || 'без ограничений')}`;
 }
 
+const SKIP_WELCOME = location.search.includes('skipwelcome=1') || (!!navigator.webdriver && !location.search.includes('welcome=1'));
+
+const EN_STATIC = {
+  'Играть': 'Play', 'С ботом': 'Vs Bot', 'Онлайн': 'Online', 'Режимы': 'Modes',
+  'Статистика': 'Stats', 'Настройки': 'Settings', 'Игрок': 'Player', '0 очков': '0 points',
+  'Сыграйте партию за десять секунд': 'Play a game in ten seconds',
+  'Выберите режим и время — остальное уже настроено.': 'Pick a mode and time — the rest is ready.',
+  'Сменить': 'Change', 'Контроль времени': 'Time control', 'Твой цвет:': 'Your color:',
+  'Белые': 'White', 'Чёрные': 'Black', 'Играть здесь': 'Play here', 'С ботом:': 'Vs bot:',
+  'лёгкий': 'easy', 'средний': 'medium', 'сложный': 'hard', 'гроссмейстер': 'grandmaster', 'движок': 'engine',
+  'Или сыграйте с:': 'Or play with:', 'Мини-профиль': 'Mini profile', 'Доски': 'Boards',
+  'Фигуры': 'Pieces', 'Мои итоги': 'My stats', '▶ Продолжить партию': '▶ Resume game',
+  '⚙ Настройки': '⚙ Settings', '← Назад': '← Back',
+  'Игра по сети с другом': 'Play online with a friend',
+  'Без регистрации и VPN. Отправьте ссылку другу или введите 5-значный код.': 'No signup or VPN. Send the link to a friend or enter the 5-digit code.',
+  'С другом': 'With a friend', 'Интернет': 'Internet', 'Создать комнату': 'Create room',
+  'Будет сгенерирована ссылка. Друг просто перейдёт по ней — и партия начнётся, когда он присоединится.': 'A link will be generated. Your friend opens it and the game starts when they join.',
+  'Присоединиться': 'Join', 'Если друг прислал 5 цифр кода:': 'If your friend sent a 5-digit code:',
+  'Войти': 'Enter', '↩ Вернуться в последнюю комнату': '↩ Return to last room',
+  'Копировать ссылку': 'Copy link', 'Отменить': 'Cancel', 'Публичные партии': 'Public games',
+  'Все →': 'All →', 'Пока нет открытых партий — создайте комнату, и она появится здесь.': 'No open games yet — create a room and it will appear here.',
+  'Ожидают партии': 'Waiting games', '+ Выставить ожидание': '+ List a game',
+  'Подключаемся к публичному списку…': 'Connecting to the public list…',
+  'Наблюдение за партиями': 'Spectate games', 'Пока никто не играет': 'No games yet',
+  'Имя, аватар, вид доски и фигур, помощники. Сохраняется автоматически.': 'Name, avatar, board and pieces, helpers. Saved automatically.',
+  '↻ Обновить': '↻ Refresh', 'Сбросить прогресс': 'Reset progress', 'Имя пользователя': 'Nickname',
+  'Аватар': 'Avatar', 'Тема доски': 'Board theme', 'Набор фигур': 'Piece set',
+  '🎲 Случайная доска': '🎲 Random board',
+  'Переворачивать доску после хода': 'Flip board after move',
+  'Авто-ферзь при превращении': 'Auto-queen on promotion', 'Звуки и вибрация': 'Sounds and vibration',
+  'Переворачивать весь интерфейс, а не только доску': 'Flip the whole interface, not just the board',
+  'Физически переворачивать доску (как на столе)': 'Physically rotate the board (like a real table)',
+  '✨ Эпичные эффекты (как в мобильной версии)': '✨ Epic effects (mobile style)',
+  '🌿 Спокойный режим (без лишних эффектов)': '🌿 Calm mode (no extra effects)',
+  'Язык / Language': 'Language', 'В локальной игре я играю за': 'In local games I play as',
+  'белых': 'white', 'чёрных': 'black',
+  'Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.': 'Games, points and stats are stored in this browser. History keeps the last 60 games.',
+  'Все': 'All', 'Популярные': 'Popular', 'Хаос': 'Chaos', 'Фигуры ': 'Pieces ',
+  'Очки, счёт партий и последние игры.': 'Points, game count and recent games.',
+  'История партий': 'Game history', 'Соперник': 'Opponent', 'чёрные': 'black', 'Вы': 'You',
+  'Превращение': 'Promotion', '≡ Ходы': '≡ Moves', '⚑ Сдаться': '⚑ Resign', 'Выйти': 'Leave',
+  'ПАУЗА': 'PAUSED', 'Часы остановлены': 'Clocks stopped', 'Продолжить': 'Resume',
+  'Ход белых': 'White to move', 'Ходы': 'Moves', 'Чат': 'Chat', 'Инфо': 'Info',
+  'Пока пусто — сделайте первый ход': 'Empty — make the first move',
+  'Чат доступен в партии по сети': 'Chat is available in online games',
+  'В буфер': 'To clipboard', 'Импорт': 'Import', '½ Ничья': '½ Draw', 'Настройки партии': 'Game settings',
+  'Переворот после хода': 'Flip after move', 'Авто-ферзь': 'Auto-queen', 'Звуки': 'Sounds',
+  'Партия': 'Game', 'Сменить режим': 'Change mode', 'Все настройки': 'All settings',
+  'Прервать': 'Abort', 'Новая партия': 'New game', 'В меню': 'To menu',
+  'Ещё партию': 'Another game', 'Посмотреть доску': 'View board',
+  'Судьба выбирает режим': 'Fate picks a mode', 'крутим барабан': 'spinning the wheel',
+  'Игра с ботом': 'Play with bot', 'Бот играет за противоположный цвет и умеет все режимы.': 'The bot plays the other side and knows all modes.',
+  'Отмена': 'Cancel', 'Остаться': 'Stay', 'Импорт партии': 'Import game',
+  'Наборы фигур': 'Piece sets', 'Выйти в меню': 'Exit to menu', 'Ничья': 'Draw',
+  'Победа': 'Victory', 'Поражение': 'Defeat', 'Мат': 'Checkmate',
+};
+
+function translateStaticDom() {
+  if (profile.language !== 'en') return;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const raw = node.nodeValue;
+    const key = raw.trim();
+    if (!key || !EN_STATIC[key]) continue;
+    node.nodeValue = raw.replace(key, EN_STATIC[key]);
+  }
+  document.querySelectorAll('[placeholder]').forEach((el) => {
+    const key = el.placeholder.trim();
+    if (EN_STATIC[key]) el.placeholder = EN_STATIC[key];
+  });
+}
+
+const WELCOME_TEXT = {
+  ru: {
+    title: 'Настройка профиля',
+    sub: 'Как тебя зовут и как всё будет выглядеть?',
+    name: 'Ник', avatar: 'Аватар', pieces: 'Фигуры', theme: 'Доска',
+    settings: 'Настройки', start: 'Начать', placeholder: 'Игрок',
+  },
+  en: {
+    title: 'Profile setup',
+    sub: 'What is your name and how should everything look?',
+    name: 'Nickname', avatar: 'Avatar', pieces: 'Pieces', theme: 'Board',
+    settings: 'Settings', start: 'Start', placeholder: 'Player',
+  },
+};
+
+function showWelcome() {
+  const box = $('#welcome');
+  if (!box) return;
+  box.classList.remove('hidden');
+  $('#welcomeLang').classList.remove('hidden');
+  $('#welcomeSetup').classList.add('hidden');
+}
+
+function chooseWelcomeLanguage(lang) {
+  profile.language = lang === 'en' ? 'en' : 'ru';
+  saveProfile();
+  const text = WELCOME_TEXT[profile.language];
+  $('#welcomeLang').classList.add('hidden');
+  $('#welcomeSetup').classList.remove('hidden');
+  $('#welcomeTitle').textContent = text.title;
+  $('#welcomeSub').textContent = text.sub;
+  $('#welcomeNameLabel').textContent = text.name;
+  $('#welcomeAvatarLabel').textContent = text.avatar;
+  $('#welcomePiecesLabel').textContent = text.pieces;
+  $('#welcomeThemesLabel').textContent = text.theme;
+  $('#welcomeSettings').textContent = text.settings;
+  $('#welcomeStart').textContent = text.start;
+  const nameInput = $('#welcomeName');
+  nameInput.placeholder = text.placeholder;
+  if (!nameInput.value || nameInput.value === 'Игрок' || nameInput.value === 'Player') {
+    nameInput.value = profile.language === 'en' ? 'Player' : 'Игрок';
+  }
+  fillWelcomeSetup();
+}
+
+function fillWelcomeSetup() {
+  const avatars = $('#welcomeAvatars');
+  if (avatars) {
+    avatars.innerHTML = '';
+    for (const a of AVATARS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'avatar-btn' + (profile.avatar === a ? ' active' : '');
+      b.innerHTML = pieceSvg(a, 'av-pc');
+      b.addEventListener('click', () => {
+        profile.avatar = a;
+        avatars.querySelectorAll('.avatar-btn').forEach((x) => x.classList.toggle('active', x === b));
+        saveProfile();
+      });
+      avatars.appendChild(b);
+    }
+  }
+  const pieces = $('#welcomePieces');
+  if (pieces) {
+    pieces.innerHTML = '';
+    for (const s of PIECE_SKINS.slice(0, 8)) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pset' + (profile.pieces === s.id ? ' active' : '');
+      b.title = s.name;
+      const glyph = document.createElement('span');
+      glyph.className = 'pset-glyph' + (s.hollow ? ' hollow' : '') + (s.metal ? ' metal' : '');
+      glyph.style.setProperty('--skin-w', s.w);
+      glyph.style.setProperty('--skin-we', s.we);
+      glyph.style.setProperty('--skin-wd', s.wd);
+      glyph.style.setProperty('--skin-b', s.b);
+      glyph.style.setProperty('--skin-be', s.be);
+      glyph.style.setProperty('--skin-bd', s.bd);
+      glyph.innerHTML = pieceSvg('n', 'pset-pc');
+      b.appendChild(glyph);
+      b.addEventListener('click', () => {
+        setPieces(s.id);
+        pieces.querySelectorAll('.pset').forEach((x) => x.classList.toggle('active', x === b));
+      });
+      pieces.appendChild(b);
+    }
+  }
+  const themes = $('#welcomeThemes');
+  if (themes) {
+    themes.innerHTML = '';
+    for (const th of THEMES.slice(0, 10)) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch' + (profile.theme === th.id ? ' active' : '');
+      b.title = th.name;
+      b.innerHTML = `<span class="sw-light" style="background:${th.light}"></span><span class="sw-dark" style="background:${th.dark}"></span><span class="sw-name">${th.name}</span>`;
+      b.addEventListener('click', () => {
+        setTheme(th.id);
+        themes.querySelectorAll('.swatch').forEach((x) => x.classList.toggle('active', x === b));
+      });
+      themes.appendChild(b);
+    }
+  }
+}
+
+function finishWelcome(goSettings) {
+  const name = $('#welcomeName') ? $('#welcomeName').value.trim().slice(0, 18) : '';
+  if (name) profile.name = name;
+  profile.onboarded = true;
+  saveProfile(true);
+  $('#welcome').classList.add('hidden');
+  renderProfile();
+  renderThemeRows();
+  renderPieceRows();
+  renderAvatarRow();
+  if (profile.language === 'en') { location.reload(); return; }
+  showScreen(goSettings ? 'settings' : 'home');
+}
+
+function setCalm(on) {
+  profile.calm = !!on;
+  document.documentElement.classList.toggle('calm', !!on);
+  if (on) {
+    document.documentElement.classList.remove('epic-fx');
+    profile.epicFx = false;
+  }
+  if ($('#optCalm')) $('#optCalm').checked = !!on;
+  saveProfile();
+  toast(on ? 'Спокойный режим включён' : 'Спокойный режим выключен');
+}
+
+function refreshActiveGame() {
+  if (ui.st && ui.st.status === 'play') {
+    showScreen('game');
+    if (ui.away) resumeGame();
+    toast('Вернулись в текущую партию');
+    return;
+  }
+  if (loadCurrentGame()) {
+    resumeSavedGame();
+    return;
+  }
+  if (profile.lastRoom && profile.lastRoom.code) {
+    joinRoom(profile.lastRoom.code);
+    return;
+  }
+  toast('Активной партии нет');
+}
+
 function showScreen(name) {
   if (name !== 'game') { closeDrawer(); closePanel(); }
   const wasGame = ui.screen === 'game';
@@ -1732,6 +1964,7 @@ function showScreen(name) {
   if (name === 'online') { updateOnlineModeLine(); ensureLobby(); renderLobby(); }
   if (name === 'stats') renderStats();
   updateResumeFloat();
+  translateStaticDom();
   if (name === 'settings') renderSettings();
   if (name === 'home') { renderProfile(); }
   if (name === 'modes') renderModesGrid();
@@ -2823,6 +3056,7 @@ function fitPhaseBadge() {
 }
 
 function spawnPhaseFliers() {
+  if (profile.calm) return;
   const box = $('#phaseFliers');
   if (!box) return;
   const reduced = !profile.epicFx && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -3859,6 +4093,16 @@ function bindEvents() {
     toast(on ? 'Эпичные эффекты включены' : 'Эпичные эффекты выключены');
   };
   if ($('#quickEpicFx')) $('#quickEpicFx').addEventListener('change', (e) => setEpic(e.target.checked));
+  if ($('#optCalm')) $('#optCalm').addEventListener('change', (e) => setCalm(e.target.checked));
+  if ($('#btnRefreshGame')) $('#btnRefreshGame').addEventListener('click', refreshActiveGame);
+  if ($('#langSelect')) $('#langSelect').addEventListener('change', (e) => {
+    profile.language = e.target.value === 'en' ? 'en' : 'ru';
+    saveProfile();
+    location.reload();
+  });
+  $$('.welcome-lang').forEach((b) => b.addEventListener('click', () => chooseWelcomeLanguage(b.dataset.lang)));
+  if ($('#welcomeStart')) $('#welcomeStart').addEventListener('click', () => finishWelcome(false));
+  if ($('#welcomeSettings')) $('#welcomeSettings').addEventListener('click', () => finishWelcome(true));
   if ($('#optEpicFx')) $('#optEpicFx').addEventListener('change', (e) => setEpic(e.target.checked));
   if ($('#resumeFloat')) $('#resumeFloat').addEventListener('click', () => showScreen('game'));
   if ($('#optTableFlip')) $('#optTableFlip').addEventListener('change', (e) => {
@@ -4260,13 +4504,16 @@ function boot() {
   renderTimeGroups();
   renderModeCard();
   if ($('#joinCodeDirect')) $('#joinCodeDirect').value = '';
+  if (!profile.onboarded && !SKIP_WELCOME) showWelcome();
   showScreen('home');
+  translateStaticDom();
   window.ChessApp = {
     engine: { createState, legalMoves, genPseudo, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, attacked, materialOf, visSet, maybeBlock, centerCells, evaluateWhite, bestMove, MODES, modeById },
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
+    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm,
     captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),
