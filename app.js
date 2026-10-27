@@ -2584,7 +2584,8 @@ function renderMobileMoves() {
       return `<span class="mm ${ply === ui.viewPly ? 'last' : ''}"><span class="mm-num">${num}</span>${escapeHtml(m.san)}</span>`;
     }).join('');
   }
-  strip.classList.toggle('turn-flip', ui.orientation === 'b' && !profile.flipAll);
+  strip.classList.toggle('turn-flip', ui.orientation === 'b' && !profile.flipAll && !ui.tableRotated);
+  strip.classList.toggle('table-flip', !!ui.tableRotated);
 }
 
 function renderMoves() {

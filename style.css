@@ -2716,3 +2716,7 @@ html[data-infernal="1"] .phase-splash[data-phase="opening"] .phase-badge {
 
 /* физический переворот доски: крутится только поле, плашки остаются читаемыми */
 .board.board-rotated { transform: rotate(180deg); }
+
+
+/* ходы разворачиваются вместе с физически повёрнутой доской */
+.mobile-moves.table-flip { transform: rotate(180deg); }
