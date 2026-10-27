@@ -4,10 +4,10 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --bg: #262421;
-  --bg-darker: #1e1d1a;
-  --panel: #262522;
-  --panel-card: #302e2b;
+  --bg: #272520;
+  --bg-darker: #1f1e19;
+  --panel: #272622;
+  --panel-card: #322f2c;
   --panel-card-hover: #383632;
   --line: #3d3b37;
   --line-light: #484540;
@@ -2717,3 +2717,45 @@ html[data-infernal="1"] .phase-splash[data-phase="opening"] .phase-badge {
 
 /* ходы разворачиваются вместе с физически повёрнутой доской */
 .mobile-moves.table-flip { transform: rotate(180deg); }
+
+/* ═══ лёгкий сдвиг палитры на 0.5%: не 1-в-1 с Chess.com ═══ */
+:root {
+  --bg: #262421;
+  --bg-darker: #1e1d1a;
+  --panel: #262522;
+  --panel-card: #302e2b;
+  --panel-card-hover: #383732;
+  --line: #3d3c37;
+  --line-light: #484640;
+  --text-muted: #999896;
+  --text-dim: #767573;
+  --accent-green: #7fb74d;
+  --accent-green-hover: #9ccc66;
+  --accent-green-shadow: #517826;
+  --danger: #fb482e;
+  --danger-shadow: #b52e1b;
+  --light: #eeefd4;
+  --dark: #759756;
+}
+html[data-theme="green"] { --light: #eeefd4; --dark: #759756; }
+
+/* финальная палитра: сдвиг 0.5% */
+:root {
+  --bg: #272520;
+  --bg-darker: #1f1e19;
+  --panel: #272622;
+  --panel-card: #322f2c;
+  --panel-card-hover: #393732;
+  --line: #3d3c37;
+  --line-light: #484640;
+  --text-muted: #999896;
+  --text-dim: #767573;
+  --accent-green: #7fb74d;
+  --accent-green-hover: #9ccc66;
+  --accent-green-shadow: #517826;
+  --danger: #fb482e;
+  --danger-shadow: #b52e1b;
+  --light: #eeefd4;
+  --dark: #759756;
+}
+html[data-theme="green"] { --light: #eeefd4; --dark: #759756; }
