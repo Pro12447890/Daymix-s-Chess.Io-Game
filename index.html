@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261027-13">
+  <link rel="stylesheet" href="style.css?v=20261027-15">
 </head>
 <body>
 
@@ -176,6 +176,12 @@
           </div>
         </div>
 
+        <div class="online-tabs">
+          <button class="online-tab active" data-otab="friend" type="button">С другом</button>
+          <button class="online-tab" data-otab="internet" type="button">Интернет</button>
+        </div>
+
+        <div id="onlineFriend">
         <div class="online-grid">
           <div class="online-box">
             <h3>Создать комнату</h3>
@@ -203,6 +209,24 @@
           <button class="btn btn-sm" id="btnCopyCode" type="button">Копировать ссылку</button>
           <button class="btn btn-sm btn-danger" id="btnCancelRoom" type="button">Отменить</button>
         </div>
+        </div>
+
+        <div id="onlineInternet" class="hidden">
+          <div class="lobby-head">
+            <h3>Ожидают партии</h3>
+            <span class="lobby-actions">
+              <button class="btn btn-sm" id="lobbyCreate" type="button">+ Выставить ожидание</button>
+              <button class="btn btn-sm" id="lobbyRefresh" type="button" title="Обновить">⟳</button>
+            </span>
+          </div>
+          <div class="lobby-list" id="waitingList"><div class="lobby-empty">Подключаемся к публичному списку…</div></div>
+
+          <div class="lobby-head lobby-head-live">
+            <h3>Наблюдение за партиями</h3>
+          </div>
+          <div class="lobby-list" id="liveList"><div class="lobby-empty">Пока никто не играет</div></div>
+        </div>
+
       </div>
     </section>
 
@@ -258,7 +282,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-13 · перетаскивание фигур</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-15 · лобби, наблюдение, новые режимы</div>
           </div>
         </div>
       </div>
@@ -271,7 +295,7 @@
           <button class="btn btn-sm btn-ghost back-btn" id="modesBack" type="button">← Назад</button>
           <div class="screen-head-text">
             <h2>Режимы</h2>
-            <p id="modesLead">Классика, 49 режимов и рандомный выбор — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
+            <p id="modesLead">Классика, 51 режим и рандомный выбор — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
           </div>
           <span class="chip" id="modesCurrent">Классика</span>
         </div>
@@ -624,6 +648,6 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261027-13"></script>
+<script src="app.js?v=20261027-15"></script>
 </body>
 </html>

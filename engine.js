@@ -285,6 +285,16 @@ const MODES = [
     W: 12, H: 12, flags: { classic: true },
   },
   {
+    id: 'devourAll', n: 49, name: 'Съешь всё', icon: '🍽️',
+    desc: 'Короля можно съесть — это не победа. Побеждает тот, кто съест все фигуры соперника.',
+    W: 8, H: 8, flags: { classic: true, kingFree: true, captureAll: true },
+  },
+  {
+    id: 'captureRace', n: 50, name: 'Кто больше съел', icon: '⏱️',
+    desc: 'Короля можно есть, но победа — по числу съеденных фигур за минуту-две. Время выбирается по контролю.',
+    W: 8, H: 8, flags: { classic: true, kingFree: true, captureRace: true },
+  },
+  {
     id: 'infernal', n: 48, name: 'Инфернальный', icon: '🔥',
     desc: 'Всё красное, а на значимых ходах звучат теоремы гамбитов, кипяточка и ферзюшки. Дота головного мозга.',
     W: 8, H: 8, flags: { classic: true, infernal: true },
@@ -359,6 +369,7 @@ function createState(modeId, opts = {}) {
     status: 'play',
     result: null,
     capturedKing: null,
+    caps: { w: 0, b: 0 },
     converted: -1,
     check: false,
     seed: opts.seed || Math.floor(Math.random() * 1e9),
@@ -943,7 +954,7 @@ function attacked(st, sq, by) {
 }
 
 function inCheck(st, color) {
-  if (st.flags.antichess) return false;
+  if (st.flags.antichess || st.flags.captureAll || st.flags.captureRace) return false;
   const king = findKing(st, color);
   if (king >= 0 && st.flags.radiusCheck) {
     const kx = fileOf(st, king);
@@ -1033,6 +1044,9 @@ function applyMove(st, m) {
     else if ((m.kingStep && st.flags.bishopKing) || p.t === 'j') placed = { ...p, used: p.used + 1 };
     if (placed) board[m.to] = placed;
   }
+  const takenNow = undo.removed.filter((r) => r.piece && r.piece.c !== p.c).length;
+  undo.capsBefore = { w: st.caps.w, b: st.caps.b };
+  if (takenNow) st.caps[p.c] = (st.caps[p.c] || 0) + takenNow;
 
   /* Взрыв: крест вокруг клетки приземления, короли неуязвимы. */
   let exploded = false;
@@ -1123,6 +1137,7 @@ function undoMove(st, undo) {
   st.turn = undo.turn;
   st.castling = { w: { ...undo.castling.w }, b: { ...undo.castling.b } };
   st.capturedKing = undo.capturedKing;
+  if (undo.capsBefore) st.caps = { ...undo.capsBefore };
 }
 
 /* ═════════════════════════════ ЛЕГАЛЬНОСТЬ ═════════════════════════════ */
@@ -1173,6 +1188,18 @@ function insufficient(st) {
 }
 
 function updateStatus(st) {
+  const countPieces = (color) => st.board.filter((q) => q && q.c === color).length;
+  if (st.flags.captureAll) {
+    const wLeft = countPieces('w');
+    const bLeft = countPieces('b');
+    if (wLeft === 0 || bLeft === 0) {
+      st.status = 'over';
+      st.result = { winner: wLeft === 0 ? 'b' : 'w', reason: 'devoured' };
+      return st.result;
+    }
+    return null;
+  }
+  if (st.flags.captureRace) return null;
   if (st.capturedKing) {
     st.status = 'over';
     st.result = { winner: other(st.capturedKing), reason: 'king' };

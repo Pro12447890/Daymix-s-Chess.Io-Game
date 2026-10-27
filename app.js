@@ -569,6 +569,68 @@ function resumeSavedGame() {
   scheduleFirstMoveTimer();
 }
 
+function pickRaceMs(base) {
+  let min = 60;
+  let max = 90;
+  if (base > 180000) { min = 90; max = 120; }
+  if (base > 600000) { min = 120; max = 180; }
+  const sec = Math.round((min + Math.random() * (max - min)) / 5) * 5;
+  return sec * 1000;
+}
+
+function stopRaceClock() {
+  if (ui.race && ui.race.timer) clearInterval(ui.race.timer);
+}
+
+function updateRaceDisplay() {
+  if (!ui.race) return;
+  const total = Math.max(0, Math.ceil(ui.race.remaining / 1000));
+  const mm = Math.floor(total / 60);
+  const ss = String(total % 60).padStart(2, '0');
+  const text = `⏱ ${mm}:${ss}`;
+  const top = $('#topClock');
+  const bottom = $('#bottomClock');
+  if (top) top.textContent = text;
+  if (bottom) bottom.textContent = text;
+}
+
+function endRace() {
+  const st = ui.st;
+  if (!st || st.status !== 'play') return;
+  const w = st.caps ? st.caps.w : 0;
+  const b = st.caps ? st.caps.b : 0;
+  const result = { winner: w === b ? null : (w > b ? 'w' : 'b'), reason: 'race' };
+  st.status = 'over';
+  st.result = result;
+  renderAll(false);
+  finishGame(result);
+  if (ui.mode === 'online' && ui.role === 'host') {
+    netPublish({ t: 'end', winner: result.winner, reason: 'race' });
+  }
+  toast(`Время вышло: ${w} : ${b}`);
+}
+
+function startRaceClock() {
+  if (ui.spectator) return;
+  if (!ui.race || !ui.st || ui.st.status !== 'play') return;
+  stopRaceClock();
+  ui.race.last = performance.now();
+  ui.race.timer = setInterval(() => {
+    if (!ui.race || !ui.st || ui.st.status !== 'play') return;
+    const now = performance.now();
+    if (ui.paused || ui.away || ui.gameLocked) { ui.race.last = now; return; }
+    ui.race.remaining = Math.max(0, ui.race.remaining - (now - ui.race.last));
+    ui.race.last = now;
+    updateRaceDisplay();
+    if (ui.race.remaining <= 0) {
+      stopRaceClock();
+      endRace();
+    }
+  }, 200);
+  updateRaceDisplay();
+  renderStatus();
+}
+
 function scheduleFirstMoveTimer() {
   clearTimeout(ui.firstMoveTimer);
   ui.firstMoveTimer = 0;
@@ -1664,7 +1726,7 @@ function showScreen(name) {
   $$('.sb-btn').forEach((b) => b.classList.remove('active'));
   const nav = name === 'home' || name === 'game' ? $('#sbNavPlay') : $(`.sb-btn[data-screen="${name}"]`);
   if (nav) nav.classList.add('active');
-  if (name === 'online') updateOnlineModeLine();
+  if (name === 'online') { updateOnlineModeLine(); ensureLobby(); renderLobby(); }
   if (name === 'stats') renderStats();
   updateResumeFloat();
   if (name === 'settings') renderSettings();
@@ -1949,6 +2011,7 @@ function barOrientation() {
 
 function updateClockEls(override) {
   if (!ui.st) return;
+  if (ui.race) { updateRaceDisplay(); return; }
   const turn = ui.st.turn;
   const bottomColor = barOrientation() === 'w' ? 'w' : 'b';
   const topColor = other(bottomColor);
@@ -2029,6 +2092,14 @@ function newGame(opts = {}) {
     shellEl.classList.remove('flip-all', 'gray-1', 'gray-2', 'gray-3', 'check-alert');
   }
   if (mode.flags.inverted && (opts.mode || 'local') === 'local') ui.orientation = 'b';
+  stopRaceClock();
+  ui.race = null;
+  if (mode.flags.captureRace) {
+    const duration = opts.raceMs || pickRaceMs(opts.timeMs || profile.timeMs || 300000);
+    ui.race = { duration, remaining: duration, timer: 0 };
+    ui.timeMs = 0;
+    ui.clocks = { w: 0, b: 0 };
+  }
   ui.st = createState(mode.id, { square: opts.square != null ? opts.square : profile.square, seed: opts.seed });
   ui.frames = [snap(ui.st)];
   ui.moves = [];
@@ -2049,6 +2120,7 @@ function newGame(opts = {}) {
   ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
   ui.mode = opts.mode || 'local';
   ui.role = opts.role || null;
+  ui.spectator = !!opts.spectator;
   ui.bot = opts.bot
     ? { ...opts.bot, name: opts.bot.fake ? (opts.bot.name || 'Игрок') : ('Бот · ' + (BOT_LABELS[opts.bot.level] || 'средний')) }
     : null;
@@ -2106,12 +2178,14 @@ function newGame(opts = {}) {
       }
       renderStatus();
       scheduleFirstMoveTimer();
+      if (ui.race) startRaceClock();
       if (ui.bot && ui.st.turn === ui.bot.color) maybeBotTurn();
     }, 2200);
   } else {
     ui.gameLocked = false;
     startClocks();
     scheduleFirstMoveTimer();
+    if (ui.race) startRaceClock();
     if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
   }
   updateNav();
@@ -2130,6 +2204,8 @@ function renderMeta() {
   if (st.flags.blocks) bits.push('случайные блоки');
   if (st.flags.race) bits.push('гонка к верхнему ряду');
   if (st.flags.centerWin) bits.push('победа королём в центре');
+  if (st.flags.captureRace) bits.push(`съедено ${st.caps ? st.caps.w : 0} : ${st.caps ? st.caps.b : 0}`);
+  if (ui.spectator) bits.push('наблюдение');
   if (ui.bot && ui.bot.fake) bits.push('Возможно, не совсем игрок');
   if (st.flags.jester) bits.push('Шуты: 5 ходов');
   if (st.flags.boy) bits.push('Пацанчики берут две');
@@ -2314,7 +2390,8 @@ function resultReason(res) {
     repetition: 'троекратное повторение', draw: 'ничья по согласию',
     king: 'король съеден', race: 'король дошёл до верхнего ряда', center: 'король в центре',
     checks: 'три шаха', kingOnly: 'у соперника остался один король',
-    abort: 'партия прервана', idle: 'белые не сделали первый ход', monotony: 'одной фигурой — пат',
+    abort: 'партия прервана',
+  devoured: 'съедены все фигуры', race: 'время вышло — считаем взятия', idle: 'белые не сделали первый ход', monotony: 'одной фигурой — пат',
   queenLost: 'ферзь потерян', extreme: 'крайний перевес',
   };
   return map[res.reason] || res.reason;
@@ -2323,6 +2400,7 @@ function resultReason(res) {
 /* ───────────────────────────── 9. ХОДЫ ────────────────────────────────── */
 
 function onSquareClick(sq) {
+  if (ui.spectator) return;
   if (!ui.st || ui.st.status !== 'play') return;
   if (ui.gameLocked) return;
   if (ui.paused) return;
@@ -2591,6 +2669,7 @@ function scoreGame(res, st) {
 }
 
 function finishGame(res) {
+  stopRaceClock();
   try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
   ui.running = false;
   clearInterval(ui.timer);
@@ -2599,8 +2678,8 @@ function finishGame(res) {
   ui.scored = true;
 
   const st = ui.st;
-  let points = scoreGame(res, st);
-  const side = myColor();
+  let points = ui.spectator ? 0 : scoreGame(res, st);
+  const side = ui.spectator ? (res.winner || 'w') : myColor();
   const win = res.winner === side;
   const draw = !res.winner;
   const lost = !!res.winner && !win;
@@ -2609,7 +2688,7 @@ function finishGame(res) {
     points = win ? row.win : lost ? row.loss : row.draw;
   }
 
-  if (res.reason !== 'abort' && ui.mode !== 'online' || (res.reason !== 'abort' && ui.mode === 'online')) {
+  if (res.reason !== 'abort' && !ui.spectator) {
     profile.points += points;
     profile.stats.games += 1;
     if (win) {
@@ -2648,18 +2727,21 @@ function finishGame(res) {
   }
 
   $('#resultTitle').textContent = res.reason === 'abort' ? 'Партия прервана'
-    : !res.winner ? 'Ничья' : (res.winner === side ? 'Победа' : 'Поражение');
+    : !res.winner ? 'Ничья'
+      : ui.spectator ? (res.winner === 'w' ? 'Победа белых' : 'Победа чёрных')
+        : (res.winner === side ? 'Победа' : 'Поражение');
   $('#resultTitle').className = 'result-title ' + (!res.winner ? 'draw' : res.winner === side ? 'win' : 'lose');
   const reasonText = REASON_TEXT[res.reason] || res.reason;
   $('#resultSub').textContent = res.winner
     ? `${res.winner === 'w' ? 'Белые' : 'Чёрные'} · ${reasonText}`
     : reasonText;
-  if (res.reason === 'abort') {
+  if (res.reason === 'abort' || ui.spectator) {
     $('#resultPoints').innerHTML = '';
   } else {
     animateResultPoints(points);
   }
   ['#resultAgain', '#resultMenu', '#resultClose'].forEach((id) => $(id).classList.remove('hidden'));
+  if (ui.spectator) $('#resultAgain').classList.add('hidden');
   $('#result').classList.remove('hidden');
   if (res.reason !== 'abort') playResultFx(!res.winner ? 'draw' : res.winner === side ? 'win' : 'lose');
   renderStatsIfOpen();
@@ -2954,8 +3036,8 @@ class Relay {
     this.closed = false;
   }
 
-  connect(code) {
-    this.topic = topicFor(code);
+  connect(code, rawTopic) {
+    this.topic = rawTopic || topicFor(code);
     this.closed = false;
     /* Локальный канал между вкладками: работает даже без интернета
        и не зависит от лимитов публичной службы. */
@@ -3042,6 +3124,112 @@ function randomCode() {
 
 function setLobby(text) { $('#lobbyLine').textContent = text || ''; }
 
+const LOBBY_TOPIC = 'daymixchess-v2-lobby';
+
+function ensureLobby() {
+  if (ui.lobbyRelay) return ui.lobbyRelay;
+  const relay = new Relay();
+  relay.onMessage = (text) => handleLobby(text);
+  relay.connect('', LOBBY_TOPIC).catch(() => {});
+  ui.lobbyRelay = relay;
+  return relay;
+}
+
+function handleLobby(text) {
+  let msg;
+  try { msg = JSON.parse(text); } catch (error) { return; }
+  if (!msg || msg.app !== 'daymix-chess' || msg.t !== 'lobby-room' || !msg.code) return;
+  if (msg.ts && Date.now() - msg.ts > 40000) return;
+  if (!ui.lobbyRooms) ui.lobbyRooms = new Map();
+  if (!ui.liveRooms) ui.liveRooms = new Map();
+  const room = {
+    code: String(msg.code),
+    name: String(msg.name || 'Игрок').slice(0, 24),
+    modeName: String(msg.modeName || 'Классика').slice(0, 40),
+    timeLabel: String(msg.timeLabel || '').slice(0, 20),
+    status: msg.status === 'live' ? 'live' : 'waiting',
+    moves: Number(msg.moves) || 0,
+    ts: Date.now(),
+  };
+  if (room.status === 'live') {
+    ui.liveRooms.set(room.code, room);
+    ui.lobbyRooms.delete(room.code);
+  } else {
+    ui.lobbyRooms.set(room.code, room);
+  }
+  renderLobby();
+}
+
+function renderLobby() {
+  const waiting = $('#waitingList');
+  const live = $('#liveList');
+  if (!waiting || !live) return;
+  const now = Date.now();
+  for (const map of [ui.lobbyRooms, ui.liveRooms]) {
+    if (!map) continue;
+    for (const [code, room] of map) {
+      if (now - room.ts > 40000) map.delete(code);
+    }
+  }
+  const own = ui.online && ui.online.code;
+  const render = (map, kind) => {
+    const rooms = [...(map ? map.values() : [])]
+      .filter((r) => r.code !== own)
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, 8);
+    if (!rooms.length) {
+      return `<div class="lobby-empty">${kind === 'live' ? 'Пока никто не играет' : 'Никто не ждёт — выставите своё ожидание'}</div>`;
+    }
+    return rooms.map((r) => `
+      <div class="lobby-item">
+        <div class="lobby-info">
+          <b>${escapeHtml(r.name)}</b>
+          <span>${escapeHtml(r.modeName)}${r.timeLabel ? ' · ' + escapeHtml(r.timeLabel) : ''}${kind === 'live' ? ' · ' + r.moves + ' ходов' : ''}</span>
+        </div>
+        <span class="lobby-code">${escapeHtml(r.code)}</span>
+        <button class="btn btn-sm" data-${kind === 'live' ? 'watch' : 'join'}="${escapeHtml(r.code)}" type="button">${kind === 'live' ? 'Смотреть' : 'Войти'}</button>
+      </div>`).join('');
+  };
+  waiting.innerHTML = render(ui.lobbyRooms, 'waiting');
+  live.innerHTML = render(ui.liveRooms, 'live');
+}
+
+function lobbyAnnounce() {
+  if (!ui.online || ui.online.role !== 'host' || !ui.online.code) return;
+  ensureLobby();
+  if (!ui.lobbyRelay) return;
+  const mode = modeById(ui.st ? ui.st.modeId : profile.modeId);
+  ui.lobbyRelay.publish({
+    app: 'daymix-chess',
+    t: 'lobby-room',
+    code: ui.online.code,
+    name: profile.name,
+    modeName: mode.name,
+    timeLabel: profile.timeLabel,
+    status: ui.st && ui.st.status === 'play' ? 'live' : 'waiting',
+    moves: ui.moves.length,
+    ts: Date.now(),
+  });
+}
+
+function stopLobbyAnnounce(close) {
+  if (ui.online && ui.online.lobbyTimer) clearInterval(ui.online.lobbyTimer);
+  if (ui.online) ui.online.lobbyTimer = null;
+  if (close && ui.online && ui.online.code && ui.lobbyRelay) {
+    ui.lobbyRelay.publish({ app: 'daymix-chess', t: 'lobby-close', code: ui.online.code, ts: Date.now() });
+  }
+}
+
+function switchOnlineTab(tab) {
+  $$('.online-tab').forEach((b) => b.classList.toggle('active', b.dataset.otab === tab));
+  const friend = $('#onlineFriend');
+  const internet = $('#onlineInternet');
+  if (friend) friend.classList.toggle('hidden', tab !== 'friend');
+  if (internet) internet.classList.toggle('hidden', tab !== 'internet');
+  if (tab === 'internet') { ensureLobby(); renderLobby(); }
+}
+
+
 async function createRoom() {
   if (!ui.online) {
     ui.online = { code: '', role: 'host', sid: Math.random().toString(36).slice(2, 10) };
@@ -3090,6 +3278,10 @@ async function createRoom() {
   $('#roomRow').classList.remove('hidden');
   const chosenMode = modeById(ui.online.modeId || profile.modeId);
   setLobby(`Комната создана. Режим: ${chosenMode.name}. Ждём соперника — партия начнётся, когда он присоединится.`);
+  ensureLobby();
+  stopLobbyAnnounce(false);
+  ui.online.lobbyTimer = setInterval(lobbyAnnounce, 8000);
+  lobbyAnnounce();
   ui.online.waiting = true;
   ui.st = null;
   showScreen('online');
@@ -3113,12 +3305,19 @@ function announceRoom() {
   });
 }
 
-async function joinRoom(code) {
+function watchRoom(code) {
+  joinRoom(code, { spectate: true });
+}
+
+async function joinRoom(code, opts = {}) {
   if (!/^\d{5}$/.test(code)) { setLobby('Код состоит из пяти цифр.'); return; }
   if (ui.online) leaveOnline(true);
+  const spectate = !!opts.spectate;
   ui.online = {
-    code, role: 'guest', sid: Math.random().toString(36).slice(2, 10),
-    connected: false, names: { w: null, b: profile.name }, avatars: { w: 'k', b: profile.avatar },
+    code, role: spectate ? 'spectator' : 'guest', sid: Math.random().toString(36).slice(2, 10),
+    connected: false,
+    names: spectate ? { w: null, b: null } : { w: null, b: profile.name },
+    avatars: spectate ? { w: 'k', b: 'k' } : { w: 'k', b: profile.avatar },
   };
   ui.online.relay = new Relay();
   ui.online.relay.onMessage = (text) => handleNet(text);
@@ -3136,8 +3335,8 @@ async function joinRoom(code) {
     return;
   }
   ui.online.connected = true;
-  setLobby('Подключаемся к комнате ' + code + '…');
-  netPublish({ t: 'join', name: profile.name, avatar: profile.avatar });
+  setLobby(spectate ? 'Подключаемся к наблюдению за комнатой ' + code + '…' : 'Подключаемся к комнате ' + code + '…');
+  netPublish(spectate ? { t: 'watch', name: profile.name } : { t: 'join', name: profile.name, avatar: profile.avatar });
   clearInterval(ui.online.joinTimer);
   let tries = 0;
   ui.online.joinTimer = setInterval(() => {
@@ -3149,7 +3348,7 @@ async function joinRoom(code) {
       return;
     }
     if (tries % 5 === 0) setLobby('Ждём ответа комнаты ' + code + '… попытка ' + (tries + 1));
-    netPublish({ t: 'join', name: profile.name, avatar: profile.avatar });
+    netPublish(spectate ? { t: 'watch', name: profile.name } : { t: 'join', name: profile.name, avatar: profile.avatar });
   }, 4000);
 }
 
@@ -3210,6 +3409,29 @@ function handleNet(text) {
     return;
   }
 
+  if (msg.t === 'watch' && ui.online.role === 'host') {
+    if (!ui.st || ui.st.status !== 'play') {
+      netPublish({ t: 'watch-empty' });
+      return;
+    }
+    netPublish({
+      t: 'start',
+      spectator: true,
+      modeId: ui.st.modeId,
+      square: !!ui.st.square,
+      timeMs: ui.timeMs,
+      timeLabel: profile.timeLabel,
+      raceMs: ui.race ? ui.race.duration : null,
+      seed: ui.st.seed,
+      moves: ui.moves.map((m) => ({ from: m.from, to: m.to, promo: m.promo || null })),
+      cw: ui.clocks.w, cb: ui.clocks.b,
+      names: { w: ui.online.names?.w || profile.name, b: ui.online.guestName || 'Соперник' },
+      name: profile.name,
+      guestName: ui.online.guestName || 'Соперник',
+    });
+    return;
+  }
+
   if (msg.t === 'join' && ui.online.role === 'host') {
     if (ui.online.guestName === msg.name && ui.st) return;
     ui.online.guestName = msg.name;
@@ -3236,11 +3458,43 @@ function handleNet(text) {
       square: !!ui.st.square,
       timeMs: ui.timeMs,
       timeLabel: profile.timeLabel,
+      raceMs: ui.race ? ui.race.duration : null,
       seed: ui.st.seed,
       moves: ui.moves.map((m) => ({ from: m.from, to: m.to })),
       cw: ui.clocks.w, cb: ui.clocks.b,
       name: profile.name, avatar: profile.avatar,
     });
+    return;
+  }
+
+  if (msg.t === 'start' && ui.online.role === 'spectator') {
+    clearInterval(ui.online.joinTimer);
+    ui.online.started = true;
+    ui.online.names = msg.names || { w: msg.name || 'Белые', b: msg.guestName || 'Чёрные' };
+    ui.spectator = true;
+    ui.replaying = true;
+    newGame({
+      mode: 'online', role: 'spectator', spectator: true,
+      modeId: msg.modeId, square: !!msg.square, timeMs: msg.timeMs,
+      raceMs: msg.raceMs, seed: msg.seed, orientation: 'w', splash: false,
+    });
+    for (const mv of (msg.moves || [])) commitMove(mv, { remote: true, silent: true });
+    ui.replaying = false;
+    ui.running = false;
+    ui.gameLocked = false;
+    ui.viewPly = ui.frames.length - 1;
+    renderAll(false);
+    renderPlayers();
+    renderMoves();
+    showScreen('game');
+    setLobby('');
+    toast('Наблюдение за партией');
+    return;
+  }
+
+  if (msg.t === 'watch-empty') {
+    setLobby('Партия ещё не началась — попробуйте позже.');
+    toast('Партия ещё не началась');
     return;
   }
 
@@ -3251,7 +3505,7 @@ function handleNet(text) {
     ui.online.names = { w: msg.name || 'Соперник', b: profile.name };
     ui.online.avatars = { w: msg.avatar || 'k', b: profile.avatar };
     ui.replaying = true;
-    newGame({ mode: 'online', role: 'guest', modeId: msg.modeId, square: !!msg.square, timeMs: msg.timeMs, seed: msg.seed, orientation: 'b', splash: false });
+    newGame({ mode: 'online', role: 'guest', modeId: msg.modeId, square: !!msg.square, timeMs: msg.timeMs, raceMs: msg.raceMs, seed: msg.seed, orientation: 'b', splash: false });
     for (const mv of (msg.moves || [])) commitMove(mv, { remote: true, silent: true });
     ui.replaying = false;
     if (msg.cw != null) ui.clocks = { w: msg.cw, b: msg.cb };
@@ -3330,7 +3584,12 @@ function showOffer(text, onAccept) {
   document.body.appendChild(offerEl);
 }
 
+function stopLobbyOnLeave(close) {
+  try { stopLobbyAnnounce(close); } catch (error) { /* ignore */ }
+}
+
 function leaveOnline(silent) {
+  stopLobbyOnLeave(true);
   if (ui.online) {
     clearInterval(ui.online.announce);
     clearInterval(ui.online.joinTimer);
@@ -3479,6 +3738,7 @@ function suspendGame() {
   if (!ui.st || ui.st.status !== 'play') return;
   ui.away = true;
   ui.running = false;
+  if (ui.race) ui.race.last = performance.now();
   renderStatus();
   updateResumeFloat();
   toast('Партия ждёт вас — часы остановлены');
@@ -3502,6 +3762,7 @@ function updateResumeFloat() {
 }
 
 function leaveGame() {
+  stopRaceClock();
   try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
   leaveOnline();
   ui.st = null;
@@ -3695,6 +3956,20 @@ function bindEvents() {
   });
   if ($('#mobLeave')) $('#mobLeave').addEventListener('click', askLeave);
   if ($('#mobSettings')) $('#mobSettings').addEventListener('click', () => toggleDrawer());
+  $$('.online-tab').forEach((b) => b.addEventListener('click', () => switchOnlineTab(b.dataset.otab)));
+  if ($('#lobbyCreate')) $('#lobbyCreate').addEventListener('click', () => {
+    switchOnlineTab('friend');
+    createRoom();
+  });
+  if ($('#lobbyRefresh')) $('#lobbyRefresh').addEventListener('click', () => { ensureLobby(); renderLobby(); });
+  if ($('#waitingList')) $('#waitingList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-join]');
+    if (b) joinRoom(b.dataset.join);
+  });
+  if ($('#liveList')) $('#liveList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-watch]');
+    if (b) watchRoom(b.dataset.watch);
+  });
   if ($('#resumeBtn')) $('#resumeBtn').addEventListener('click', resumeSavedGame);
   if ($('#sbProfileEdit')) $('#sbProfileEdit').addEventListener('click', () => {
     const pop = $('#profilePop');
@@ -3870,6 +4145,7 @@ function bindEvents() {
   $('#squares').addEventListener('pointerdown', (e) => {
     if (e.button !== undefined && e.button !== 0) return;
     const sqEl = e.target.closest('.sq');
+    if (ui.spectator) return;
     if (!sqEl || !ui.st || ui.st.status !== 'play' || ui.gameLocked || ui.paused || ui.imported) return;
     if (ui.viewPly !== ui.frames.length - 1) return;
     if (ui.bot && ui.st.turn === ui.bot.color) return;
