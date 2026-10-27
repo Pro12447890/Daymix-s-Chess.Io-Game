@@ -1842,7 +1842,7 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
 .mt-desc { font-size: 9.5px; line-height: 1.2; }
 .mt-name { font-size: 12.5px; }
 .mt-meta { font-size: 8.5px; }
-#screen-online .online-card { margin: auto 0; }
+#screen-online .online-card { margin: 0 auto; align-self: center; }
 
 
 /* плавающая кнопка «Назад» на экране режимов — всегда */
@@ -2759,3 +2759,151 @@ html[data-theme="green"] { --light: #eeefd4; --dark: #759756; }
   --dark: #759756;
 }
 html[data-theme="green"] { --light: #eeefd4; --dark: #759756; }
+
+
+/* онлайн: карточка ровно по центру, код сияет */
+#screen-online { align-items: center; }
+#screen-online .online-card { width: 100%; margin-left: auto !important; margin-right: auto !important; }
+#screen-online .room-row {
+  justify-content: center;
+  flex-direction: column;
+  margin-top: 16px !important;
+  gap: 10px;
+}
+#screen-online .code-big {
+  font-size: clamp(30px, 4.6vw, 46px);
+  letter-spacing: 12px;
+  padding: 8px 18px 8px 30px;
+  border-radius: 14px;
+  color: #fff;
+  background: linear-gradient(180deg, #3c3a35, #262420);
+  border: 1px solid #5c5a52;
+  box-shadow: 0 0 0 1px #00000055, 0 0 28px #7fb74d66, 0 0 62px #7fb74d33 inset;
+  text-shadow: 0 0 18px #a6e06a, 0 2px 0 #1b1a17;
+  animation: codeGlow 2.6s ease-in-out infinite;
+}
+@keyframes codeGlow {
+  0%, 100% { box-shadow: 0 0 0 1px #00000055, 0 0 22px #7fb74d55, 0 0 50px #7fb74d22 inset; }
+  50% { box-shadow: 0 0 0 1px #00000055, 0 0 40px #a6e06a99, 0 0 80px #7fb74d44 inset; }
+}
+
+/* карточки режимов: иконка подпрыгивает и подкручивается */
+.mode-tile .mt-icon { transition: transform .28s cubic-bezier(.2, .9, .3, 1.5), filter .28s ease; }
+.mode-tile:hover .mt-icon, .mode-tile:focus-visible .mt-icon {
+  transform: translateY(-5px) rotate(-7deg) scale(1.08);
+  filter: drop-shadow(0 8px 12px #00000066);
+}
+.mode-tile:nth-child(2n):hover .mt-icon { transform: translateY(-5px) rotate(7deg) scale(1.08); }
+.mode-tile:nth-child(3n):hover .mt-icon { transform: translateY(-6px) rotate(-3deg) scale(1.12); }
+
+/* плавное раскрытие групп времени */
+.time-group { interpolate-size: allow-keywords; }
+.time-group::details-content { block-size: 0; overflow: hidden; opacity: 0; transition: block-size .28s cubic-bezier(.2,.8,.2,1), opacity .2s ease; }
+.time-group[open]::details-content { block-size: auto; opacity: 1; }
+@supports not (interpolate-size: allow-keywords) {
+  .time-group[open] .tg-list { animation: slideDown .25s ease; }
+}
+
+/* кружок заполнения до пата */
+.rep-ring {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  z-index: 26;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--danger) var(--p, 0deg), #ffffff22 0deg);
+  box-shadow: 0 6px 18px #00000066;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+.rep-ring::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: var(--panel);
+}
+.rep-ring span { position: relative; z-index: 1; font-size: 8px; font-weight: 800; letter-spacing: .4px; color: #fff; text-transform: uppercase; }
+.rep-ring.hidden { display: none; }
+
+/* прирост/убыток очков */
+.pdelta { font-size: 28px; font-weight: 900; display: inline-block; animation: pdeltaPop .45s cubic-bezier(.2,.9,.3,1.4); }
+.pdelta.up { color: #a6e06a; text-shadow: 0 0 18px #7fb74d88; }
+.pdelta.down { color: #ff7b6a; text-shadow: 0 0 18px #fa412d88; }
+.pdelta.zero { color: #b9b6ae; }
+@keyframes pdeltaPop { 0% { transform: scale(.5); opacity: 0; } 70% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
+
+
+/* пульс очков в сайдбаре */
+#sbPoints.pulse { animation: sbPulse .9s ease; color: #d7efb7; }
+@keyframes sbPulse { 0%{transform:scale(1)} 30%{transform:scale(1.18); color:#b7ef7a} 100%{transform:scale(1)} }
+
+/* настройки — на весь экран, содержимое прокручивается, а не прижато сверху */
+#screen-settings { padding: 0; }
+#screen-settings .settings-screen {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  margin: 0;
+  border-radius: 0;
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#screen-settings .settings-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  align-content: start;
+}
+#screen-settings .screen-head { flex: none; }
+#screen-settings .theme-row, #screen-settings .pieces-row { max-height: none; }
+@media (max-width: 999px) {
+  #screen-settings .settings-screen { padding: 10px; height: 100%; }
+}
+
+
+/* быстрый выбор цвета перед партией */
+.quick-setup { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px; }
+.side-pick {
+  padding: 6px 10px; border-radius: 7px; border: 1px solid var(--line);
+  background: var(--panel-card); color: #e9e5df; font-size: 11.5px; font-weight: 700;
+}
+.side-pick.active { background: var(--accent-green); color: #1d2b10; border-color: var(--accent-green); }
+.side-pick:hover { border-color: var(--accent-green); }
+
+/* карандаш у профиля и мини-профиль */
+.sb-footer { position: relative; }
+.sb-pencil {
+  position: absolute; right: 6px; top: 6px; width: 22px; height: 22px;
+  border-radius: 50%; border: 1px solid var(--line); background: var(--panel-card);
+  color: var(--text-muted); font-size: 11px; line-height: 1;
+}
+.sb-pencil:hover { color: #fff; border-color: var(--accent-green); }
+.profile-pop {
+  position: fixed; left: 150px; bottom: 18px; z-index: 90;
+  width: 300px; padding: 12px; border-radius: var(--radius-lg);
+  background: var(--panel); border: 1px solid var(--line-light);
+  box-shadow: 0 24px 60px #00000099;
+}
+@media (min-width: 1800px) { .profile-pop { left: 190px; } }
+@media (max-width: 999px) { .profile-pop { left: 8px; right: 8px; bottom: 62px; width: auto; } }
+.profile-pop.hidden { display: none; }
+.pp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.pp-avatars { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+.pp-avatars .avatar-btn { width: 30px; height: 30px; border-radius: 7px; }
+.pp-name-row { display: flex; gap: 5px; }
+.pp-name-row input { flex: 1; min-width: 0; }
+.pp-stats { display: flex; gap: 10px; margin: 9px 0; font-size: 11px; color: var(--text-muted); }
+.pp-stats b { color: #fff; }
+.pp-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+
+/* много досок: прокручиваемый блок, чтобы настройки не разъезжались */
+#settingsThemeRow { max-height: 190px; overflow-y: auto; padding: 2px; }
+#settingsThemeRow .swatch { flex: 0 0 62px; }

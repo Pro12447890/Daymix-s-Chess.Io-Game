@@ -452,6 +452,14 @@ function updateSameStreak(id, mover) {
     const level = n < 5 ? 0 : Math.min(5, n - 4);
     shell.style.setProperty('--gray', String(GRAY_STEPS[level]));
   }
+  const ring = $('#repRing');
+  if (ring) {
+    const show = n >= 5;
+    ring.classList.toggle('hidden', !show);
+    ring.style.setProperty('--p', `${Math.min(360, ((n - 4) / 4) * 360)}deg`);
+    const label = ring.querySelector('span');
+    if (label) label.textContent = n >= 8 ? 'пат' : `${Math.min(4, n - 4)}/4`;
+  }
   return n >= 8 && phaseFor(ui.st) === 'endgame';
 }
 
@@ -541,6 +549,8 @@ function resumeSavedGame() {
   ui.pieceStreak = null;
   const grayShell = $('#gameShell');
   if (grayShell) grayShell.style.setProperty('--gray', '0');
+  const ring = $('#repRing');
+  if (ring) { ring.classList.add('hidden'); ring.style.setProperty('--p', '0deg'); }
   ui.viewPly = ui.frames.length - 1;
   ui.turnStart = performance.now();
   ui.running = !!ui.timeMs && ui.moves.length > 0;
@@ -891,6 +901,46 @@ const THEMES = [
   { id: 'green', name: 'Зелёная', light: '#eeeed2', dark: '#769656' },
   { id: 'mono', name: 'Чёрно-белая', light: '#ffffff', dark: '#3d4146' },
   { id: 'blue', name: 'Бело-синяя', light: '#eef4fb', dark: '#4a7fb5' },
+  { id: 'x01', name: 'Океан', light: '#dde5ee', dark: '#4d7fa3' },
+  { id: 'x02', name: 'Лазурь', light: '#dde2ee', dark: '#4d71a3' },
+  { id: 'x03', name: 'Мятная', light: '#ddeeec', dark: '#4da38d' },
+  { id: 'x04', name: 'Изумруд', light: '#ddeee9', dark: '#4da37f' },
+  { id: 'x05', name: 'Лайм', light: '#e5eedd', dark: '#7fa34d' },
+  { id: 'x06', name: 'Олива', light: '#e7eedd', dark: '#8da34d' },
+  { id: 'x07', name: 'Песок', light: '#eeecdd', dark: '#a38d4d' },
+  { id: 'x08', name: 'Карамель', light: '#eee9dd', dark: '#a37f4d' },
+  { id: 'x09', name: 'Терракота', light: '#eee4dd', dark: '#a3624d' },
+  { id: 'x10', name: 'Ржавчина', light: '#eee2dd', dark: '#a35b4d' },
+  { id: 'x11', name: 'Вишня', light: '#eeddde', dark: '#a34d5b' },
+  { id: 'x12', name: 'Малина', light: '#eedde1', dark: '#a34d69' },
+  { id: 'x13', name: 'Роза', light: '#eedde5', dark: '#a34d7f' },
+  { id: 'x14', name: 'Сирень', light: '#ecddee', dark: '#8d4da3' },
+  { id: 'x15', name: 'Лаванда', light: '#e8ddee', dark: '#784da3' },
+  { id: 'x16', name: 'Фиалка', light: '#e4ddee', dark: '#624da3' },
+  { id: 'x17', name: 'Индиго', light: '#e0ddee', dark: '#4d4da3' },
+  { id: 'x18', name: 'Сапфир', light: '#dde1ee', dark: '#4d69a3' },
+  { id: 'x19', name: 'Сталь', light: '#dde6ee', dark: '#4d86a3' },
+  { id: 'x20', name: 'Туман', light: '#ddebee', dark: '#4da3a3' },
+  { id: 'x21', name: 'Графит', light: '#eee0dd', dark: '#a34d4d' },
+  { id: 'x22', name: 'Уголь', light: '#eee0dd', dark: '#a34d4d' },
+  { id: 'x23', name: 'Ночная', light: '#dddeee', dark: '#4d5ba3' },
+  { id: 'x24', name: 'Космос', light: '#e5ddee', dark: '#694da3' },
+  { id: 'x25', name: 'Марс', light: '#eee5dd', dark: '#a3694d' },
+  { id: 'x26', name: 'Медь', light: '#eee6dd', dark: '#a3714d' },
+  { id: 'x27', name: 'Золото', light: '#eeebdd', dark: '#a3894d' },
+  { id: 'x28', name: 'Мёд', light: '#eeeddd', dark: '#a3954d' },
+  { id: 'x29', name: 'Крем', light: '#eeeadd', dark: '#a3834d' },
+  { id: 'x30', name: 'Бумага', light: '#eeecdd', dark: '#a38d4d' },
+  { id: 'x31', name: 'Неон', light: '#eeddeb', dark: '#a34da3' },
+  { id: 'x32', name: 'Кибер', light: '#dde9ee', dark: '#4d95a3' },
+  { id: 'x33', name: 'Матрица', light: '#ddeee0', dark: '#4da34d' },
+  { id: 'x34', name: 'Арктика', light: '#dde7ee', dark: '#4d8da3' },
+  { id: 'x35', name: 'Лёд', light: '#ddeaee', dark: '#4d9ca3' },
+  { id: 'x36', name: 'Море', light: '#dde3ee', dark: '#4d78a3' },
+  { id: 'x37', name: 'Бирюза', light: '#ddedee', dark: '#4da39c' },
+  { id: 'x38', name: 'Хвоя', light: '#ddeee5', dark: '#4da369' },
+  { id: 'x39', name: 'Мох', light: '#e2eedd', dark: '#71a34d' },
+  { id: 'x40', name: 'Какао', light: '#eee8dd', dark: '#a3784d' },
   { id: 'metal', name: 'Металл', light: '#dde2e8', dark: '#8b959f' },
 ];
 
@@ -1021,6 +1071,8 @@ function renderProfile() {
   if ($('#homePoints')) $('#homePoints').textContent = `${profile.points} очков`;
   if ($('#resumeBtn')) $('#resumeBtn').classList.toggle('hidden', !loadCurrentGame());
   renderFakeBots();
+  renderQuickSide();
+  renderProfilePop();
   updateOnlineModeLine();
   const rejoin = $('#rejoinRow');
   if (rejoin) {
@@ -1230,7 +1282,8 @@ function renderTimeGroups() {
         profile.timeMs = item.ms;
         profile.timeLabel = item.label;
         saveProfile();
-        renderTimeGroups();
+        box.querySelectorAll('.time-item').forEach((el) => el.classList.toggle('active', el === b));
+        box.querySelectorAll('details.time-group').forEach((d) => { d.open = false; });
         renderTimeSummary();
       });
       list.appendChild(b);
@@ -1489,6 +1542,48 @@ function renderSettings() {
   renderThemeRows();
   renderPieceRows();
   renderAvatarRow();
+}
+
+function renderQuickSide() {
+  document.querySelectorAll('.side-pick').forEach((b) => {
+    b.classList.toggle('active', b.dataset.side === profile.side);
+  });
+}
+
+function renderProfilePop() {
+  const pop = $('#profilePop');
+  if (!pop) return;
+  if ($('#ppName')) $('#ppName').value = profile.name;
+  const box = $('#ppAvatars');
+  if (box) {
+    box.innerHTML = '';
+    for (const a of AVATARS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'avatar-btn' + (profile.avatar === a ? ' active' : '');
+      b.innerHTML = pieceSvg(a, 'av-pc');
+      b.addEventListener('click', () => {
+        profile.avatar = a;
+        saveProfile(true);
+        renderProfilePop();
+      });
+      box.appendChild(b);
+    }
+  }
+  if ($('#ppStats')) {
+    const games = profile.stats.games || 0;
+    const wins = profile.stats.wins || 0;
+    $('#ppStats').innerHTML = `<span><b>${games}</b> партий</span><span><b>${wins}</b> побед</span><span><b>${profile.points}</b> очков</span>`;
+  }
+}
+
+function saveProfileName() {
+  const input = $('#ppName');
+  if (!input) return;
+  const name = input.value.trim().slice(0, 18) || 'Игрок';
+  profile.name = name;
+  saveProfile(true);
+  toast('Имя сохранено');
 }
 
 function updateOnlineModeLine() {
@@ -2465,13 +2560,41 @@ function finishGame(res) {
   $('#resultSub').textContent = res.winner
     ? `${res.winner === 'w' ? 'Белые' : 'Чёрные'} · ${reasonText}`
     : reasonText;
-  const sign = points > 0 ? `+${points}` : String(points);
-  $('#resultPoints').innerHTML = res.reason === 'abort' ? ''
-    : `<span class="${points > 0 ? 'up' : points < 0 ? 'down' : ''}">${sign} очков</span> <em>всего ${profile.points}</em>`;
+  if (res.reason === 'abort') {
+    $('#resultPoints').innerHTML = '';
+  } else {
+    animateResultPoints(points);
+  }
   ['#resultAgain', '#resultMenu', '#resultClose'].forEach((id) => $(id).classList.remove('hidden'));
   $('#result').classList.remove('hidden');
   if (res.reason !== 'abort') playResultFx(!res.winner ? 'draw' : res.winner === side ? 'win' : 'lose');
   renderStatsIfOpen();
+}
+
+function animateResultPoints(points) {
+  const el = $('#resultPoints');
+  if (!el) return;
+  const total = profile.points;
+  const before = total - points;
+  const cls = points > 0 ? 'up' : points < 0 ? 'down' : 'zero';
+  const start = performance.now();
+  const dur = 800;
+  function frame(now) {
+    const k = Math.min(1, (now - start) / dur);
+    const shown = Math.round(points * k);
+    const tot = Math.round(before + (total - before) * k);
+    el.innerHTML = `<span class="pdelta ${cls}">${shown > 0 ? '+' : ''}${shown}</span> <em>всего ${tot}</em>`;
+    if (k < 1) requestAnimationFrame(frame);
+  }
+  el.innerHTML = `<span class="pdelta ${cls}">${points > 0 ? '+' : ''}0</span> <em>всего ${before}</em>`;
+  requestAnimationFrame(frame);
+  const sb = $('#sbPoints');
+  if (sb) {
+    sb.classList.remove('pulse');
+    void sb.offsetWidth;
+    sb.classList.add('pulse');
+    setTimeout(() => sb.classList.remove('pulse'), 900);
+  }
 }
 
 function renderStatsIfOpen() {
@@ -3176,11 +3299,21 @@ function togglePause(force) {
 function askLeave() {
   if (!ui.st || ui.st.status !== 'play' || ui.scored) { leaveGame(); return; }
   if (ui.paused) togglePause(false);
+  ui.leaveResume = ui.running;
+  ui.running = false;
   ui.confirmAction = 'leave';
   const side = ui.st.turn;
   const who = side === 'w' ? 'белых' : 'чёрных';
+  const online = ui.mode === 'online';
+  const early = online && ui.moves.length < 7;
   $('#confirmTitle').textContent = 'Покинуть партию?';
-  $('#confirmText').textContent = `Сейчас ход ${who}. Если выйти, партия засчитается как поражение этого игрока (очки спишутся по правилам).`;
+  if (!online) {
+    $('#confirmText').textContent = 'Это партия с ботом или офлайн-партия. Выход не засчитывается как поражение, очки не изменятся.';
+  } else if (early) {
+    $('#confirmText').textContent = `Сделано меньше 7 ходов (${ui.moves.length}) — можно выйти без поражения и без потери очков.`;
+  } else {
+    $('#confirmText').textContent = `Сейчас ход ${who}. Выход после 7 ходов засчитается как поражение.`;
+  }
   $('#confirmLeave').textContent = 'Выйти';
   $('#confirmModal').classList.remove('hidden');
 }
@@ -3197,22 +3330,36 @@ function askResign() {
 function closeConfirm() {
   const modal = $('#confirmModal');
   if (modal) modal.classList.add('hidden');
+  if (ui.leaveResume && ui.st && ui.st.status === 'play' && !ui.paused) {
+    ui.running = true;
+    ui.turnStart = performance.now();
+  }
+  ui.leaveResume = false;
   ui.confirmAction = null;
 }
 
 function confirmLeaveGame() {
   closeConfirm();
   if (!ui.st) { leaveGame(); return; }
+  const online = ui.mode === 'online';
+  const tooEarly = online && ui.moves.length < 7;
+  const freeExit = !online || tooEarly;
   if (ui.st.status === 'play') {
-    const side = ui.st.turn;
-    const result = { winner: other(side), reason: 'left' };
-    ui.st.status = 'over';
-    ui.st.result = result;
-    renderAll(false);
-    finishGame(result);
-    if (ui.mode === 'online') netPublish({ t: 'end', winner: result.winner, reason: 'left' });
-    $('#result').classList.add('hidden');
-    toast('Выход засчитан как поражение');
+    if (freeExit) {
+      ui.scored = true;
+      if (online) netPublish({ t: 'end', winner: null, reason: 'abort' });
+      $('#result').classList.add('hidden');
+      toast(online ? 'Меньше 7 ходов — вышли без поражения' : 'Вышли без поражения');
+    } else {
+      const result = { winner: other(myColor()), reason: 'left' };
+      ui.st.status = 'over';
+      ui.st.result = result;
+      renderAll(false);
+      finishGame(result);
+      if (online) netPublish({ t: 'end', winner: result.winner, reason: 'left' });
+      $('#result').classList.add('hidden');
+      toast('Выход засчитан как поражение');
+    }
   }
   setTimeout(leaveGame, 260);
 }
@@ -3401,6 +3548,35 @@ function bindEvents() {
   if ($('#mobLeave')) $('#mobLeave').addEventListener('click', askLeave);
   if ($('#mobSettings')) $('#mobSettings').addEventListener('click', () => toggleDrawer());
   if ($('#resumeBtn')) $('#resumeBtn').addEventListener('click', resumeSavedGame);
+  if ($('#sbProfileEdit')) $('#sbProfileEdit').addEventListener('click', () => {
+    const pop = $('#profilePop');
+    if (!pop) return;
+    pop.classList.toggle('hidden');
+    if (!pop.classList.contains('hidden')) renderProfilePop();
+  });
+  if ($('#ppClose')) $('#ppClose').addEventListener('click', () => $('#profilePop').classList.add('hidden'));
+  if ($('#ppSaveName')) $('#ppSaveName').addEventListener('click', saveProfileName);
+  if ($('#ppName')) $('#ppName').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveProfileName(); });
+  if ($('#ppBoards')) $('#ppBoards').addEventListener('click', () => { $('#profilePop').classList.add('hidden'); showScreen('settings'); });
+  if ($('#ppPieces')) $('#ppPieces').addEventListener('click', () => { $('#profilePop').classList.add('hidden'); showScreen('settings'); });
+  if ($('#ppStatsBtn')) $('#ppStatsBtn').addEventListener('click', () => { $('#profilePop').classList.add('hidden'); showScreen('stats'); });
+  document.querySelectorAll('.side-pick').forEach((b) => {
+    b.addEventListener('click', () => {
+      const pick = b.dataset.side;
+      profile.side = pick === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : pick;
+      saveProfile();
+      renderQuickSide();
+      if (pick === 'random') toast(profile.side === 'w' ? 'Вы за белых' : 'Вы за чёрных');
+    });
+  });
+  const randomTheme = () => {
+    const pool = THEMES.filter((item) => item.id !== profile.theme);
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    setTheme(pick.id);
+    toast('Доска: ' + pick.name);
+  };
+  if ($('#btnRandomTheme')) $('#btnRandomTheme').addEventListener('click', randomTheme);
+  if ($('#btnRandomBoard')) $('#btnRandomBoard').addEventListener('click', randomTheme);
   if ($('#rejoinBtn')) $('#rejoinBtn').addEventListener('click', () => {
     if (profile.lastRoom && profile.lastRoom.code) joinRoom(profile.lastRoom.code);
   });
@@ -3457,7 +3633,7 @@ function bindEvents() {
   $('#btnDraw').addEventListener('click', offerDraw);
   $('#btnAbort').addEventListener('click', abortGame);
   $('#btnNew').addEventListener('click', () => newGame({ mode: ui.mode || 'local', modeId: ui.st ? ui.st.modeId : profile.modeId, timeMs: ui.timeMs, splash: true }));
-  $('#btnLeave').addEventListener('click', leaveGame);
+  $('#btnLeave').addEventListener('click', askLeave);
 
   $('#resultAgain').addEventListener('click', () => {
     $('#result').classList.add('hidden');
@@ -3536,7 +3712,7 @@ function boot() {
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
-    phaseFor, updateSameStreak,
+    phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm,
     captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),

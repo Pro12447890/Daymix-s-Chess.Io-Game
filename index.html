@@ -8,7 +8,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Daymix's Chess</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23262421'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%2381b64c'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=20261027-5">
+  <link rel="stylesheet" href="style.css?v=20261027-6">
 </head>
 <body>
 
@@ -55,6 +55,7 @@
           <span id="sbPoints">0 очков</span>
         </span>
       </button>
+      <button class="sb-pencil" id="sbProfileEdit" type="button" title="Имя, аватар, оформление">✎</button>
     </div>
   </aside>
 
@@ -81,6 +82,14 @@
           </div>
           <div class="time-groups" id="timeGroups"></div>
 
+          <div class="quick-setup">
+            <span class="field-label">Твой цвет:</span>
+            <button class="side-pick" data-side="w" type="button">Белые</button>
+            <button class="side-pick" data-side="b" type="button">Чёрные</button>
+            <button class="side-pick" data-side="random" type="button">🎲 Случайно</button>
+            <button class="btn btn-sm" id="btnRandomBoard" type="button" title="Случайная доска">🎨</button>
+          </div>
+
           <div class="play-actions one">
             <button class="btn-game-green btn-lg" id="btnPlayLocal" type="button">Играть здесь</button>
           </div>
@@ -96,7 +105,28 @@
 
           <div class="fake-bots" id="fakeBots"></div>
 
-          <div class="home-foot">
+          <div class="profile-pop hidden" id="profilePop">
+        <div class="pp-head">
+          <b>Мини-профиль</b>
+          <button class="btn btn-sm btn-ghost" id="ppClose" type="button">✕</button>
+        </div>
+        <div class="pp-avatars" id="ppAvatars"></div>
+        <label class="field">
+          <span class="field-label">Ник</span>
+          <span class="pp-name-row">
+            <input id="ppName" maxlength="18" autocomplete="off" spellcheck="false">
+            <button class="btn btn-sm" id="ppSaveName" type="button">✎</button>
+          </span>
+        </label>
+        <div class="pp-stats" id="ppStats"></div>
+        <div class="pp-actions">
+          <button class="btn btn-sm" id="ppBoards" type="button">Доски</button>
+          <button class="btn btn-sm" id="ppPieces" type="button">Фигуры</button>
+          <button class="btn btn-sm" id="ppStatsBtn" type="button">Мои итоги</button>
+        </div>
+      </div>
+
+      <div class="home-foot">
             <span class="home-profile">
               <span class="home-avatar" id="homeAvatar"></span>
               <b id="homeName">Игрок</b>
@@ -177,6 +207,7 @@
             <div class="field">
               <span class="field-label">Тема доски</span>
               <div class="theme-row" id="settingsThemeRow"></div>
+              <button class="btn btn-sm" id="btnRandomTheme" type="button">🎲 Случайная доска</button>
             </div>
             <div class="field">
               <span class="field-label">Набор фигур</span>
@@ -201,7 +232,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-5 · сдвиг палитры 0.5%</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-6 · центрирование, 40 досок, выход без поражения</div>
           </div>
         </div>
       </div>
@@ -315,6 +346,8 @@
             <button class="mob-btn" id="mobLeave" type="button">Выйти</button>
             <button class="mob-btn" id="mobSettings" type="button" title="Настройки партии">⚙</button>
           </div>
+
+          <div class="rep-ring hidden" id="repRing" title="Заполнение до пата"><span>пат</span></div>
 
           <div class="pause-overlay hidden" id="pauseOverlay">
             <div class="pause-card">
@@ -564,7 +597,7 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261027-5"></script>
-<script src="app.js?v=20261027-5"></script>
+<script src="engine.js?v=20261027-6"></script>
+<script src="app.js?v=20261027-6"></script>
 </body>
 </html>
