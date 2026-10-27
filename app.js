@@ -636,6 +636,7 @@ function scheduleFirstMoveTimer() {
   ui.firstMoveTimer = 0;
   if (!ui.st || ui.st.status !== 'play' || ui.moves.length || ui.st.turn !== 'w') return;
   if (ui.mode !== 'local') return;
+  if (ui.st.flags.captureRace) return;
   if (ui.bot && ui.bot.color === 'w') return;
   ui.firstMoveTimer = setTimeout(() => {
     if (!ui.st || ui.st.status !== 'play' || ui.moves.length || ui.st.turn !== 'w') return;
