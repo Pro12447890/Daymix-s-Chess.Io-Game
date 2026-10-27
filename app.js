@@ -2826,25 +2826,25 @@ function spawnPhaseFliers() {
   const reduced = !profile.epicFx && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reduced) return;
   box.innerHTML = '';
-  const count = Math.round((window.innerWidth < 700 ? 10 : 18) * (profile.epicFx ? 1.8 : 1));
+  const count = Math.round((window.innerWidth < 700 ? 12 : 22) * (profile.epicFx ? 1.8 : 1));
   for (let i = 0; i < count; i++) {
     const type = FLIER_TYPES[Math.floor(Math.random() * FLIER_TYPES.length)];
     const el = document.createElement('span');
     el.className = 'flier ' + (Math.random() < 0.5 ? 'w' : 'b');
-    const size = Math.round(34 + Math.random() * 86);
+    const size = Math.round(26 + Math.random() * 112);
     const fromLeft = Math.random() < 0.5;
-    const startX = fromLeft ? -8 - Math.random() * 12 : 100 + Math.random() * 12;
-    const startY = Math.random() * 108 - 4;
-    const dx = (fromLeft ? 1 : -1) * (55 + Math.random() * 70);
-    const dy = -25 + Math.random() * 50;
+    const startX = fromLeft ? -20 - Math.random() * 18 : 100 + Math.random() * 18;
+    const startY = -16 + Math.random() * 132;
+    const dx = (fromLeft ? 1 : -1) * (72 + Math.random() * 45);
+    const dy = -55 + Math.random() * 110;
     el.style.setProperty('--x', startX.toFixed(1) + 'vw');
     el.style.setProperty('--y', startY.toFixed(1) + 'vh');
     el.style.setProperty('--s', size + 'px');
     el.style.setProperty('--dx', dx.toFixed(1) + 'vw');
     el.style.setProperty('--dy', dy.toFixed(1) + 'vh');
-    el.style.setProperty('--rot', Math.round(-240 + Math.random() * 480) + 'deg');
-    el.style.setProperty('--dur', (1.7 + Math.random() * 1.1).toFixed(2) + 's');
-    el.style.setProperty('--delay', (Math.random() * 0.9).toFixed(2) + 's');
+    el.style.setProperty('--rot', Math.round(-560 + Math.random() * 1120) + 'deg');
+    el.style.setProperty('--dur', (1.45 + Math.random() * 1.5).toFixed(2) + 's');
+    el.style.setProperty('--delay', (Math.random() * 1.25).toFixed(2) + 's');
     el.innerHTML = pieceSvg(type, 'flier-pc');
     box.appendChild(el);
   }
@@ -3193,6 +3193,23 @@ function renderLobby() {
   };
   waiting.innerHTML = render(ui.lobbyRooms, 'waiting');
   live.innerHTML = render(ui.liveRooms, 'live');
+  const mini = $('#onlineMiniList');
+  if (mini) {
+    const all = [
+      ...(ui.liveRooms ? [...ui.liveRooms.values()].map((r) => ({ ...r, live: true })) : []),
+      ...(ui.lobbyRooms ? [...ui.lobbyRooms.values()].map((r) => ({ ...r, live: false })) : []),
+    ].filter((r) => r.code !== own).sort((a, b) => b.ts - a.ts).slice(0, 3);
+    if (!all.length) {
+      mini.innerHTML = '<div class="lobby-empty">Пока нет открытых партий — создайте комнату, и она появится здесь.</div>';
+    } else {
+      mini.innerHTML = all.map((r) => `
+        <div class="lobby-item">
+          <div class="lobby-info"><b>${escapeHtml(r.name)}</b><span>${escapeHtml(r.modeName)}${r.timeLabel ? ' · ' + escapeHtml(r.timeLabel) : ''}${r.live ? ' · идёт' : ''}</span></div>
+          <span class="lobby-code">${escapeHtml(r.code)}</span>
+          <button class="btn btn-sm" data-${r.live ? 'watch' : 'join'}="${escapeHtml(r.code)}" type="button">${r.live ? 'Смотреть' : 'Войти'}</button>
+        </div>`).join('');
+    }
+  }
 }
 
 function lobbyAnnounce() {
@@ -3963,6 +3980,13 @@ function bindEvents() {
     createRoom();
   });
   if ($('#lobbyRefresh')) $('#lobbyRefresh').addEventListener('click', () => { ensureLobby(); renderLobby(); });
+  if ($('#openLobby')) $('#openLobby').addEventListener('click', () => switchOnlineTab('internet'));
+  if ($('#onlineMiniList')) $('#onlineMiniList').addEventListener('click', (e) => {
+    const j = e.target.closest('[data-join]');
+    const w = e.target.closest('[data-watch]');
+    if (j) joinRoom(j.dataset.join);
+    if (w) watchRoom(w.dataset.watch);
+  });
   if ($('#waitingList')) $('#waitingList').addEventListener('click', (e) => {
     const b = e.target.closest('[data-join]');
     if (b) joinRoom(b.dataset.join);
@@ -4098,6 +4122,8 @@ function bindEvents() {
     if (!d.active) return;
     e.preventDefault();
     d.el.classList.remove('dragging');
+    const piecesLayer = $('#pieces');
+    if (piecesLayer) piecesLayer.classList.remove('raise');
     d.el.style.zIndex = '';
     if (d.target != null) {
       ui.suppressClick = true;
@@ -4125,6 +4151,8 @@ function bindEvents() {
     if (!d.active) {
       d.active = true;
       d.el.classList.add('dragging');
+      const piecesLayer = $('#pieces');
+      if (piecesLayer) piecesLayer.classList.add('raise');
       d.el.style.transition = 'none';
     }
     const tilt = Math.max(-11, Math.min(11, dx * 0.09));
@@ -4142,6 +4170,11 @@ function bindEvents() {
         sqEl.classList.add('drag-over');
       }
     }
+  };
+  const suppressNextClick = () => {
+    ui.suppressClick = true;
+    clearTimeout(suppressNextClick.timer);
+    suppressNextClick.timer = setTimeout(() => { ui.suppressClick = false; }, 320);
   };
   $('#squares').addEventListener('pointerdown', (e) => {
     if (e.button !== undefined && e.button !== 0) return;
@@ -4163,6 +4196,7 @@ function bindEvents() {
     onSquareClick(sq);
     const el = ui.pieceNodes.get(p.id);
     if (!el) return;
+    suppressNextClick();
     const { dx, dy } = disp(ui.st, sq);
     dragState = { from: sq, x: e.clientX, y: e.clientY, active: false, el, baseX: dx * ui.sq, baseY: dy * ui.sq, target: null };
     window.addEventListener('pointermove', onDragMove);

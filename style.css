@@ -3042,3 +3042,14 @@ html.epic-fx .flier { display: block !important; }
   padding: 14px; text-align: center; color: var(--text-muted); font-size: 12px;
   border: 1px dashed var(--line); border-radius: 8px;
 }
+
+
+/* фигуры во время перетаскивания поверх подсказок */
+.pieces.raise { z-index: 6; }
+
+/* мини-список публичных партий на экране онлайна */
+#screen-online { justify-content: center; }
+#screen-online .online-card { max-height: 92vh; overflow-y: auto; }
+.online-bottom { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.lobby-list.mini { max-height: 150px; }
+.lobby-list.mini .lobby-item { padding: 6px 9px; }
