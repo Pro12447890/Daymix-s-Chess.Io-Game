@@ -2469,8 +2469,8 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
   text-align: center;
 }
 @media (max-width: 700px) {
-  .phase-badge { font-size: clamp(20px, 8.4vw, 54px) !important; letter-spacing: 1px !important; }
-  .phase-sub { font-size: 8.5px !important; letter-spacing: 2.4px !important; }
+  .phase-badge { font-size: clamp(22px, 9.2vw, 60px) !important; letter-spacing: 0.5px !important; }
+  .phase-sub { font-size: 9.5px !important; letter-spacing: 1.8px !important; }
   .phase-rays { filter: blur(16px); opacity: .8; }
   .flier.w, .flier.b { filter: drop-shadow(0 0 8px #b06dff66); }
 }
@@ -3000,3 +3000,18 @@ html.epic-fx .flier { display: block !important; }
   box-shadow: 0 0 8px #ffb34799;
   animation-duration: .45s;
 }
+
+
+/* перетаскивание фигуры */
+.board, #squares { touch-action: none; }
+.piece.dragging {
+  filter: drop-shadow(0 16px 18px #00000099);
+  opacity: 1 !important;
+  will-change: transform;
+}
+.sq.drag-over {
+  box-shadow: inset 0 0 0 3px var(--accent-green), inset 0 0 24px #a6e06a66 !important;
+}
+
+/* драма ферзя больше не масштабирует доску */
+.board-wrap.drama-zoom { animation: none !important; }

@@ -652,11 +652,6 @@ function queenDrama(item) {
   box.classList.add('run');
   ui.gameLocked = true;
   const wrap = $('#boardWrap');
-  if (wrap) {
-    wrap.classList.remove('drama-zoom');
-    void wrap.offsetWidth;
-    wrap.classList.add('drama-zoom');
-  }
   clearTimeout(queenDrama.timer);
   queenDrama.timer = setTimeout(() => {
     box.classList.add('hidden');
@@ -1064,6 +1059,7 @@ const ui = {
   rotated: false,
   tableRotated: false,
   themesExpanded: false,
+  suppressClick: false,
   away: false,
   confirmAction: null,
   sameStreak: 0,
@@ -2019,6 +2015,7 @@ function newGame(opts = {}) {
   ui.rotated = false;
   ui.tableRotated = false;
   ui.away = false;
+  ui.suppressClick = false;
   const boardEl = $('#board');
   if (boardEl) boardEl.classList.remove('board-rotated');
   ui.pieceStreak = null;
@@ -2724,6 +2721,22 @@ const PHASES = {
 
 const FLIER_TYPES = ['q', 'r', 'b', 'n', 'p', 'k'];
 
+function fitPhaseBadge() {
+  const badge = $('#phaseBadge');
+  if (!badge) return;
+  if (window.innerWidth >= 1000) { badge.style.removeProperty('font-size'); return; }
+  badge.style.removeProperty('font-size');
+  const max = window.innerWidth - 4;
+  let size = Math.min(64, Math.round(window.innerWidth * 0.105));
+  badge.style.setProperty('font-size', size + 'px', 'important');
+  let guard = 0;
+  while (badge.scrollWidth > max && size > 20 && guard < 40) {
+    size -= 1;
+    badge.style.setProperty('font-size', size + 'px', 'important');
+    guard += 1;
+  }
+}
+
 function spawnPhaseFliers() {
   const box = $('#phaseFliers');
   if (!box) return;
@@ -2785,6 +2798,7 @@ function showPhase(phase) {
   const el = $('#phaseSplash');
   $('#phaseBadge').textContent = info.title;
   $('#phaseSub').textContent = info.sub;
+  fitPhaseBadge();
   el.dataset.phase = phase;
   el.classList.remove('show');
   void el.offsetWidth;
@@ -3793,7 +3807,94 @@ function bindEvents() {
     toast('Статистика сброшена');
   });
 
+  let dragState = null;
+  const clearDragHover = () => {
+    document.querySelectorAll('.sq.drag-over').forEach((el) => el.classList.remove('drag-over'));
+  };
+  const finishDrag = (e) => {
+    if (!dragState) return;
+    const d = dragState;
+    dragState = null;
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', finishDrag);
+    window.removeEventListener('pointercancel', finishDrag);
+    clearDragHover();
+    if (!d.active) return;
+    e.preventDefault();
+    d.el.classList.remove('dragging');
+    d.el.style.zIndex = '';
+    if (d.target != null) {
+      ui.suppressClick = true;
+      d.el.style.transition = '';
+      onSquareClick(d.target);
+    } else {
+      d.el.style.transition = 'transform .18s cubic-bezier(.2,.8,.3,1)';
+      d.el.style.transform = `translate(${d.baseX}px, ${d.baseY}px)`;
+      setTimeout(() => {
+        d.el.style.transition = '';
+        d.el.style.transform = `translate(${d.baseX}px, ${d.baseY}px)`;
+      }, 200);
+      ui.selected = -1;
+      renderSquares();
+      renderHints();
+      ui.suppressClick = true;
+    }
+  };
+  const onDragMove = (e) => {
+    if (!dragState) return;
+    const d = dragState;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (!d.active && Math.hypot(dx, dy) < 6) return;
+    if (!d.active) {
+      d.active = true;
+      d.el.classList.add('dragging');
+      d.el.style.transition = 'none';
+    }
+    const tilt = Math.max(-11, Math.min(11, dx * 0.09));
+    d.el.style.transform = `translate(${d.baseX + dx}px, ${d.baseY + dy}px) scale(1.12) rotate(${tilt}deg)`;
+    d.el.style.zIndex = '9999';
+    clearDragHover();
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const sqEl = under && under.closest ? under.closest('.sq') : null;
+    d.target = null;
+    if (sqEl) {
+      const to = Number(sqEl.dataset.sq);
+      const legal = legalMoves(ui.st, ui.st.turn);
+      if (legal.some((m) => m.from === d.from && m.to === to)) {
+        d.target = to;
+        sqEl.classList.add('drag-over');
+      }
+    }
+  };
+  $('#squares').addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    const sqEl = e.target.closest('.sq');
+    if (!sqEl || !ui.st || ui.st.status !== 'play' || ui.gameLocked || ui.paused || ui.imported) return;
+    if (ui.viewPly !== ui.frames.length - 1) return;
+    if (ui.bot && ui.st.turn === ui.bot.color) return;
+    if (ui.mode === 'online' && ui.st.turn !== myColor()) return;
+    if (ui.mode !== 'local' && ui.st.turn !== myColor()) return;
+    const sq = Number(sqEl.dataset.sq);
+    const p = ui.st.board[sq];
+    if (!p || p.c !== ui.st.turn) return;
+    if (ui.st.flags.touchMove && ui.selected >= 0) {
+      const selectedMoves = legalMoves(ui.st, ui.st.turn).filter((m) => m.from === ui.selected);
+      if (selectedMoves.length && sq !== ui.selected) return;
+    }
+    if (ui.st.flags.touchMove && ui.selected >= 0 && !legalMoves(ui.st, ui.st.turn).some((m) => m.from === ui.selected)) return;
+    onSquareClick(sq);
+    const el = ui.pieceNodes.get(p.id);
+    if (!el) return;
+    const { dx, dy } = disp(ui.st, sq);
+    dragState = { from: sq, x: e.clientX, y: e.clientY, active: false, el, baseX: dx * ui.sq, baseY: dy * ui.sq, target: null };
+    window.addEventListener('pointermove', onDragMove);
+    window.addEventListener('pointerup', finishDrag);
+    window.addEventListener('pointercancel', finishDrag);
+  });
+
   $('#squares').addEventListener('click', (e) => {
+    if (ui.suppressClick) { ui.suppressClick = false; return; }
     const sq = e.target.closest('.sq');
     if (!sq) return;
     onSquareClick(Number(sq.dataset.sq));
@@ -3852,7 +3953,7 @@ function boot() {
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
-    phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm,
+    phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
     captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),
