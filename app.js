@@ -615,8 +615,6 @@ function radiusEdge(st, i) {
 function queenDrama(item) {
   const box = $('#queenDrama');
   if (!box) return;
-  const reduced = !profile.epicFx && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduced) return;
   box.classList.remove('hidden');
   box.classList.remove('run');
   const bolts = $('#dramaBolts');
@@ -725,8 +723,6 @@ function softBurst(st, sq) {
 
 function captureFx(list) {
   if (!list || !list.length || !ui.st) return;
-  const reduced = !profile.epicFx && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduced) return;
   const st = ui.st;
   const sq = ui.sq;
   const layer = $('#hints');
