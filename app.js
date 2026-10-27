@@ -20,6 +20,7 @@ const DEFAULT_PROFILE = {
   pieces: '1',
   flip: true,
   flipAll: false,
+  tableFlip: true,
   autoQueen: true,
   sound: true,
   side: 'w',
@@ -986,6 +987,7 @@ const ui = {
   gameLocked: false,
   remoteSelected: -1,
   rotated: false,
+  tableRotated: false,
   confirmAction: null,
   sameStreak: 0,
   lastPieceId: null,
@@ -1030,6 +1032,7 @@ function renderProfile() {
   applySkin();
   $('#optFlip').checked = profile.flip;
   if ($('#optFlipAll')) $('#optFlipAll').checked = !!profile.flipAll;
+  if ($('#optTableFlip')) $('#optTableFlip').checked = profile.tableFlip !== false;
   $('#optAutoQueen').checked = profile.autoQueen;
   if ($('#gFlip')) {
     const botGame = !!(ui.bot && ui.st);
@@ -1844,6 +1847,9 @@ function newGame(opts = {}) {
   const pickedMode = modeById(opts.modeId || profile.modeId);
   const mode = pickedMode.flags.randomPick ? randomRealMode() : pickedMode;
   ui.rotated = false;
+  ui.tableRotated = false;
+  const boardEl = $('#board');
+  if (boardEl) boardEl.classList.remove('board-rotated');
   ui.pieceStreak = null;
   ui.extremeShown = 0;
   ui.confirmAction = null;
@@ -2148,11 +2154,6 @@ function resultReason(res) {
 
 function onSquareClick(sq) {
   if (!ui.st || ui.st.status !== 'play') return;
-  if (ui.rotated) {
-    const y = Math.floor(sq / ui.st.W);
-    const x = sq % ui.st.W;
-    sq = (ui.st.H - 1 - y) * ui.st.W + (ui.st.W - 1 - x);
-  }
   if (ui.gameLocked) return;
   if (ui.paused) return;
   if (ui.imported) { toast('Импортированная партия — только просмотр'); return; }
@@ -2336,6 +2337,9 @@ function commitMove(m, opts = {}) {
     if (profile.flipAll) {
       ui.rotated = !ui.rotated;
       flippedNow = true;
+    } else if (profile.tableFlip !== false) {
+      ui.tableRotated = !ui.tableRotated;
+      flippedNow = true;
     } else {
       const prevOrientation = ui.orientation;
       ui.orientation = st.turn;
@@ -2345,6 +2349,8 @@ function commitMove(m, opts = {}) {
   if (!opts.silent) {
     const shellRot = $('#gameShell');
     if (shellRot) shellRot.classList.toggle('flip-all', !!ui.rotated);
+    const boardRot = $('#board');
+    if (boardRot) boardRot.classList.toggle('board-rotated', !!ui.tableRotated);
     renderAll(flippedNow ? false : !opts.noAnim);
     if (flippedNow) renderPlayers();
     if (st.flags.explode && explodedNow) explosionFx(st, match.to);
@@ -3274,6 +3280,11 @@ function bindEvents() {
     saveProfile();
   });
 
+  if ($('#optTableFlip')) $('#optTableFlip').addEventListener('change', (e) => {
+    profile.tableFlip = e.target.checked;
+    saveProfile();
+    toast(profile.tableFlip ? 'Доска будет физически переворачиваться' : 'Доска будет менять стороны без поворота');
+  });
   if ($('#optFlipAll')) $('#optFlipAll').addEventListener('change', (e) => {
     profile.flipAll = e.target.checked;
     saveProfile();
@@ -3404,6 +3415,11 @@ function bindEvents() {
       ui.rotated = !ui.rotated;
       $('#gameShell').classList.toggle('flip-all', ui.rotated);
       renderAll(false);
+      return;
+    }
+    if (profile.tableFlip !== false) {
+      ui.tableRotated = !ui.tableRotated;
+      $('#board').classList.toggle('board-rotated', ui.tableRotated);
       return;
     }
     ui.orientation = other(ui.orientation);
