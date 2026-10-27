@@ -3,12 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Daymix's Chess — шахматы в браузере: 25 режимов, 45 наборов фигур, бот, часы, статистика и игра по коду из пяти цифр.">
-  <meta name="theme-color" content="#262421">
+  <meta name="description" content="Daymix's Chess — шахматы в браузере: 50 режимов, 45 наборов фигур, бот, онлайн по коду из пяти цифр, статистика и эффекты.">
+  <link rel="canonical" id="canonicalLink" href="https://pro12447890.github.io/Daymix-s-Chess.Io-Game/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Daymix's Chess">
+  <meta property="og:description" content="50 режимов шахмат, 45 наборов фигур, бот и игра по сети без регистрации.">
+  <meta property="og:url" id="ogUrl" content="https://pro12447890.github.io/Daymix-s-Chess.Io-Game/">
+  <meta name="twitter:card" content="summary">
+  <meta name="theme-color" content="#272520">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Daymix's Chess</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23262421'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%2381b64c'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=20261027-6">
+  <script>
+    // канонический адрес: после подключения домена ссылки ведут на него
+    (function () {
+      var custom = 'daymix-chess.strangled.net';
+      if (location.hostname === custom) {
+        var base = 'https://' + custom + '/';
+        var c = document.getElementById('canonicalLink');
+        var o = document.getElementById('ogUrl');
+        if (c) c.href = base;
+        if (o) o.content = base;
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css?v=20261027-7">
 </head>
 <body>
 
@@ -232,7 +251,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-6 · центрирование, 40 досок, выход без поражения</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-7 · подготовка домена</div>
           </div>
         </div>
       </div>
@@ -598,6 +617,6 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261027-6"></script>
+<script src="app.js?v=20261027-7"></script>
 </body>
 </html>
