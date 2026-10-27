@@ -448,20 +448,23 @@ function updateSameStreak(id, mover) {
   else { slot.id = id; slot.n = 1; }
   ui.pieceStreak[mover] = slot;
   const n = slot.n;
+  const endgame = phaseFor(ui.st) === 'endgame';
+  const online = ui.mode === 'online';
+  const mine = online && mover === myColor();
   const shell = $('#gameShell');
   if (shell) {
-    const level = n < 5 ? 0 : Math.min(5, n - 4);
+    const level = mine && n >= 5 ? Math.min(5, n - 4) : 0;
     shell.style.setProperty('--gray', String(GRAY_STEPS[level]));
   }
   const ring = $('#repRing');
   if (ring) {
-    const show = n >= 5;
+    const show = endgame && n >= 5 && (!online || mine);
     ring.classList.toggle('hidden', !show);
     ring.style.setProperty('--p', `${Math.min(360, ((n - 4) / 4) * 360)}deg`);
     const label = ring.querySelector('span');
     if (label) label.textContent = n >= 8 ? 'пат' : `${Math.min(4, n - 4)}/4`;
   }
-  return n >= 8 && phaseFor(ui.st) === 'endgame';
+  return online && mine && endgame && n >= 8;
 }
 
 function fastRookWave(st, sq) {
@@ -612,7 +615,7 @@ function radiusEdge(st, i) {
 function queenDrama(item) {
   const box = $('#queenDrama');
   if (!box) return;
-  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = !profile.epicFx && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reduced) return;
   box.classList.remove('hidden');
   box.classList.remove('run');
@@ -698,9 +701,31 @@ function explosionFx(st, center) {
   setTimeout(() => boom.remove(), 900);
 }
 
+function softBurst(st, sq) {
+  const layer = $('#hints');
+  if (!layer || !st) return;
+  const { dx, dy } = disp(st, sq);
+  const size = ui.sq;
+  const cx = (dx + .5) * size;
+  const cy = (dy + .5) * size;
+  const box = document.createElement('div');
+  box.className = 'boom soft';
+  box.style.left = cx + 'px';
+  box.style.top = cy + 'px';
+  for (let i = 0; i < 6; i++) {
+    const spark = document.createElement('i');
+    spark.className = 'boom-spark';
+    spark.style.setProperty('--ang', (i * 60 + Math.random() * 20) + 'deg');
+    spark.style.setProperty('--dist', (size * (0.35 + Math.random() * 0.3)) + 'px');
+    box.appendChild(spark);
+  }
+  layer.appendChild(box);
+  setTimeout(() => box.remove(), 520);
+}
+
 function captureFx(list) {
   if (!list || !list.length || !ui.st) return;
-  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = !profile.epicFx && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reduced) return;
   const st = ui.st;
   const sq = ui.sq;
@@ -1926,10 +1951,14 @@ function fmtClock(ms) {
   return `0:${String(s).padStart(2, '0')}`;
 }
 
+function barOrientation() {
+  return ui.tableRotated ? other(ui.orientation) : ui.orientation;
+}
+
 function updateClockEls(override) {
   if (!ui.st) return;
   const turn = ui.st.turn;
-  const bottomColor = ui.orientation === 'w' ? 'w' : 'b';
+  const bottomColor = barOrientation() === 'w' ? 'w' : 'b';
   const topColor = other(bottomColor);
   const running = ui.running && ui.st.status === 'play' && ui.viewPly === ui.frames.length - 1;
   for (const color of ['w', 'b']) {
@@ -2119,7 +2148,7 @@ function renderMeta() {
 function renderPlayers() {  const st = ui.st;
   if (!st) return;
   const me = myColor();
-  const bottomColor = ui.orientation === 'w' ? 'w' : 'b';
+  const bottomColor = barOrientation() === 'w' ? 'w' : 'b';
   const topColor = other(bottomColor);
   const mySide = ui.mode === 'online' ? (ui.role === 'host' ? 'w' : 'b') : me;
 
@@ -2504,6 +2533,9 @@ function commitMove(m, opts = {}) {
     if (st.flags.explode && explodedNow) explosionFx(st, match.to);
     if (capInfo.length) {
       captureFx(capInfo);
+      if (!profile.epicFx && captured && window.innerWidth < 1000 && !capInfo.some((c) => c.type === 'q')) {
+        softBurst(st, match.to);
+      }
       if (profile.epicFx && !capInfo.some((c) => c.type === 'q')) {
         const boardFx = $('#board');
         if (boardFx) {
@@ -2691,7 +2723,7 @@ const FLIER_TYPES = ['q', 'r', 'b', 'n', 'p', 'k'];
 function spawnPhaseFliers() {
   const box = $('#phaseFliers');
   if (!box) return;
-  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = !profile.epicFx && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reduced) return;
   box.innerHTML = '';
   const count = Math.round((window.innerWidth < 700 ? 10 : 18) * (profile.epicFx ? 1.8 : 1));
@@ -2721,7 +2753,7 @@ function spawnPhaseFliers() {
 }
 
 function playBoardIntro() {
-  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = !profile.epicFx && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reduced) return;
   const pieces = $('#pieces');
   const wrap = $('#boardWrap');
@@ -3699,6 +3731,8 @@ function bindEvents() {
     if (profile.tableFlip !== false) {
       ui.tableRotated = !ui.tableRotated;
       $('#board').classList.toggle('board-rotated', ui.tableRotated);
+      renderAll(false);
+      renderPlayers();
       return;
     }
     ui.orientation = other(ui.orientation);

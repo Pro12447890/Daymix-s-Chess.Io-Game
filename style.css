@@ -2977,3 +2977,26 @@ html.epic-fx .confetti-piece { animation-duration: 2.1s; }
 }
 .swatch-more { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
 .sw-plus { font-size: 20px; font-weight: 300; color: var(--accent-green); }
+
+
+/* эпик-режим принудительно включает тряску и падающие фигуры,
+   даже если в системе отключены анимации */
+html.epic-fx .board.shake-1 { animation: boardQuake .2s ease !important; --amp: 2px; }
+html.epic-fx .board.shake-2 { animation: boardQuake .26s ease !important; --amp: 4px; }
+html.epic-fx .board.shake-3 { animation: boardQuake .34s ease !important; --amp: 6px; }
+html.epic-fx .board.shake-4 { animation: boardQuake .5s ease !important; --amp: 10px; }
+html.epic-fx .board.shake-5 { animation: boardQuake .7s ease !important; --amp: 16px; }
+html.epic-fx .cap-ghost { display: grid !important; }
+html.epic-fx .fx-flash { display: block !important; }
+html.epic-fx .res-flier, html.epic-fx .result-rays { display: block !important; }
+html.epic-fx .flier { display: block !important; }
+
+
+/* мягкий микро-взрыв при взятии на телефоне */
+.boom.soft .boom-ring { display: none; }
+.boom.soft .boom-spark {
+  width: 5px; height: 5px;
+  background: #ffd27a;
+  box-shadow: 0 0 8px #ffb34799;
+  animation-duration: .45s;
+}
