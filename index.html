@@ -8,7 +8,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Daymix's Chess</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23262421'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%2381b64c'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=20261026-10">
+  <link rel="stylesheet" href="style.css?v=20261027-1">
 </head>
 <body>
 
@@ -90,7 +90,11 @@
             <button class="bot-level" data-level="easy" type="button">лёгкий</button>
             <button class="bot-level" data-level="medium" type="button">средний</button>
             <button class="bot-level" data-level="hard" type="button">сложный</button>
+            <button class="bot-level" data-level="gm" type="button">гроссмейстер</button>
+            <button class="bot-level" data-level="engine" type="button">движок</button>
           </div>
+
+          <div class="fake-bots" id="fakeBots"></div>
 
           <div class="home-foot">
             <span class="home-profile">
@@ -98,7 +102,10 @@
               <b id="homeName">Игрок</b>
               <em id="homePoints">0 очков</em>
             </span>
-            <button class="btn btn-sm" id="homeSettings" type="button">⚙ Настройки</button>
+            <span class="home-actions">
+              <button class="btn btn-sm hidden" id="resumeBtn" type="button">▶ Продолжить партию</button>
+              <button class="btn btn-sm" id="homeSettings" type="button">⚙ Настройки</button>
+            </span>
           </div>
         </div>
       </div>
@@ -132,7 +139,11 @@
           </div>
         </div>
 
+        <div class="online-mode" id="onlineModeLine"></div>
         <div class="status-line online-status" id="lobbyLine"></div>
+        <div class="rejoin-row hidden" id="rejoinRow">
+          <button class="btn btn-sm" id="rejoinBtn" type="button">↩ Вернуться в последнюю комнату</button>
+        </div>
         <div class="room-row hidden" id="roomRow">
           <div class="code-big" id="roomCode">00000</div>
           <button class="btn btn-sm" id="btnCopyCode" type="button">Копировать ссылку</button>
@@ -189,7 +200,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-26-10 · 38 режимов, новые эффекты</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-1 · 50 режимов</div>
           </div>
         </div>
       </div>
@@ -202,7 +213,7 @@
           <button class="btn btn-sm btn-ghost back-btn" id="modesBack" type="button">← Назад</button>
           <div class="screen-head-text">
             <h2>Режимы</h2>
-            <p id="modesLead">Классика, 37 режимов и рандомный выбор — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
+            <p id="modesLead">Классика, 49 режимов и рандомный выбор — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
           </div>
           <span class="chip" id="modesCurrent">Классика</span>
         </div>
@@ -259,6 +270,8 @@
             <div class="clock" id="topClock">—</div>
           </div>
 
+          <div class="mobile-moves" id="mobileMoves" aria-label="Последние ходы"></div>
+
           <div class="board-wrap" id="boardWrap">
             <div class="board" id="board">
               <div class="squares" id="squares"></div>
@@ -294,7 +307,13 @@
             <div class="clock" id="bottomClock">—</div>
           </div>
 
-          <button class="panel-toggle" id="panelToggle" type="button" title="Ходы и чат">≡</button>
+          <div class="mobile-actions">
+            <button class="mob-btn" id="panelToggle" type="button" title="Ходы и чат">≡ Ходы</button>
+            <button class="mob-btn" id="mobPause" type="button" title="Пауза">⏸</button>
+            <button class="mob-btn danger" id="mobResign" type="button">⚑ Сдаться</button>
+            <button class="mob-btn" id="mobLeave" type="button">Выйти</button>
+            <button class="mob-btn" id="mobSettings" type="button" title="Настройки партии">⚙</button>
+          </div>
 
           <div class="pause-overlay hidden" id="pauseOverlay">
             <div class="pause-card">
@@ -448,6 +467,7 @@
     <div class="roulette-icon" id="rouletteIcon">🎲</div>
     <div class="roulette-name" id="rouletteName">…</div>
     <div class="roulette-sub" id="rouletteSub">крутим барабан</div>
+    <div class="roulette-desc" id="rouletteDesc"></div>
   </div>
 </div>
 
@@ -476,6 +496,14 @@
       <button class="bot-choice" data-level="hard" type="button">
         <span class="bc-icon">😈</span>
         <span><b>Сложный</b><span>перебор на четыре полухода, без случайности</span></span>
+      </button>
+      <button class="bot-choice" data-level="gm" type="button">
+        <span class="bc-icon">🎓</span>
+        <span><b>Гроссмейстер</b><span>глубокий перебор, аккуратные размены и давление</span></span>
+      </button>
+      <button class="bot-choice" data-level="engine" type="button">
+        <span class="bc-icon">🖥️</span>
+        <span><b>Непростой для движка</b><span>пять полуходов — даже движку придётся попотеть</span></span>
       </button>
     </div>
     <div class="modal-actions">
@@ -535,7 +563,7 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261026-10"></script>
-<script src="app.js?v=20261026-10"></script>
+<script src="engine.js?v=20261027-1"></script>
+<script src="app.js?v=20261027-1"></script>
 </body>
 </html>

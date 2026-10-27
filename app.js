@@ -127,8 +127,51 @@ function updateSoundIcon() {
 
 /* ─────────────────────────── БОТ ────────────────────────────────────── */
 
-const BOT_LABELS = { easy: 'лёгкий', medium: 'средний', hard: 'сложный' };
-const BOT_DELAY = { easy: 420, medium: 600, hard: 780 };
+const BOT_LABELS = { easy: 'Изи', medium: 'средний', hard: 'сложный', gm: 'Гроссмейстер', engine: 'Непростой для движка' };
+const BOT_DELAY = { easy: 420, medium: 600, hard: 780, gm: 900, engine: 1100 };
+const BOT_DEPTH = { medium: 2, hard: 4, gm: 4, engine: 5 };
+const BOT_POINTS = {
+  easy: { win: 1, loss: 0, draw: 0 },
+  medium: { win: 4, loss: -3, draw: 0 },
+  hard: { win: 5, loss: -3, draw: 0 },
+  gm: { win: 8, loss: -2, draw: 0 },
+  engine: { win: 12, loss: -1, draw: 0 },
+};
+
+const FAKE_NAMES = ['Alex_777', 'MashaChess', 'IvanPetrov', 'Nika_99', 'Danya', 'SashaGM',
+  'Kostya', 'Lena_2009', 'MaxPower', 'Vlad_2010', 'Sonya', 'Timur', 'Egor', 'Poly'];
+
+function renderFakeBots() {
+  const box = $('#fakeBots');
+  if (!box) return;
+  const names = [...FAKE_NAMES].sort(() => Math.random() - 0.5).slice(0, 2);
+  box.innerHTML = '<span class="fake-label">Или сыграйте с:</span>';
+  for (const name of names) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'fake-bot';
+    b.textContent = name;
+    b.title = 'Обычный игрок';
+    b.addEventListener('click', () => startFakeGame(name));
+    box.appendChild(b);
+  }
+}
+
+function startFakeGame(name) {
+  const simple = ['classic', 'chess960', 'threeChecks', 'center', 'radiusCheck', 'fischer'];
+  const modeId = Math.random() < 0.3 ? simple[Math.floor(Math.random() * simple.length)] : 'classic';
+  const levels = ['medium', 'hard', 'gm'];
+  const level = levels[Math.floor(Math.random() * levels.length)];
+  ui.online = null;
+  sound.click();
+  newGame({
+    mode: 'local',
+    modeId,
+    timeMs: profile.timeMs,
+    splash: true,
+    bot: { level, color: other(profile.side), fake: true, name },
+  });
+}
 
 function openBotModal() {
   const modal = $('#botModal');
@@ -163,7 +206,7 @@ function chooseBotMove(st, level) {
     return moves[Math.floor(Math.random() * moves.length)];
   }
   const big = st.W * st.H > 64;
-  const depth = level === 'hard' ? (big ? 2 : 4) : 2;
+  const depth = big ? 2 : (BOT_DEPTH[level] || 2);
   let ranked = [];
   try { ranked = rankMoves(st, depth); } catch (error) { ranked = []; }
   if (!ranked.length) return moves[Math.floor(Math.random() * moves.length)];
@@ -187,7 +230,7 @@ function maybeBotTurn() {
     const move = chooseBotMove(ui.st, level);
     if (move) commitMove(move, { bot: true });
     renderStatus();
-  }, BOT_DELAY[level] || 600);
+  }, ui.bot.fake ? 3000 + Math.random() * 12000 : (BOT_DELAY[level] || 600));
 }
 
 /* ─────────────────────── ЭКСПОРТ И ИМПОРТ ───────────────────────────── */
@@ -380,6 +423,152 @@ function updateEval() {
 
 const CAP_TIER = { p: 1, n: 2, b: 2, r: 3, q: 4, k: 5 };
 
+const CURRENT_KEY = 'daymix-chess-current';
+const INFERNAL_LINES = [
+  'Инопланетный кипяточек!', 'Откисай!', 'Это халява! Это халява? Или нет?', 'Окей, халява!',
+  'Ой, нет халявной пешечки...', 'Разминка гей!', 'Сдерживаем его!', 'Ну ладно, давай это съедим!',
+  'Ешь, ешь! Главное чтобы переедание не случилось.', 'Давай-ка размен!', 'Ну нет, какой обмен? Пролетай!',
+  'По теореме на сумме Гамбита!', 'Моя секретная ингушенция.', 'Теорема супер гамбита, давай, иди.',
+  'Я не спешу, давай, ты понял как — разменяем!', 'Кого хочешь потерять? Правого или левого?',
+  'Это было гениально!', 'Гамбит! Халявный гамбит!', 'Забери свою ферзюшку!', 'Теория инопланетного бычка!',
+  'Спасибо, Лавр, очень интеллектуально!', 'Оооо, он догадался!', 'Заметит ли он?',
+  'Подожди, это халява?', 'Меня не остановить?', 'Тактика кипяточка!', 'Халявная пешечка!',
+  'А я просто вдавливаю вперёд!', 'Секретная тактика!', 'Отлетай!', 'Очень смело!',
+];
+
+function updateSameStreak(id, mover) {
+  if (!id) return false;
+  if (!ui.pieceStreak) ui.pieceStreak = { w: { id: null, n: 0 }, b: { id: null, n: 0 } };
+  const slot = ui.pieceStreak[mover] || { id: null, n: 0 };
+  if (slot.id === id) slot.n += 1;
+  else { slot.id = id; slot.n = 1; }
+  ui.pieceStreak[mover] = slot;
+  const shell = $('#gameShell');
+  if (shell) {
+    shell.classList.remove('gray-1', 'gray-2', 'gray-3');
+    const n = slot.n;
+    if (n >= 5) shell.classList.add('gray-3');
+    else if (n >= 4) shell.classList.add('gray-2');
+    else if (n >= 3) shell.classList.add('gray-1');
+  }
+  return slot.n >= 6;
+}
+
+function fastRookWave(st, sq) {
+  const board = $('#board');
+  if (board) {
+    board.classList.remove('shake-2');
+    void board.offsetWidth;
+    board.classList.add('shake-2');
+    setTimeout(() => board.classList.remove('shake-2'), 420);
+  }
+  const layer = $('#hints');
+  if (!layer) return;
+  const { dx, dy } = disp(st, sq);
+  const px = (dx + .5) * ui.sq;
+  const py = (dy + .5) * ui.sq;
+  for (let i = 0; i < 3; i++) {
+    const ring = document.createElement('span');
+    ring.className = 'wave-ring';
+    ring.style.left = px + 'px';
+    ring.style.top = py + 'px';
+    ring.style.animationDelay = (i * 0.07).toFixed(2) + 's';
+    layer.appendChild(ring);
+    setTimeout(() => ring.remove(), 750);
+  }
+}
+
+function showExtremeDiff(sq) {
+  const stage = $('#stage');
+  const wrap = $('#boardWrap');
+  if (!stage || !wrap) return;
+  const br = wrap.getBoundingClientRect();
+  const sr = stage.getBoundingClientRect();
+  const badge = document.createElement('div');
+  badge.className = 'extreme-diff';
+  badge.textContent = 'EXTREME DIFF';
+  badge.style.left = (br.left - sr.left + br.width / 2) + 'px';
+  badge.style.top = (br.top - sr.top + br.height * 0.16) + 'px';
+  stage.appendChild(badge);
+  setTimeout(() => badge.remove(), 1700);
+}
+
+function infernalJoke() {
+  if (ui.moves.length - ui.lastJokeMove < 2) return;
+  ui.lastJokeMove = ui.moves.length;
+  const line = INFERNAL_LINES[Math.floor(Math.random() * INFERNAL_LINES.length)];
+  toast(line, 2800);
+  sound.check();
+}
+
+function saveCurrentGame() {
+  try {
+    if (!ui.st || ui.imported || ui.mode === 'online' || ui.st.status === 'over' || ui.anim) {
+      localStorage.removeItem(CURRENT_KEY);
+      return;
+    }
+    const data = buildGameJson();
+    data.timeMs = ui.timeMs;
+    data.clocks = { w: ui.clocks.w, b: ui.clocks.b };
+    data.orientation = ui.orientation;
+    data.savedAt = Date.now();
+    localStorage.setItem(CURRENT_KEY, JSON.stringify(data));
+  } catch (error) { /* приватный режим */ }
+}
+
+function loadCurrentGame() {
+  try {
+    const data = JSON.parse(localStorage.getItem(CURRENT_KEY) || 'null');
+    if (!data || !data.moves) return null;
+    return data;
+  } catch (error) { return null; }
+}
+
+function resumeSavedGame() {
+  const data = loadCurrentGame();
+  if (!data) { toast('Сохранённой партии нет'); return; }
+  if (!importGameText(JSON.stringify(data))) return;
+  ui.imported = false;
+  ui.mode = 'local';
+  ui.bot = null;
+  ui.timeMs = data.timeMs || 0;
+  if (data.clocks) ui.clocks = { w: data.clocks.w, b: data.clocks.b };
+  if (data.orientation) ui.orientation = data.orientation;
+  ui.st.status = 'play';
+  ui.st.result = null;
+  ui.scored = false;
+  ui.pieceStreak = null;
+  ui.viewPly = ui.frames.length - 1;
+  ui.turnStart = performance.now();
+  ui.running = !!ui.timeMs && ui.moves.length > 0;
+  const shell = $('#gameShell');
+  if (shell) shell.classList.remove('gray-1', 'gray-2', 'gray-3', 'flip-all');
+  renderAll(false);
+  renderPlayers();
+  renderMoves();
+  updateNav();
+  showScreen('game');
+  if (ui.moves.length) toast('Партия восстановлена');
+  scheduleFirstMoveTimer();
+}
+
+function scheduleFirstMoveTimer() {
+  clearTimeout(ui.firstMoveTimer);
+  ui.firstMoveTimer = 0;
+  if (!ui.st || ui.st.status !== 'play' || ui.moves.length || ui.st.turn !== 'w') return;
+  if (ui.mode !== 'local') return;
+  if (ui.bot && ui.bot.color === 'w') return;
+  ui.firstMoveTimer = setTimeout(() => {
+    if (!ui.st || ui.st.status !== 'play' || ui.moves.length || ui.st.turn !== 'w') return;
+    const res = { winner: null, reason: 'idle' };
+    ui.st.status = 'over';
+    ui.st.result = res;
+    renderAll(false);
+    finishGame(res);
+    toast('Белые не сделали первый ход — ничья без очков');
+  }, 15000);
+}
+
 function radiusDist(st, i) {
   if (!st.flags.radiusCheck) return 99;
   const x = fileOf(st, i);
@@ -446,12 +635,21 @@ function queenDrama(item) {
   }
   void box.offsetWidth;
   box.classList.add('run');
+  ui.gameLocked = true;
+  const wrap = $('#boardWrap');
+  if (wrap) {
+    wrap.classList.remove('drama-zoom');
+    void wrap.offsetWidth;
+    wrap.classList.add('drama-zoom');
+  }
   clearTimeout(queenDrama.timer);
   queenDrama.timer = setTimeout(() => {
     box.classList.add('hidden');
     box.classList.remove('run');
     bolts.innerHTML = '';
     halves.innerHTML = '';
+    if (wrap) wrap.classList.remove('drama-zoom');
+    if (ui.st && ui.st.status === 'play' && !ui.paused) ui.gameLocked = false;
   }, 1500);
 }
 
@@ -680,6 +878,9 @@ const MODE_SHORT = {
   random: 'Рандом', chess960: '960', swapReplace: 'Замена', vanishEdge: 'Бездна',
   pawnRush: 'Ракеты', backCapture: 'Хищник', convert20: 'Перебежчик',
   radiusCheck: 'Радиус', horde: 'Орда', antichess: 'Антишахматы',
+  noQueen7: 'Семёрка', swapRows: 'Пешки', blackFirst: 'Чёрные', inverted: 'Вверх',
+  pawnBack: 'Назад', kingKnight: 'Король-конь', queenLose: 'Ферзь', weakKnights: 'Кони',
+  castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно',
 };
 
 const THEMES = [
@@ -785,6 +986,11 @@ const ui = {
   gameLocked: false,
   remoteSelected: -1,
   rotated: false,
+  confirmAction: null,
+  sameStreak: 0,
+  lastPieceId: null,
+  firstMoveTimer: 0,
+  lastJokeMove: -10,
   imported: false,
   names: null,
   startedAt: 0,
@@ -809,6 +1015,16 @@ function renderProfile() {
   if ($('#homeAvatar')) $('#homeAvatar').innerHTML = pieceSvg(profile.avatar, 'av-pc');
   if ($('#homeName')) $('#homeName').textContent = profile.name;
   if ($('#homePoints')) $('#homePoints').textContent = `${profile.points} очков`;
+  if ($('#resumeBtn')) $('#resumeBtn').classList.toggle('hidden', !loadCurrentGame());
+  renderFakeBots();
+  updateOnlineModeLine();
+  const rejoin = $('#rejoinRow');
+  if (rejoin) {
+    const last = profile.lastRoom;
+    const fresh = last && Date.now() - last.ts < 30 * 60 * 1000 && !ui.online;
+    rejoin.classList.toggle('hidden', !fresh);
+    if (fresh && $('#rejoinBtn')) $('#rejoinBtn').textContent = `↩ Вернуться в комнату ${last.code}`;
+  }
   document.documentElement.dataset.theme = profile.theme;
   document.documentElement.dataset.pieces = profile.pieces;
   applySkin();
@@ -980,6 +1196,7 @@ function setTheme(id) {
 }
 
 function setPieces(id) {
+  document.querySelectorAll('.piece').forEach((el) => { el.dataset.tk = ''; });
   profile.pieces = String(id);
   document.documentElement.dataset.pieces = profile.pieces;
   applySkin();
@@ -1065,12 +1282,14 @@ function rollRandomMode(done) {
       icon.textContent = final.icon;
       name.textContent = final.name;
       sub.textContent = 'режим выбран';
+      if ($('#rouletteDesc')) $('#rouletteDesc').textContent = final.desc;
       overlay.classList.add('win');
       sound.click();
       setTimeout(() => {
         overlay.classList.add('hidden');
+        if ($('#rouletteDesc')) $('#rouletteDesc').textContent = '';
         done(final.id);
-      }, 600);
+      }, 1600);
     }
   };
   step();
@@ -1107,6 +1326,8 @@ const MODE_GROUP = {
   knights: 2, rooks: 2, pawnField: 2, pawnFieldQ: 2, noPawns: 2, blocks: 2, swapReplace: 2, convert20: 2,
   explode: 3, fog: 3, race: 3, kingOnly: 3, queenPierce: 3, bishopKing: 3, crossCastle: 3,
   touchMove: 3, openIntent: 3, horde: 3, antichess: 3,
+  noQueen7: 1, swapRows: 2, blackFirst: 1, inverted: 2, pawnBack: 2, kingKnight: 1,
+  queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3,
 };
 const GROUP_TITLES = {
   1: 'Классика и лёгкие изменения',
@@ -1265,6 +1486,13 @@ function renderSettings() {
   renderAvatarRow();
 }
 
+function updateOnlineModeLine() {
+  const el = $('#onlineModeLine');
+  if (!el) return;
+  const m = modeById(profile.modeId);
+  el.innerHTML = `Режим: <b>${escapeHtml(m.name)}</b> · ${m.W}×${m.H} · ${escapeHtml(profile.timeLabel || 'без ограничений')}`;
+}
+
 function showScreen(name) {
   if (name !== 'game') { closeDrawer(); closePanel(); }
   ui.screen = name;
@@ -1272,6 +1500,7 @@ function showScreen(name) {
   $$('.sb-btn').forEach((b) => b.classList.remove('active'));
   const nav = name === 'home' || name === 'game' ? $('#sbNavPlay') : $(`.sb-btn[data-screen="${name}"]`);
   if (nav) nav.classList.add('active');
+  if (name === 'online') updateOnlineModeLine();
   if (name === 'stats') renderStats();
   if (name === 'settings') renderSettings();
   if (name === 'home') { renderProfile(); }
@@ -1334,7 +1563,10 @@ function layoutBoard() {
   const topBar = $('#barTop');
   const bottomBar = $('#barBottom');
   const cinema = window.matchMedia && window.matchMedia('(max-height: 480px) and (orientation: landscape)').matches;
-  const barH = cinema ? 68 : 96;   // фиксировано: плашки 38 + 38, доска не дёргается
+  const phone = window.innerWidth < 1000;
+  const barH = phone
+    ? (cinema ? 52 + 26 : 76 + 22 + 38)
+    : 96;   // фиксировано: доска не дёргается при взятии
   const gaps = 8;
   const shell = $('#gameShell');
   const panel = $('#sidePanel');
@@ -1475,7 +1707,11 @@ function renderPieces(animate) {
       ui.pieceNodes.set(p.id, el);
     }
     el.className = `piece ${p.c === 'w' ? 'w' : 'b'} t-${p.t}`;
-    el.innerHTML = pieceSvg(p.t);
+    const typeKey = p.t + '|' + p.c + '|' + (p.used || 0);
+    if (el.dataset.tk !== typeKey) {
+      el.innerHTML = pieceSvg(p.t);
+      el.dataset.tk = typeKey;
+    }
     const { dx, dy } = disp(st, i);
     el.style.width = sq + 'px';
     el.style.height = sq + 'px';
@@ -1608,8 +1844,15 @@ function newGame(opts = {}) {
   const pickedMode = modeById(opts.modeId || profile.modeId);
   const mode = pickedMode.flags.randomPick ? randomRealMode() : pickedMode;
   ui.rotated = false;
+  ui.pieceStreak = null;
+  ui.extremeShown = 0;
+  ui.confirmAction = null;
+  document.documentElement.dataset.infernal = mode.flags.infernal ? '1' : '0';
   const shellEl = $('#gameShell');
-  if (shellEl) shellEl.classList.remove('flip-all');
+  if (shellEl) {
+    shellEl.classList.remove('flip-all', 'gray-1', 'gray-2', 'gray-3', 'check-alert');
+  }
+  if (mode.flags.inverted && (opts.mode || 'local') === 'local') ui.orientation = 'b';
   ui.st = createState(mode.id, { square: opts.square != null ? opts.square : profile.square, seed: opts.seed });
   ui.frames = [snap(ui.st)];
   ui.moves = [];
@@ -1630,7 +1873,9 @@ function newGame(opts = {}) {
   ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
   ui.mode = opts.mode || 'local';
   ui.role = opts.role || null;
-  ui.bot = opts.bot ? { ...opts.bot, name: 'Бот · ' + (BOT_LABELS[opts.bot.level] || 'средний') } : null;
+  ui.bot = opts.bot
+    ? { ...opts.bot, name: opts.bot.fake ? (opts.bot.name || 'Игрок') : ('Бот · ' + (BOT_LABELS[opts.bot.level] || 'средний')) }
+    : null;
   ui.paused = false;
   ui.movedId = null;
   ui.gameLocked = false;
@@ -1667,6 +1912,7 @@ function newGame(opts = {}) {
   $('#gameStatus').textContent = 'Ход белых';
   $('#gameSub').textContent = mode.name + ' · ' + (ui.timeMs ? profile.timeLabel : 'без ограничений');
 
+  saveCurrentGame();
   if (opts.splash !== false) {
     // заморозка: пока играет «Дебют», ходы и часы стоят
     ui.gameLocked = true;
@@ -1683,11 +1929,13 @@ function newGame(opts = {}) {
         ui.turnStart = performance.now();
       }
       renderStatus();
+      scheduleFirstMoveTimer();
       if (ui.bot && ui.st.turn === ui.bot.color) maybeBotTurn();
     }, 2200);
   } else {
     ui.gameLocked = false;
     startClocks();
+    scheduleFirstMoveTimer();
     if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
   }
   updateNav();
@@ -1706,6 +1954,7 @@ function renderMeta() {
   if (st.flags.blocks) bits.push('случайные блоки');
   if (st.flags.race) bits.push('гонка к верхнему ряду');
   if (st.flags.centerWin) bits.push('победа королём в центре');
+  if (ui.bot && ui.bot.fake) bits.push('Возможно, не совсем игрок');
   if (st.flags.jester) bits.push('Шуты: 5 ходов');
   if (st.flags.boy) bits.push('Пацанчики берут две');
   if (st.flags.kingFree) bits.push('короля можно съесть');
@@ -1824,6 +2073,7 @@ function renderStatus() {
   const st = ui.st;
   const el = $('#gameStatus');
   const sub = $('#gameSub');
+  const shell = $('#gameShell');
   if (!st) return;
   if (ui.imported) {
     el.textContent = 'Импортированная партия';
@@ -1836,10 +2086,19 @@ function renderStatus() {
     return;
   }
   if (st.status === 'over' && st.result) {
+    if (shell) shell.classList.remove('check-alert');
     el.textContent = resultTitle(st.result);
     sub.textContent = resultReason(st.result);
+    const text = el.textContent + '|' + sub.textContent;
+    if (ui.lastStatusText !== text) {
+      ui.lastStatusText = text;
+      el.classList.remove('status-pop');
+      void el.offsetWidth;
+      el.classList.add('status-pop');
+    }
     return;
   }
+  if (shell) shell.classList.toggle('check-alert', !!st.check && st.status === 'play');
   if (ui.botThinking) {
     el.textContent = 'Бот думает…';
   } else {
@@ -1854,6 +2113,15 @@ function renderStatus() {
   const open = openingName();
   if (open) bits.push(open);
   sub.textContent = bits.join(' · ');
+  const statusText = el.textContent + '|' + sub.textContent;
+  if (ui.lastStatusText !== statusText) {
+    ui.lastStatusText = statusText;
+    if (st.status === 'over' && st.result) {
+      el.classList.remove('status-pop');
+      void el.offsetWidth;
+      el.classList.add('status-pop');
+    }
+  }
 }
 
 function resultTitle(res) {
@@ -1870,7 +2138,8 @@ function resultReason(res) {
     repetition: 'троекратное повторение', draw: 'ничья по согласию',
     king: 'король съеден', race: 'король дошёл до верхнего ряда', center: 'король в центре',
     checks: 'три шаха', kingOnly: 'у соперника остался один король',
-    abort: 'партия прервана',
+    abort: 'партия прервана', idle: 'белые не сделали первый ход', monotony: 'одной фигурой — пат',
+  queenLost: 'ферзь потерян', extreme: 'крайний перевес',
   };
   return map[res.reason] || res.reason;
 }
@@ -1993,6 +2262,7 @@ function commitMove(m, opts = {}) {
     const p = st.board[match.capture];
     if (p) capInfo.push({ type: p.t, color: p.c, square: match.capture });
   }
+  const evalBefore = evaluateWhite(st);
   applyMove(st, match);
   const explodedNow = !!st.exploded;
   if (st.flags.blocks) {
@@ -2015,15 +2285,37 @@ function commitMove(m, opts = {}) {
   ui.remoteSelected = -1;
   ui.hint = null;
   ui.movedId = st.board[match.to] ? st.board[match.to].id : null;
+  const evalAfter = evaluateWhite(st);
+  const movedPiece = st.board[match.to];
+  const monotony = updateSameStreak(movedPiece ? movedPiece.id : null, mover);
 
   if (st.flags.checksToWin && inCheck(st, st.turn)) st.mv[mover].checks += 1;
 
   let res = updateStatus(st);
+  if (!res && monotony) {
+    res = { winner: null, reason: 'monotony' };
+    st.status = 'over';
+    st.result = res;
+  }
   if (!res && st.flags.checksToWin && st.mv[mover].checks >= st.flags.checksToWin) {
     res = { winner: mover, reason: 'checks' };
     st.status = 'over';
     st.result = res;
   }
+
+  if (!opts.silent) {
+    if (captured && spent > 0 && spent < 2000 && capInfo.some((c) => c.type === 'r')) {
+      fastRookWave(st, match.to);
+    }
+    if (Math.abs(evalAfter - evalBefore) >= 2.2 && ui.moves.length > 2 && Math.random() < 0.08) {
+      showExtremeDiff(match.to);
+    }
+    if (st.flags.infernal && (captured || inCheck(st, st.turn) || Math.abs(evalAfter - evalBefore) >= 1.5)) {
+      infernalJoke();
+    }
+  }
+  clearTimeout(ui.firstMoveTimer);
+  ui.firstMoveTimer = 0;
 
   if (!opts.silent && !opts.remote) {
     if (captured) { sound.capture(); buzz([12, 24, 12]); } else { sound.move(); buzz(8); }
@@ -2039,7 +2331,8 @@ function commitMove(m, opts = {}) {
   }
 
   let flippedNow = false;
-  if (ui.mode === 'local' && !ui.bot && profile.flip && !opts.remote && !opts.silent) {
+  if (ui.mode === 'local' && !ui.bot && profile.flip && !opts.remote && !opts.silent
+      && window.innerWidth < 1000) {
     if (profile.flipAll) {
       ui.rotated = !ui.rotated;
       flippedNow = true;
@@ -2057,6 +2350,7 @@ function commitMove(m, opts = {}) {
     if (st.flags.explode && explodedNow) explosionFx(st, match.to);
     if (capInfo.length) captureFx(capInfo);
     renderMoves();
+    saveCurrentGame();
   }
 
   if (ui.mode === 'online' && !opts.remote && !opts.silent) {
@@ -2086,7 +2380,7 @@ const REASON_TEXT = {
 };
 
 function scoreGame(res, st) {
-  if (!res || res.reason === 'abort') return 0;
+  if (!res || res.reason === 'abort' || res.reason === 'idle' || res.reason === 'monotony') return 0;
   const side = myColor();
   if (!res.winner) {
     if (res.reason !== 'stalemate') return 0;
@@ -2098,6 +2392,7 @@ function scoreGame(res, st) {
 }
 
 function finishGame(res) {
+  try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
   ui.running = false;
   clearInterval(ui.timer);
   if (!ui.st) return;
@@ -2105,11 +2400,15 @@ function finishGame(res) {
   ui.scored = true;
 
   const st = ui.st;
-  const points = scoreGame(res, st);
+  let points = scoreGame(res, st);
   const side = myColor();
   const win = res.winner === side;
   const draw = !res.winner;
   const lost = !!res.winner && !win;
+  if (ui.bot && res.reason !== 'abort' && res.reason !== 'idle' && res.reason !== 'monotony') {
+    const row = BOT_POINTS[ui.bot.level] || BOT_POINTS.medium;
+    points = win ? row.win : lost ? row.loss : row.draw;
+  }
 
   if (res.reason !== 'abort' && ui.mode !== 'online' || (res.reason !== 'abort' && ui.mode === 'online')) {
     profile.points += points;
@@ -2266,7 +2565,24 @@ function showPhase(phase) {
 
 /* ───────────────────────── 11. СПИСОК ХОДОВ ───────────────────────────── */
 
+function renderMobileMoves() {
+  const strip = $('#mobileMoves');
+  if (!strip) return;
+  const last = ui.moves.slice(-8);
+  if (!last.length) {
+    strip.innerHTML = '<span class="mm mm-empty">сделайте первый ход</span>';
+  } else {
+    strip.innerHTML = last.map((m, idx) => {
+      const ply = ui.moves.length - last.length + idx + 1;
+      const num = Math.ceil(ply / 2) + (ply % 2 === 0 ? '…' : '.');
+      return `<span class="mm ${ply === ui.viewPly ? 'last' : ''}"><span class="mm-num">${num}</span>${escapeHtml(m.san)}</span>`;
+    }).join('');
+  }
+  strip.classList.toggle('turn-flip', ui.orientation === 'b' && !profile.flipAll);
+}
+
 function renderMoves() {
+  renderMobileMoves();
   const box = $('#moves');
   if (!ui.moves.length) {
     box.innerHTML = '<div class="moves-empty">Пока пусто — сделайте первый ход</div>';
@@ -2501,9 +2817,13 @@ async function createRoom() {
   ui.online.connected = false;
   ui.online.names = { w: profile.name, b: null };
   ui.online.avatars = { w: profile.avatar, b: 'k' };
+  profile.lastRoom = { code, ts: Date.now(), role: 'host' };
+  saveProfile(true);
   $('#roomCode').textContent = code;
   $('#roomRow').classList.remove('hidden');
   setLobby('Код готов. Передайте его другу — он введёт код и присоединится.');
+  profile.lastRoom = { code, ts: Date.now(), role: 'guest' };
+  saveProfile(true);
   ui.online.relay = new Relay();
   ui.online.relay.onMessage = (text) => handleNet(text);
   ui.online.relay.onClose = () => {
@@ -2523,7 +2843,8 @@ async function createRoom() {
   updateLinkDots();
   $('#roomCode').textContent = code;
   $('#roomRow').classList.remove('hidden');
-  setLobby('Комната создана. Ждём соперника — партия начнётся, когда он присоединится.');
+  const chosenMode = modeById(ui.online.modeId || profile.modeId);
+  setLobby(`Комната создана. Режим: ${chosenMode.name}. Ждём соперника — партия начнётся, когда он присоединится.`);
   ui.online.waiting = true;
   ui.st = null;
   showScreen('online');
@@ -2844,16 +3165,28 @@ function togglePause(force) {
 function askLeave() {
   if (!ui.st || ui.st.status !== 'play' || ui.scored) { leaveGame(); return; }
   if (ui.paused) togglePause(false);
+  ui.confirmAction = 'leave';
   const side = ui.st.turn;
   const who = side === 'w' ? 'белых' : 'чёрных';
   $('#confirmTitle').textContent = 'Покинуть партию?';
   $('#confirmText').textContent = `Сейчас ход ${who}. Если выйти, партия засчитается как поражение этого игрока (очки спишутся по правилам).`;
+  $('#confirmLeave').textContent = 'Выйти';
+  $('#confirmModal').classList.remove('hidden');
+}
+
+function askResign() {
+  if (!ui.st || ui.st.status !== 'play' || ui.scored) return;
+  ui.confirmAction = 'resign';
+  $('#confirmTitle').textContent = 'Сдаться?';
+  $('#confirmText').textContent = 'Партия сразу закончится поражением того, за кого вы сейчас играете. Отменить будет нельзя.';
+  $('#confirmLeave').textContent = 'Сдаться';
   $('#confirmModal').classList.remove('hidden');
 }
 
 function closeConfirm() {
   const modal = $('#confirmModal');
   if (modal) modal.classList.add('hidden');
+  ui.confirmAction = null;
 }
 
 function confirmLeaveGame() {
@@ -2874,6 +3207,7 @@ function confirmLeaveGame() {
 }
 
 function leaveGame() {
+  try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
   leaveOnline();
   ui.st = null;
   ui.running = false;
@@ -3043,9 +3377,27 @@ function bindEvents() {
   if ($('#panelToggle')) $('#panelToggle').addEventListener('click', () => { closeDrawer(); togglePanel(); });
   $('#railHome').addEventListener('click', askLeave);
   $('#railPause').addEventListener('click', () => togglePause());
+  if ($('#mobPause')) $('#mobPause').addEventListener('click', () => togglePause());
+  if ($('#mobResign')) $('#mobResign').addEventListener('click', () => {
+    if (ui.st && ui.st.status === 'play') askResign();
+    else toast('Партия ещё не начата');
+  });
+  if ($('#mobLeave')) $('#mobLeave').addEventListener('click', askLeave);
+  if ($('#mobSettings')) $('#mobSettings').addEventListener('click', () => toggleDrawer());
+  if ($('#resumeBtn')) $('#resumeBtn').addEventListener('click', resumeSavedGame);
+  if ($('#rejoinBtn')) $('#rejoinBtn').addEventListener('click', () => {
+    if (profile.lastRoom && profile.lastRoom.code) joinRoom(profile.lastRoom.code);
+  });
   $('#resumeGame').addEventListener('click', () => togglePause(false));
   $('#confirmCancel').addEventListener('click', closeConfirm);
-  $('#confirmLeave').addEventListener('click', confirmLeaveGame);
+  $('#confirmLeave').addEventListener('click', () => {
+    if (ui.confirmAction === 'resign') {
+      closeConfirm();
+      resign();
+    } else {
+      confirmLeaveGame();
+    }
+  });
   $('#railSound').addEventListener('click', () => setSound(profile.sound === false));
   $('#railFlip').addEventListener('click', () => {
     if (profile.flipAll) {

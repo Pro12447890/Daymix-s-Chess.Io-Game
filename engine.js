@@ -229,6 +229,66 @@ const MODES = [
     desc: 'Цель — потерять все свои фигуры. Бить обязательно, короля можно съесть, шаха нет.',
     W: 8, H: 8, flags: { antichess: true, kingFree: true },
   },
+  {
+    id: 'noQueen7', n: 37, name: 'Семёрка', icon: '7️⃣',
+    desc: 'Доска 7×8 без ферзей: короли ровно по центру, только ладьи, кони и слоны.',
+    W: 7, H: 8, flags: { classic: true, noQueen7: true },
+  },
+  {
+    id: 'swapRows', n: 38, name: 'Пешки впереди', icon: '🔀',
+    desc: 'Ряды перевёрнуты: фигуры стоят на второй линии, а пешки — на первой.',
+    W: 8, H: 8, flags: { classic: true, swapRows: true },
+  },
+  {
+    id: 'blackFirst', n: 39, name: 'Чёрные начинают', icon: '⚫',
+    desc: 'Первыми ходят чёрные. Всё остальное — классика.',
+    W: 8, H: 8, flags: { classic: true, blackFirst: true },
+  },
+  {
+    id: 'inverted', n: 40, name: 'Вверх ногами', icon: '🙃',
+    desc: 'Ты играешь как обычно, но белые стоят наверху, а чёрные — внизу.',
+    W: 8, H: 8, flags: { classic: true, inverted: true },
+  },
+  {
+    id: 'pawnBack', n: 41, name: 'Пешки назад', icon: '↩️',
+    desc: 'Пешки всегда могут ходить назад — и вперёд, и обратно, но не на последнюю линию.',
+    W: 8, H: 8, flags: { classic: true, pawnBack: true },
+  },
+  {
+    id: 'kingKnight', n: 42, name: 'Король-конь', icon: '🐴',
+    desc: 'Король ходит как конь и ещё на одну клетку вперёд. Шах ему не страшен только на вид.',
+    W: 8, H: 8, flags: { classic: true, kingKnight: true },
+  },
+  {
+    id: 'queenLose', n: 43, name: 'Ферзь под защитой', icon: '👑',
+    desc: 'Потерять ферзя — сразу поражение. Берегите королеву.',
+    W: 8, H: 8, flags: { classic: true, queenLose: true },
+  },
+  {
+    id: 'weakKnights', n: 44, name: 'Слабые кони', icon: '🐌',
+    desc: 'Кони ходят только по длинной части буквы Г — половина прыжков недоступна.',
+    W: 8, H: 8, flags: { classic: true, weakKnights: true },
+  },
+  {
+    id: 'castleReturn', n: 45, name: 'Рокировка возвращается', icon: '🏰',
+    desc: 'Если король вернётся на исходную клетку, право на рокировку восстанавливается.',
+    W: 8, H: 8, flags: { classic: true, castleReturn: true },
+  },
+  {
+    id: 'square10', n: 46, name: 'Квадрат 10×10', icon: '🔲',
+    desc: 'Большая квадратная доска 10×10 — больше пространства и манёвра.',
+    W: 10, H: 10, flags: { classic: true },
+  },
+  {
+    id: 'square12', n: 47, name: 'Квадрат 12×12', icon: '🔳',
+    desc: 'Огромная доска 12×12 для настоящих стратегов.',
+    W: 12, H: 12, flags: { classic: true },
+  },
+  {
+    id: 'infernal', n: 48, name: 'Инфернальный', icon: '🔥',
+    desc: 'Всё красное, а на значимых ходах звучат теоремы гамбитов, кипяточка и ферзюшки. Дота головного мозга.',
+    W: 8, H: 8, flags: { classic: true, infernal: true },
+  },
 ];
 
 const MODE_BY_ID = Object.fromEntries(MODES.map((m) => [m.id, m]));
@@ -288,7 +348,7 @@ function createState(modeId, opts = {}) {
     square: !!opts.square,
     W, H,
     board: blankBoard(W, H),
-    turn: 'w',
+    turn: mode.flags.blackFirst ? 'b' : 'w',
     ep: -1,
     half: 0,
     full: 1,
@@ -315,7 +375,13 @@ function setupBoard(st) {
   if (flags.pawnField) return setupPawnField(st, !!flags.withQueen);
   if (flags.noPawns) return setupNoPawns(st);
 
-  if (flags.chess960) {
+  if (flags.noQueen7) {
+    const back = 'rnbknr';
+    for (let x = 0; x < Math.min(W, back.length); x++) {
+      board[x] = newPiece(back[x], 'w');
+      board[(H - 1) * W + x] = newPiece(back[x], 'b');
+    }
+  } else if (flags.chess960) {
     const back = fischerRank();
     for (let x = 0; x < 8; x++) {
       board[x] = newPiece(back[x], 'w');
@@ -356,6 +422,20 @@ function setupBoard(st) {
   for (const y of wRows) for (let x = 0; x < W; x++) board[y * W + x] = newPiece('p', 'w');
   for (const y of bRows) for (let x = 0; x < W; x++) board[y * W + x] = newPiece('p', 'b');
   st.pawnStart = { w: wRows.slice(), b: bRows.slice() };
+
+  if (flags.swapRows) {
+    for (const color of ['w', 'b']) {
+      const backRank = color === 'w' ? 0 : H - 1;
+      const pawnRank = color === 'w' ? 1 : H - 2;
+      for (let x = 0; x < W; x++) {
+        const a = board[backRank * W + x];
+        const b = board[pawnRank * W + x];
+        board[backRank * W + x] = b;
+        board[pawnRank * W + x] = a;
+      }
+    }
+    st.pawnStart = { w: [0], b: [H - 1] };
+  }
 
   if (flags.swapReplace) {
     for (const color of ['w', 'b']) {
@@ -549,6 +629,13 @@ function genPseudo(st, color) {
         if (q && q.c !== color) pushPawnAdvance(out, st, sq, t, ny);
         else if (!q && st.ep === t) out.push({ from: sq, to: t, ep: true, capture: sqAt(st, nx, y) });
       }
+      if (st.flags.pawnBack) {
+        const by = y - dir;
+        if (by >= 0 && by < H) {
+          const back = sqAt(st, x, by);
+          if (!board[back] && !isBlocked(st, back)) out.push({ from: sq, to: back, backwardMove: true });
+        }
+      }
       if (st.flags.backCapture) {
         const by = y - dir;
         for (const dx of [-1, 1]) {
@@ -565,6 +652,7 @@ function genPseudo(st, color) {
 
     if (p.t === 'n') {
       for (const [dx, dy] of KNIGHT_DIRS) {
+        if (st.flags.weakKnights && Math.abs(dx) !== 2) continue;
         const nx = x + dx, ny = y + dy;
         if (!inside(st, nx, ny)) continue;
         const t = sqAt(st, nx, ny);
@@ -697,14 +785,23 @@ function genPseudo(st, color) {
     }
 
     if (p.t === 'k') {
-      for (const [dx, dy] of KING_DIRS) {
+      const kingDirs = st.flags.kingKnight ? [...KING_DIRS, ...KNIGHT_DIRS] : KING_DIRS;
+      for (const [dx, dy] of kingDirs) {
         const nx = x + dx, ny = y + dy;
         if (!inside(st, nx, ny)) continue;
         const t = sqAt(st, nx, ny);
         if (isBlocked(st, t)) continue;
         const q = board[t];
         if (q && q.c === color) continue;
-        out.push({ from: sq, to: t, capture: q ? t : null });
+        out.push({ from: sq, to: t, capture: q ? t : null, leap: st.flags.kingKnight && Math.abs(dx) + Math.abs(dy) === 3 });
+      }
+      if (st.flags.kingKnight) {
+        const dir = color === 'w' ? 1 : -1;
+        const ny = y + dir;
+        if (inside(st, x, ny)) {
+          const t = sqAt(st, x, ny);
+          if (!isBlocked(st, t) && !board[t]) out.push({ from: sq, to: t });
+        }
       }
       if (st.flags.classic || st.flags.fischer) addCastling(st, color, out, sq);
       if (st.flags.crossCastle && st.mv[color].cross < st.flags.crossCastle) {
@@ -972,7 +1069,19 @@ function applyMove(st, m) {
     if (!color) return;
     for (const side of ['k', 'q']) if (st.castling[color][side] === id) st.castling[color][side] = null;
   };
-  if (p.t === 'k') { st.castling[p.c].k = null; st.castling[p.c].q = null; }
+  if (p.t === 'k') {
+    st.castling[p.c].k = null;
+    st.castling[p.c].q = null;
+    if (st.flags.castleReturn) {
+      const homeRank = p.c === 'w' ? 0 : st.H - 1;
+      if (rankOf(st, m.to) === homeRank) {
+        const leftRook = board[sqAt(st, 0, homeRank)];
+        const rightRook = board[sqAt(st, st.W - 1, homeRank)];
+        if (leftRook && leftRook.t === 'r' && leftRook.c === p.c) st.castling[p.c].q = leftRook.id;
+        if (rightRook && rightRook.t === 'r' && rightRook.c === p.c) st.castling[p.c].k = rightRook.id;
+      }
+    }
+  }
   if (p.t === 'r') clearRights(p.c, p.id);
   for (const r of undo.removed) {
     if (r.piece.t === 'r') clearRights(r.piece.c, r.piece.id);
@@ -1106,6 +1215,16 @@ function updateStatus(st) {
       if (k >= 0 && cells.includes(k)) {
         st.status = 'over';
         st.result = { winner: c, reason: 'center' };
+        return st.result;
+      }
+    }
+  }
+
+  if (st.flags.queenLose) {
+    for (const c of ['w', 'b']) {
+      if (findPiece(st, c, 'q') < 0) {
+        st.status = 'over';
+        st.result = { winner: other(c), reason: 'queenLost' };
         return st.result;
       }
     }
