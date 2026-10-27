@@ -2509,9 +2509,17 @@ function commitMove(m, opts = {}) {
       && window.innerWidth < 1000) {
     if (profile.flipAll) {
       ui.rotated = !ui.rotated;
+      ui.tableRotated = false;
+      const boardReset = $('#board');
+      if (boardReset) boardReset.classList.remove('board-rotated');
       flippedNow = true;
     } else if (profile.tableFlip !== false) {
       ui.tableRotated = !ui.tableRotated;
+      if (ui.rotated) {
+        ui.rotated = false;
+        const shellReset = $('#gameShell');
+        if (shellReset) shellReset.classList.remove('flip-all');
+      }
       flippedNow = true;
     } else {
       const prevOrientation = ui.orientation;
@@ -3726,6 +3734,10 @@ function bindEvents() {
     }
     if (profile.tableFlip !== false) {
       ui.tableRotated = !ui.tableRotated;
+      if (ui.rotated) {
+        ui.rotated = false;
+        $('#gameShell').classList.remove('flip-all');
+      }
       $('#board').classList.toggle('board-rotated', ui.tableRotated);
       renderAll(false);
       renderPlayers();
