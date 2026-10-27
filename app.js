@@ -437,6 +437,8 @@ const INFERNAL_LINES = [
   'А я просто вдавливаю вперёд!', 'Секретная тактика!', 'Отлетай!', 'Очень смело!',
 ];
 
+const GRAY_STEPS = [0, 0.16, 0.32, 0.48, 0.62, 0.75];
+
 function updateSameStreak(id, mover) {
   if (!id) return false;
   if (!ui.pieceStreak) ui.pieceStreak = { w: { id: null, n: 0 }, b: { id: null, n: 0 } };
@@ -444,15 +446,13 @@ function updateSameStreak(id, mover) {
   if (slot.id === id) slot.n += 1;
   else { slot.id = id; slot.n = 1; }
   ui.pieceStreak[mover] = slot;
+  const n = slot.n;
   const shell = $('#gameShell');
   if (shell) {
-    shell.classList.remove('gray-1', 'gray-2', 'gray-3');
-    const n = slot.n;
-    if (n >= 5) shell.classList.add('gray-3');
-    else if (n >= 4) shell.classList.add('gray-2');
-    else if (n >= 3) shell.classList.add('gray-1');
+    const level = n < 5 ? 0 : Math.min(5, n - 4);
+    shell.style.setProperty('--gray', String(GRAY_STEPS[level]));
   }
-  return slot.n >= 6;
+  return n >= 8 && phaseFor(ui.st) === 'endgame';
 }
 
 function fastRookWave(st, sq) {
@@ -539,6 +539,8 @@ function resumeSavedGame() {
   ui.st.result = null;
   ui.scored = false;
   ui.pieceStreak = null;
+  const grayShell = $('#gameShell');
+  if (grayShell) grayShell.style.setProperty('--gray', '0');
   ui.viewPly = ui.frames.length - 1;
   ui.turnStart = performance.now();
   ui.running = !!ui.timeMs && ui.moves.length > 0;
@@ -1851,6 +1853,8 @@ function newGame(opts = {}) {
   const boardEl = $('#board');
   if (boardEl) boardEl.classList.remove('board-rotated');
   ui.pieceStreak = null;
+  const grayShell = $('#gameShell');
+  if (grayShell) grayShell.style.setProperty('--gray', '0');
   ui.extremeShown = 0;
   ui.confirmAction = null;
   document.documentElement.dataset.infernal = mode.flags.infernal ? '1' : '0';
@@ -3532,6 +3536,7 @@ function boot() {
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
+    phaseFor, updateSameStreak,
     captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),

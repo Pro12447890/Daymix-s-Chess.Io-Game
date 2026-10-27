@@ -2628,13 +2628,10 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
 .game-shell::before {
   content: '';
   position: absolute; inset: 0; z-index: 31; pointer-events: none;
-  opacity: 0; transition: opacity .5s ease;
+  opacity: var(--gray, 0); transition: opacity .8s ease;
   background: #8a8f96;
   mix-blend-mode: color;
 }
-.game-shell.gray-1::before { opacity: .18; }
-.game-shell.gray-2::before { opacity: .42; }
-.game-shell.gray-3::before { opacity: .72; }
 
 /* ═══ статус и анимация мата ═══ */
 .game-status.status-pop { animation: statusPop .65s cubic-bezier(.2, .9, .3, 1.3); }
