@@ -74,6 +74,21 @@
 
 
 
+
+## Новые режимы по ресёрчу (v28)
+
+- **Лос-Аламос 6×6** — маленькая доска без слонов, придуманная в Лос-Аламосе.
+- **Беролина** — пешки ходят по диагонали, а бьют прямо вперёд
+  ([правила Berolina](https://github.com/Moddable-Games/moddable-rules/releases/download/pdfs/chess--variants--berolina-chess.pdf)).
+- **Без шахов** — давать шах запрещено; ходы, ставящие шах, отфильтровываются.
+- **Королевские гонки** — без пешек и шахов, побеждает король, первым дошедший
+  до последней линии ([Racing Kings](https://www.chess.com/forum/view/chess-variants/chess-variants-96)).
+- **Андернах** — съевшая фигура меняет цвет.
+
+Источники: [Chess.com — обзор вариантов](https://www.chess.com/blog/AeronMiguelT/about-chess-variants),
+[Chesslab — гид по вариантам](https://www.chesslab.academy/variants/),
+[Wikipedia — Chess variant](https://en.wikipedia.org/wiki/Chess_variant).
+
 ## Микро-правки v26
 
 - Летающие фигуры на смене стадии разлетаются шире и разнообразнее.

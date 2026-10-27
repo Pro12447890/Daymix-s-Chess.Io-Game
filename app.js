@@ -973,6 +973,7 @@ const MODE_SHORT = {
   pawnRush: 'Ракеты', backCapture: 'Хищник', convert20: 'Перебежчик',
   radiusCheck: 'Радиус', horde: 'Орда', antichess: 'Антишахматы',
   noQueen7: 'Семёрка', swapRows: 'Пешки', blackFirst: 'Чёрные', inverted: 'Вверх',
+  losAlamos: '6×6', berolina: 'Беролина', checkless: 'Без шахов', raceKings: 'Гонки', andernach: 'Андернах',
   pawnBack: 'Назад', kingKnight: 'Король-конь', queenLose: 'Ферзь', weakKnights: 'Кони',
   castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно',
 };
@@ -1509,6 +1510,7 @@ const MODE_GROUP = {
   touchMove: 3, openIntent: 3, horde: 3, antichess: 3,
   noQueen7: 1, swapRows: 2, blackFirst: 1, inverted: 2, pawnBack: 2, kingKnight: 1,
   queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3,
+  losAlamos: 2, berolina: 2, checkless: 2, raceKings: 2, andernach: 3,
 };
 const GROUP_TITLES = {
   1: 'Классика и лёгкие изменения',
@@ -2392,7 +2394,7 @@ function resultReason(res) {
     king: 'король съеден', race: 'король дошёл до верхнего ряда', center: 'король в центре',
     checks: 'три шаха', kingOnly: 'у соперника остался один король',
     abort: 'партия прервана',
-  devoured: 'съедены все фигуры', race: 'время вышло — считаем взятия', idle: 'белые не сделали первый ход', monotony: 'одной фигурой — пат',
+  devoured: 'съедены все фигуры', race: 'время вышло — считаем взятия', raceKing: 'король добрался до края', idle: 'белые не сделали первый ход', monotony: 'одной фигурой — пат',
   queenLost: 'ферзь потерян', extreme: 'крайний перевес',
   };
   return map[res.reason] || res.reason;

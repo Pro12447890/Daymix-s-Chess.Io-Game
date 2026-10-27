@@ -295,6 +295,31 @@ const MODES = [
     W: 8, H: 8, flags: { classic: true, kingFree: true, captureRace: true },
   },
   {
+    id: 'losAlamos', n: 51, name: 'Лос-Аламос', icon: '🧪',
+    desc: 'Доска 6×6 без слонов — быстрые шахматы, придуманные в Лос-Аламосе.',
+    W: 6, H: 6, flags: { losAlamos: true },
+  },
+  {
+    id: 'berolina', n: 52, name: 'Беролина', icon: '🌽',
+    desc: 'Пешки ходят по диагонали вперёд, а бьют прямо. Всё наоборот.',
+    W: 8, H: 8, flags: { classic: true, berolina: true },
+  },
+  {
+    id: 'checkless', n: 53, name: 'Без шахов', icon: '🚫',
+    desc: 'Давать шах запрещено. Можно только подходить, защищаться и брать.',
+    W: 8, H: 8, flags: { classic: true, checkless: true },
+  },
+  {
+    id: 'raceKings', n: 54, name: 'Королевские гонки', icon: '🏁',
+    desc: 'Без пешек и шахов: король должен первым добраться до последней линии.',
+    W: 8, H: 8, flags: { raceKing: true, kingFree: true },
+  },
+  {
+    id: 'andernach', n: 55, name: 'Андернах', icon: '🎭',
+    desc: 'Съевшая фигура меняет цвет. Каждое взятие — маленькая измена.',
+    W: 8, H: 8, flags: { classic: true, andernach: true },
+  },
+  {
     id: 'infernal', n: 48, name: 'Инфернальный', icon: '🔥',
     desc: 'Всё красное, а на значимых ходах звучат теоремы гамбитов, кипяточка и ферзюшки. Дота головного мозга.',
     W: 8, H: 8, flags: { classic: true, infernal: true },
@@ -385,6 +410,31 @@ function setupBoard(st) {
   if (flags.only) return setupOnlyPiece(st, flags.only);
   if (flags.pawnField) return setupPawnField(st, !!flags.withQueen);
   if (flags.noPawns) return setupNoPawns(st);
+
+  if (flags.losAlamos) {
+    const back = 'rnqknr';
+    for (let x = 0; x < Math.min(W, back.length); x++) {
+      board[x] = newPiece(back[x], 'w');
+      board[(H - 1) * W + x] = newPiece(back[x], 'b');
+    }
+    for (let x = 0; x < W; x++) {
+      board[1 * W + x] = newPiece('p', 'w');
+      board[(H - 2) * W + x] = newPiece('p', 'b');
+    }
+    st.pawnStart = { w: [1], b: [H - 2] };
+    return;
+  }
+
+  if (flags.raceKing) {
+    const white = { 0: 'r', 1: 'k', 2: 'q', 3: 'b', 4: 'n', 5: 'b', 6: 'n', 7: 'r' };
+    const black = { 0: 'r', 1: 'n', 2: 'b', 3: 'n', 4: 'b', 5: 'q', 6: 'k', 7: 'r' };
+    for (let x = 0; x < 8; x++) {
+      board[x] = newPiece(white[x], 'w');
+      board[(H - 1) * W + x] = newPiece(black[x], 'b');
+    }
+    st.pawnStart = { w: [], b: [] };
+    return;
+  }
 
   if (flags.noQueen7) {
     const back = 'rnbknr';
@@ -612,6 +662,32 @@ function genPseudo(st, color) {
     if (!p || p.c !== color) continue;
     const x = fileOf(st, sq);
     const y = rankOf(st, sq);
+
+    if (p.t === 'p' && st.flags.berolina) {
+      const dir = color === 'w' ? 1 : -1;
+      const ny = y + dir;
+      if (ny < 0 || ny >= H) continue;
+      for (const dx of [-1, 1]) {
+        const nx = x + dx;
+        if (!inside(st, nx, ny)) continue;
+        const one = sqAt(st, nx, ny);
+        if (isBlocked(st, one) || board[one]) continue;
+        pushPawnAdvance(out, st, sq, one, ny);
+        const startRows = st.pawnStart[color] || [];
+        if (startRows.includes(y)) {
+          const ny2 = y + dir * 2;
+          if (ny2 >= 0 && ny2 < H) {
+            const two = sqAt(st, nx, ny2);
+            if (!board[two] && !isBlocked(st, two)) pushPawnAdvance(out, st, sq, two, ny2, { double: true });
+          }
+        }
+      }
+      const front = sqAt(st, x, ny);
+      if (!isBlocked(st, front) && board[front] && board[front].c !== color) {
+        pushPawnAdvance(out, st, sq, front, ny);
+      }
+      continue;
+    }
 
     if (p.t === 'p') {
       const dir = color === 'w' ? 1 : -1;
@@ -954,7 +1030,7 @@ function attacked(st, sq, by) {
 }
 
 function inCheck(st, color) {
-  if (st.flags.antichess || st.flags.captureAll || st.flags.captureRace) return false;
+  if (st.flags.antichess || st.flags.captureAll || st.flags.captureRace || st.flags.raceKing) return false;
   const king = findKing(st, color);
   if (king >= 0 && st.flags.radiusCheck) {
     const kx = fileOf(st, king);
@@ -1047,6 +1123,9 @@ function applyMove(st, m) {
   const takenNow = undo.removed.filter((r) => r.piece && r.piece.c !== p.c).length;
   undo.capsBefore = { w: st.caps.w, b: st.caps.b };
   if (takenNow) st.caps[p.c] = (st.caps[p.c] || 0) + takenNow;
+  if (st.flags.andernach && takenNow && p.t !== 'k' && board[m.to]) {
+    board[m.to] = { ...board[m.to], c: other(p.c) };
+  }
 
   /* Взрыв: крест вокруг клетки приземления, короли неуязвимы. */
   let exploded = false;
@@ -1157,6 +1236,16 @@ function legalMoves(st, color = st.turn) {
     undoMove(st, undo);
     if (!bad) out.push(m);
   }
+  if (st.flags.checkless) {
+    const safe = [];
+    for (const m of out) {
+      const undo = applyMove(st, m);
+      const givesCheck = inCheck(st, other(color));
+      undoMove(st, undo);
+      if (!givesCheck) safe.push(m);
+    }
+    if (safe.length) return safe;
+  }
   return out;
 }
 
@@ -1200,6 +1289,21 @@ function updateStatus(st) {
     return null;
   }
   if (st.flags.captureRace) return null;
+  if (st.flags.raceKing) {
+    const wk = findKing(st, 'w');
+    const bk = findKing(st, 'b');
+    if (wk >= 0 && rankOf(st, wk) === st.H - 1) {
+      st.status = 'over';
+      st.result = { winner: 'w', reason: 'raceKing' };
+      return st.result;
+    }
+    if (bk >= 0 && rankOf(st, bk) === 0) {
+      st.status = 'over';
+      st.result = { winner: 'b', reason: 'raceKing' };
+      return st.result;
+    }
+    return null;
+  }
   if (st.capturedKing) {
     st.status = 'over';
     st.result = { winner: other(st.capturedKing), reason: 'king' };
