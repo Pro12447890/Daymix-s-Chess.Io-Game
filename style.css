@@ -3218,3 +3218,13 @@ html[data-brawl="1"] .piece.gold.b::after { border-color: #4fc3f7aa; }
 
 /* в Clash Brawl шахматные часы не нужны */
 html[data-brawl="1"] .clock { display: none !important; }
+
+
+/* выбор карты в Clash Brawl */
+.brawl-ban-modal { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; background: #04101ecc; }
+.brawl-ban-modal.hidden { display: none; }
+.bbm-card { width: min(360px, 90vw); background: #162a4a; border: 2px solid #00d2ff; border-radius: 14px; padding: 16px; text-align: center; }
+.bbm-card h3 { margin: 0 0 4px; }
+.bbm-card p { margin: 0 0 12px; color: #9fc6ff; font-size: 12px; }
+.bbm-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
+.bbm-row .brawl-card { width: 64px; height: 82px; }

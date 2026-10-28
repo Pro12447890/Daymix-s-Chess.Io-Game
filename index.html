@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261028-2">
+  <link rel="stylesheet" href="style.css?v=20261028-3">
 </head>
 <body>
 
@@ -340,7 +340,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-2 · английские режимы и Clash Brawl</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-3 · английский интерфейс и колода Brawl</div>
           </div>
         </div>
       </div>
@@ -432,12 +432,22 @@
           <div class="brawl-panel hidden" id="brawlPanel">
             <div class="brawl-top">
               <button class="brawl-shield" id="brawlShield" type="button">🛡 Щит <em id="brawlShieldCount">3</em></button>
+              <button class="brawl-shield" id="brawlBan" type="button">🎴 Колода</button>
               <div class="elixir-bar-wrap">
                 <div class="elixir-fill" id="brawlElixirFill"></div>
                 <div class="elixir-num" id="brawlElixirNum">5 / 10</div>
               </div>
             </div>
             <div class="brawl-deck" id="brawlDeck"></div>
+          </div>
+
+          <div class="brawl-ban-modal hidden" id="brawlBanModal">
+            <div class="bbm-card">
+              <h3>Выбери особую карту</h3>
+              <p>Две другие уйдут в бан до конца партии.</p>
+              <div class="bbm-row" id="brawlBanRow"></div>
+              <button class="btn btn-sm" id="brawlBanClose" type="button">Отмена</button>
+            </div>
           </div>
 
           <div class="player-capsule bottom" id="barBottom">
@@ -719,6 +729,6 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261028-2"></script>
+<script src="app.js?v=20261028-3"></script>
 </body>
 </html>

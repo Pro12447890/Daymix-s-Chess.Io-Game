@@ -915,6 +915,23 @@ const TIME_GROUPS = [
   },
 ];
 
+const TIME_EN = {
+  30000: '30 seconds', 60000: '1 minute', 180000: '3 minutes',
+  300000: '5 minutes', 600000: '10 minutes', 1200000: '20 minutes',
+  1800000: '30 minutes', 2700000: '45 minutes', 3600000: '60 minutes', 21600000: '6 hours',
+};
+const TIME_GROUPS_EN = {
+  blitz: ['Blitz', 'up to 3 minutes'],
+  rapid: ['Rapid', '5 to 30 minutes'],
+  long: ['Long', '45 and 60 minutes'],
+  free: ['Unlimited', 'six hours per game'],
+};
+
+function timeText(ms, fallback) {
+  if (profile.language === 'en') return TIME_EN[ms] || 'no limit';
+  return fallback || 'без ограничений';
+}
+
 /* Названия дебютов: ищем самое длинное совпадение по началу партии. */
 const OPENINGS = [
   { moves: ['e4'], name: 'Королевская пешка' },
@@ -1463,7 +1480,8 @@ function renderTimeGroups() {
     const wrap = document.createElement('details');
     wrap.className = 'time-group';
     const sum = document.createElement('summary');
-    sum.innerHTML = `<span class="tg-title">${group.title}</span><span class="tg-hint">${group.hint}</span>`;
+    const tg = profile.language === 'en' ? (TIME_GROUPS_EN[group.id] || [group.title, group.hint]) : [group.title, group.hint];
+    sum.innerHTML = `<span class="tg-title">${tg[0]}</span><span class="tg-hint">${tg[1]}</span>`;
     wrap.appendChild(sum);
     const list = document.createElement('div');
     list.className = 'tg-list';
@@ -1471,7 +1489,7 @@ function renderTimeGroups() {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'time-item' + (profile.timeMs === item.ms ? ' active' : '');
-      b.textContent = item.label;
+      b.textContent = timeText(item.ms, item.label);
       b.addEventListener('click', () => {
         profile.timeMs = item.ms;
         profile.timeLabel = item.label;
@@ -1489,7 +1507,7 @@ function renderTimeGroups() {
 }
 
 function renderTimeSummary() {
-  $('#timeSummary').textContent = profile.timeLabel;
+  $('#timeSummary').textContent = timeText(profile.timeMs, profile.timeLabel);
 }
 
 function renderModeCard() {
@@ -1840,7 +1858,8 @@ const EN_STATIC = {
   'Язык / Language': 'Language', 'В локальной игре я играю за': 'In local games I play as',
   'белых': 'white', 'чёрных': 'black',
   'Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.': 'Games, points and stats are stored in this browser. History keeps the last 60 games.',
-  'Все': 'All', 'Популярные': 'Popular', 'Хаос': 'Chaos', 'Мини-игры': 'Mini-games', 'Фигуры ': 'Pieces ',
+  'Все': 'All', 'Популярные': 'Popular', 'Хаос': 'Chaos', 'Мини-игры': 'Mini-games',
+  '🎲 Случайно': '🎲 Random', '✨ Эпично': '✨ Epic', '🎲 Случайная доска': '🎲 Random board', 'Фигуры ': 'Pieces ',
   'Очки, счёт партий и последние игры.': 'Points, game count and recent games.',
   'История партий': 'Game history', 'Соперник': 'Opponent', 'чёрные': 'black', 'Вы': 'You',
   'Превращение': 'Promotion', '≡ Ходы': '≡ Moves', '⚑ Сдаться': '⚑ Resign', 'Выйти': 'Leave',
@@ -2408,6 +2427,7 @@ function initBrawl(st) {
     decks: { w: brawlDeck(), b: brawlDeck() },
     shieldUses: { w: 3, b: 3 },
     shieldTurns: { w: 0, b: 0 },
+    banUsed: { w: false, b: false },
     lastCheck: null,
   };
   st.brawl = st.brawl || { hp: { w: 50, b: 50 }, shieldTurns: { w: 0, b: 0 } };
@@ -2463,6 +2483,8 @@ function renderBrawl() {
     const count = $('#brawlShieldCount');
     if (count) count.textContent = String(ui.brawl.shieldUses[color]);
   }
+  const banBtn = $('#brawlBan');
+  if (banBtn) banBtn.disabled = ui.st.status !== 'play' || ui.brawl.banUsed[color] || ui.moves.length > 0;
   const deck = $('#brawlDeck');
   if (deck) {
     deck.innerHTML = '';
@@ -2555,6 +2577,31 @@ function brawlYeet(st, sq, piece) {
     fly.style.opacity = '0';
   });
   setTimeout(() => fly.remove(), 900);
+}
+
+function openBrawlBan() {
+  if (!ui.brawl || !ui.st || ui.st.status !== 'play') return;
+  const color = brawlColor();
+  if (ui.brawl.banUsed[color] || ui.moves.length > 0) return;
+  const row = $('#brawlBanRow');
+  if (!row) return;
+  row.innerHTML = '';
+  for (const type of ['n', 'r', 'q']) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'brawl-card';
+    b.style.color = color === 'w' ? '#fff' : '#9fc6ff';
+    b.innerHTML = `<span class="brawl-card-cost">${BRAWL_COST[type]}</span>${pieceSvg(type, 'brawl-pc')}<span class="brawl-card-name">${BRAWL_NAME[type]}</span>`;
+    b.addEventListener('click', () => {
+      ui.brawl.decks[color][3] = { t: type, cost: BRAWL_COST[type] };
+      ui.brawl.banUsed[color] = true;
+      $('#brawlBanModal').classList.add('hidden');
+      renderBrawl();
+      toast('Колода: ' + BRAWL_NAME[type]);
+    });
+    row.appendChild(b);
+  }
+  $('#brawlBanModal').classList.remove('hidden');
 }
 
 function brawlCardDragStart(e, index) {
@@ -2795,6 +2842,7 @@ function newGame(opts = {}) {
   $('#promo').classList.add('hidden');
   ui.timeMs = opts.timeMs != null ? opts.timeMs : profile.timeMs;
   ui.clocks = { w: ui.timeMs, b: ui.timeMs };
+  if ($('#brawlBanModal')) $('#brawlBanModal').classList.add('hidden');
   if (mode.flags.clashBrawl) { ui.timeMs = 0; ui.clocks = { w: 0, b: 0 }; initBrawl(ui.st); }
   ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
   ui.mode = opts.mode || 'local';
@@ -4694,6 +4742,8 @@ function bindEvents() {
   $('#railPause').addEventListener('click', () => togglePause());
   if ($('#mobPause')) $('#mobPause').addEventListener('click', () => togglePause());
   if ($('#brawlShield')) $('#brawlShield').addEventListener('click', brawlShieldAction);
+  if ($('#brawlBan')) $('#brawlBan').addEventListener('click', openBrawlBan);
+  if ($('#brawlBanClose')) $('#brawlBanClose').addEventListener('click', () => $('#brawlBanModal').classList.add('hidden'));
   window.addEventListener('pointermove', brawlCardDragMove);
   window.addEventListener('pointerup', brawlCardDragEnd);
   window.addEventListener('pointercancel', brawlCardDragEnd);
