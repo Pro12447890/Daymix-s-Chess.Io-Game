@@ -2281,6 +2281,12 @@ function renderSquares() {
       else if (terr[i] === 'b') cls.push('strat-b');
       if (ui.strategy.aim && ui.strategy.aim.has(i)) cls.push('strat-aim');
       if (ui.strategy.targets && ui.strategy.targets.has(i)) cls.push('strat-target');
+      if ((ui.strategy.mines || []).some((m) => m.sq === i)) cls.push('strat-mine');
+      if ((ui.strategy.rad || []).some((z) => {
+        const zx = z.sq % st.W, zy = Math.floor(z.sq / st.W);
+        const nx = i % st.W, ny = Math.floor(i / st.W);
+        return Math.max(Math.abs(nx - zx), Math.abs(ny - zy)) <= 1 && performance.now() < z.until;
+      })) cls.push('strat-rad');
     }
     if (ui.royal) {
       const rx = i % st.W;
@@ -2518,6 +2524,7 @@ function strategyInit(st) {
     hp: {}, shield: {}, moved: {}, gold: { w: 30, b: 30 }, cap: 50,
     factions, phase: 'move', hand: [], selected: 1, attacker: null,
     targets: new Set(), aim: new Set(), x2: false, territory: {},
+    special: null, mines: [], rad: [], radTimer: 0,
   };
   for (const p of st.board) if (p) st.strategy.hp[p.id] = STRAT[p.t].hp;
   ui.strategy = st.strategy;
@@ -2525,10 +2532,12 @@ function strategyInit(st) {
   $('#strategyHud').classList.remove('hidden');
   $('#strategyBar').classList.remove('hidden');
   strategyDrawHand(st.turn);
+  st.strategy.radTimer = setInterval(strategyRadiationTick, 250);
   strategyRender();
 }
 
 function stopStrategy() {
+  if (ui.strategy && ui.strategy.radTimer) clearInterval(ui.strategy.radTimer);
   ui.strategy = null;
   document.documentElement.dataset.strategy = '0';
   const hud = $('#strategyHud');
@@ -2605,6 +2614,13 @@ function strategyRender() {
   if (phase) phase.textContent = st.turn === 'w' ? (s.phase === 'move' ? 'Ход белых' : 'Атака белых') : (s.phase === 'move' ? 'Ход чёрных' : 'Атака чёрных');
   strategyRenderCards();
   strategyRenderTerritory();
+  const sp = $('#stratSpecial');
+  if (sp) {
+    const atk = s.attacker != null ? st.board[s.attacker] : null;
+    const labels = { n: '💣 Мина (15)', r: '🪨 Катапульта', q: '🚀 Ракета', k: '☢ Ядерка (120)' };
+    sp.textContent = atk && labels[atk.t] ? labels[atk.t] : 'Спец';
+    sp.disabled = !atk || !labels[atk.t];
+  }
 }
 
 function strategyRenderCards() {
@@ -2689,12 +2705,50 @@ function strategyRenderTerritory() {
 
 function strategyAttackData(p, sq) {
   const st = ui.st;
+  const s = st.strategy;
   const aim = new Set();
   const targets = new Set();
   const add = (s) => { if (inside(st, s % st.W, Math.floor(s / st.W))) aim.add(s); };
   const enemy = (s) => { const q = st.board[s]; return q && q.c !== p.c; };
   const x = sq % st.W;
   const y = Math.floor(sq / st.W);
+  if (s.special === 'catapult' && p.t === 'r') {
+    for (const [dx, dy] of ROOK_DIRS) {
+      for (let d = 2; d <= 6; d++) {
+        const nx = x + dx * d, ny = y + dy * d;
+        if (!inside(st, nx, ny)) break;
+        const cell = sqAt(st, nx, ny);
+        aim.add(cell);
+        if (enemy(cell)) { targets.add(cell); break; }
+      }
+    }
+    return { aim, targets };
+  }
+  if (s.special === 'rocket' && p.t === 'q') {
+    for (const [dx, dy] of QUEEN_DIRS) {
+      for (let d = 1; d <= 6; d++) {
+        const nx = x + dx * d, ny = y + dy * d;
+        if (!inside(st, nx, ny)) break;
+        const cell = sqAt(st, nx, ny);
+        aim.add(cell);
+        if (enemy(cell)) { targets.add(cell); break; }
+        if (st.board[cell]) break;
+      }
+    }
+    return { aim, targets };
+  }
+  if (s.special === 'nuke' && p.t === 'k') {
+    for (let i = 0; i < st.board.length; i++) {
+      const q = st.board[i];
+      if (!q) continue;
+      const nx = i % st.W, ny = Math.floor(i / st.W);
+      if (Math.max(Math.abs(nx - x), Math.abs(ny - y)) <= 3) {
+        aim.add(i);
+        if (q.c !== p.c) targets.add(i);
+      }
+    }
+    return { aim, targets };
+  }
   if (p.t === 'p') {
     const dir = p.c === 'w' ? 1 : -1;
     const max = (st.strategy.moved[p.id] ? 2 : 4);
@@ -2743,6 +2797,7 @@ function strategySelectAttacker(sq) {
   s.aim = data.aim;
   ui.selected = sq;
   strategyShowPieceCard(p);
+  strategyRender();
   renderSquares();
 }
 
@@ -2825,6 +2880,225 @@ function strategyMelee(from, to) {
   strategyAfterMove();
 }
 
+
+function strategyCellXY(sq) {
+  const { dx, dy } = disp(ui.st, sq);
+  return { x: (dx + 0.5) * ui.sq, y: (dy + 0.5) * ui.sq };
+}
+
+function strategyProjectile(from, to, icon) {
+  const layer = $('#brawlLayer');
+  if (!layer || !ui.st) return;
+  const a = strategyCellXY(from);
+  const b = strategyCellXY(to);
+  const el = document.createElement('span');
+  el.className = 'strat-proj';
+  el.textContent = icon || '•';
+  el.style.left = '0px';
+  el.style.top = '0px';
+  layer.appendChild(el);
+  const midX = (a.x + b.x) / 2;
+  const midY = Math.min(a.y, b.y) - 46;
+  el.animate([
+    { transform: `translate(${a.x}px,${a.y}px) scale(.7)`, opacity: 0 },
+    { transform: `translate(${midX}px,${midY}px) scale(1.35)`, opacity: 1, offset: .55 },
+    { transform: `translate(${b.x}px,${b.y}px) scale(.8)`, opacity: .9 },
+  ], { duration: 420, easing: 'cubic-bezier(.2,.7,.3,1)' });
+  setTimeout(() => { el.remove(); strategyBurst(to, '#ffd45e'); }, 420);
+}
+
+function strategyBurst(sq, color) {
+  const layer = $('#brawlLayer');
+  if (!layer || !ui.st) return;
+  const { x, y } = strategyCellXY(sq);
+  const ring = document.createElement('span');
+  ring.className = 'strat-ring';
+  ring.style.left = x + 'px';
+  ring.style.top = y + 'px';
+  layer.appendChild(ring);
+  setTimeout(() => ring.remove(), 600);
+  for (let i = 0; i < 12; i++) {
+    const el = document.createElement('span');
+    el.className = 'strat-particle';
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 24 + Math.random() * 46;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.setProperty('--c', color || '#ffd45e');
+    el.style.setProperty('--tx', Math.cos(ang) * dist + 'px');
+    el.style.setProperty('--ty', Math.sin(ang) * dist + 'px');
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 850);
+  }
+}
+
+function strategyKnockback(sq) {
+  const st = ui.st;
+  const p = st.board[sq];
+  if (!p || p.t === 'q' || p.t === 'k' || p.t === 'r') return;
+  const x = sq % st.W;
+  const y = Math.floor(sq / st.W);
+  const spots = [];
+  for (const [dx, dy] of QUEEN_DIRS) {
+    const nx = x + dx, ny = y + dy;
+    if (!inside(st, nx, ny)) continue;
+    const s = sqAt(st, nx, ny);
+    if (!st.board[s]) spots.push(s);
+  }
+  if (!spots.length) return;
+  const target = spots[Math.floor(Math.random() * spots.length)];
+  st.board[target] = p;
+  st.board[sq] = null;
+}
+
+function strategyNuke(sq) {
+  const board = $('#board');
+  const layer = $('#brawlLayer');
+  if (!board || !layer || !ui.st) return;
+  const flash = document.createElement('div');
+  flash.className = 'strat-flash';
+  board.appendChild(flash);
+  setTimeout(() => flash.remove(), 500);
+  const x = sq % ui.st.W;
+  const y = Math.floor(sq / ui.st.W);
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (!inside(ui.st, nx, ny)) continue;
+      const cell = sqAt(ui.st, nx, ny);
+      const src = ui.squareEls[cell];
+      if (!src) continue;
+      const rect = src.getBoundingClientRect();
+      const br = board.getBoundingClientRect();
+      const tile = document.createElement('div');
+      tile.className = 'strat-tile';
+      tile.style.left = (rect.left - br.left) + 'px';
+      tile.style.top = (rect.top - br.top) + 'px';
+      tile.style.width = rect.width + 'px';
+      tile.style.height = rect.height + 'px';
+      tile.style.background = getComputedStyle(src).backgroundColor;
+      tile.style.setProperty('--tx', (Math.random() * 120 - 60) + 'px');
+      tile.style.setProperty('--ty', (-40 - Math.random() * 90) + 'px');
+      tile.style.setProperty('--rz', (Math.random() * 100 - 50) + 'deg');
+      layer.appendChild(tile);
+      setTimeout(() => tile.remove(), 1000);
+    }
+  }
+  board.classList.remove('shake-2');
+  void board.offsetWidth;
+  board.classList.add('shake-2');
+  setTimeout(() => board.classList.remove('shake-2'), 500);
+  const ring = document.createElement('span');
+  ring.className = 'strat-ring';
+  ring.style.left = strategyCellXY(sq).x + 'px';
+  ring.style.top = strategyCellXY(sq).y + 'px';
+  layer.appendChild(ring);
+  setTimeout(() => ring.remove(), 600);
+}
+
+function strategyPlaceMine() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s || !s.attacker) return;
+  const sq = s.attacker;
+  const p = st.board[sq];
+  if (!p || p.t !== 'n' || p.c !== st.turn) return;
+  if (s.gold[p.c] < 15) { toast('Мина стоит 15 очков'); return; }
+  s.gold[p.c] -= 15;
+  s.mines.push({ sq, owner: p.c, expires: st.full + 6 });
+  strategyFloat(sq, '💣 мина', 'blue');
+  s.special = null;
+  toast('Мина установлена на 3 хода');
+  renderAll(false);
+  strategyEndTurn();
+}
+
+function strategyCheckMines() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s || st.status !== 'play') return;
+  for (let m = s.mines.length - 1; m >= 0; m--) {
+    const mine = s.mines[m];
+    if (st.full >= mine.expires) { s.mines.splice(m, 1); continue; }
+    const x = mine.sq % st.W;
+    const y = Math.floor(mine.sq / st.W);
+    let victim = -1;
+    for (let i = 0; i < st.board.length; i++) {
+      const q = st.board[i];
+      if (!q || q.c === mine.owner) continue;
+      const nx = i % st.W, ny = Math.floor(i / st.W);
+      if (Math.max(Math.abs(nx - x), Math.abs(ny - y)) <= 1) { victim = i; break; }
+    }
+    if (victim < 0) continue;
+    const q = st.board[victim];
+    const dmg = 25 + Math.floor(Math.random() * 11);
+    strategyBurst(mine.sq, '#ff7b3b');
+    strategyProjectile(mine.sq, victim, '💥');
+    strategyDamage(q, dmg);
+    strategyFloat(victim, `-${dmg}`, 'red');
+    s.mines.splice(m, 1);
+    toast('💣 Мина взорвалась');
+    if (strategyHp(q) <= 0) {
+      st.board[victim] = null;
+      if (q.t === 'k') st.capturedKing = q.c;
+    }
+    renderAll(false);
+    const res = updateStatus(st);
+    if (res) finishGame(res);
+    return;
+  }
+}
+
+function strategyRadiationTick() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s || st.status !== 'play' || ui.paused || ui.away) return;
+  const now = performance.now();
+  let changed = false;
+  for (let r = s.rad.length - 1; r >= 0; r--) {
+    const zone = s.rad[r];
+    if (now > zone.until) { s.rad.splice(r, 1); changed = true; continue; }
+    if (now - zone.last < 2000) continue;
+    zone.last = now;
+    const zx = zone.sq % st.W, zy = Math.floor(zone.sq / st.W);
+    for (let i = 0; i < st.board.length; i++) {
+      const q = st.board[i];
+      if (!q) continue;
+      const nx = i % st.W, ny = Math.floor(i / st.W);
+      if (Math.max(Math.abs(nx - zx), Math.abs(ny - zy)) > 1) continue;
+      strategyDamage(q, 2);
+      strategyFloat(i, '-2 ☢', 'rad');
+      if (strategyHp(q) <= 0) {
+        st.board[i] = null;
+        if (q.t === 'k') st.capturedKing = q.c;
+        changed = true;
+      }
+    }
+    changed = true;
+  }
+  if (changed) {
+    renderAll(false);
+    const res = updateStatus(st);
+    if (res) finishGame(res);
+  }
+}
+
+function strategySpecial() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s || s.phase !== 'attack' || s.attacker == null) return;
+  const sq = s.attacker;
+  const p = st.board[sq];
+  if (!p || p.c !== st.turn) return;
+  if (p.t === 'n') { strategyPlaceMine(); return; }
+  const map = { r: 'catapult', q: 'rocket', k: 'nuke' };
+  if (!map[p.t]) return;
+  s.special = s.special === map[p.t] ? null : map[p.t];
+  strategySelectAttacker(sq);
+  strategyRender();
+  toast(s.special ? 'Выбери цель спецатаки' : 'Спецатака отменена');
+}
+
 function strategyAttack(from, to) {
   const st = ui.st;
   const s = st.strategy;
@@ -2835,17 +3109,64 @@ function strategyAttack(from, to) {
   if (s.gold[p.c] < cost) { toast('Не хватает очков на атаку'); return; }
   s.gold[p.c] -= cost;
   s.moved[p.id] = true;
+  const special = s.special;
+  s.special = null;
   let dmg = STRAT[p.t].dmg;
   if (p.t === 'q') dmg = 35 + Math.floor(Math.random() * 21);
+  if (special === 'catapult') dmg = 30;
   if (strategyOnEnemyHalf(st, from, p.c)) dmg = Math.round(dmg * 1.15);
-  const died = strategyDamage(target, dmg);
-  strategyFloat(to, `-${dmg}`, 'red');
-  if (p.t === 'n') {
-    const recoil = 3 + Math.floor(Math.random() * 3);
-    st.strategy.hp[p.id] = Math.max(0, strategyHp(p) - recoil);
+  const icon = special === 'catapult' ? '🪨' : special === 'rocket' ? '🚀' : p.t === 'n' ? '🐴' : p.t === 'b' ? '🔮' : p.t === 'k' ? '☢' : '•';
+  strategyProjectile(from, to, icon);
+  if (special === 'nuke') {
+    strategyNuke(to);
+    const targetsAoe = [];
+    for (let i = 0; i < st.board.length; i++) {
+      const q = st.board[i];
+      if (!q || q === target) continue;
+      const nx = i % st.W, ny = Math.floor(i / st.W);
+      const tx = to % st.W, ty = Math.floor(to / st.W);
+      if (Math.max(Math.abs(nx - tx), Math.abs(ny - ty)) <= 2) targetsAoe.push(i);
+    }
+    const nukeDied = strategyDamage(target, 150);
+    strategyFloat(to, '-150', 'red');
+    if (target.t === 'k') st.capturedKing = target.c;
+    if (nukeDied && st.board[to]) st.board[to] = null;
+    for (const i of targetsAoe) {
+      const q = st.board[i];
+      if (!q) continue;
+      if (q.c !== p.c) { strategyDamage(q, 60); strategyFloat(i, '-60', 'red'); }
+      strategyKnockback(i);
+    }
+    s.rad.push({ sq: to, until: performance.now() + 16000, last: performance.now() });
+  } else {
+    const died = strategyDamage(target, dmg);
+    strategyBurst(to, special === 'rocket' ? '#ff9d3b' : '#ffd45e');
+    strategyFloat(to, `-${dmg}`, 'red');
+
+    if (p.t === 'b') {
+      let side = 0;
+      for (const [dx, dy] of QUEEN_DIRS) {
+        if (side >= 2) break;
+        const nx = to % st.W + dx, ny = Math.floor(to / st.W) + dy;
+        if (!inside(st, nx, ny)) continue;
+        const cell = sqAt(st, nx, ny);
+        const q = st.board[cell];
+        if (q && q.c !== p.c) {
+          strategyProjectile(from, cell, '🔮');
+          strategyDamage(q, 4);
+          strategyFloat(cell, '-4', 'red');
+          side++;
+        }
+      }
+    }
+    if (p.t === 'n') {
+      const recoil = 3 + Math.floor(Math.random() * 3);
+      st.strategy.hp[p.id] = Math.max(0, strategyHp(p) - recoil);
+    }
+    if (special === 'rocket' && !died) strategyKnockback(to);
+    if (target.t === 'k') st.capturedKing = target.c;
+    if (died && st.board[to]) st.board[to] = null;
   }
-  if (target.t === 'k') st.capturedKing = target.c;
-  if (died && st.board[to]) st.board[to] = null;
   renderAll(false);
   const res = updateStatus(st);
   if (res) { finishGame(res); return; }
@@ -2912,6 +3233,7 @@ function strategyAfterMove() {
   s.attacker = null;
   s.targets = new Set();
   s.aim = new Set();
+  strategyCheckMines();
   renderAll(false);
   if (ui.bot && st.turn === ui.bot.color) setTimeout(strategyBotAttack, 650);
 }
@@ -2928,6 +3250,8 @@ function strategyEndTurn() {
   st.turn = other(st.turn);
   strategyIncome(st.turn);
   strategyDrawHand(st.turn);
+  s.special = null;
+  strategyCheckMines();
   renderAll(false);
   if (ui.bot && st.turn === ui.bot.color) setTimeout(maybeBotTurn, 500);
 }
@@ -5912,6 +6236,7 @@ function bindEvents() {
     if (!ui.strategy || ui.strategy.phase !== 'attack') return;
     strategyEndTurn();
   });
+  if ($('#stratSpecial')) $('#stratSpecial').addEventListener('click', strategySpecial);
   if ($('#stratCap')) $('#stratCap').addEventListener('click', () => {
     const s = ui.strategy;
     if (!s) return;
@@ -6188,7 +6513,7 @@ function boot() {
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
-    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink, strategySelectAttacker, strategyAttack, strategyEndTurn, strategyAfterMove,
+    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink, strategySelectAttacker, strategyAttack, strategyEndTurn, strategyAfterMove, strategySpecial,
     captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),

@@ -3589,3 +3589,43 @@ html[data-strategy="1"] #barBottom { display: none; }
 
 /* нижние часы не выглядывают из-под карточек Стратегии */
 html[data-strategy="1"] #bottomClock, html[data-strategy="1"] #bottomLink { display: none !important; }
+
+
+/* ═══ спецэффекты Стратегии ═══ */
+.strat-proj { position: absolute; z-index: 70; font-size: 22px; pointer-events: none; will-change: transform; filter: drop-shadow(0 0 8px #ffd45e); }
+.strat-ring {
+  position: absolute; z-index: 65; width: 20px; height: 20px; border-radius: 50%;
+  border: 3px solid #ffd45e; transform: translate(-50%,-50%); pointer-events: none;
+  animation: stratRing .55s ease-out forwards;
+}
+@keyframes stratRing { 0% { opacity: 1; width: 12px; height: 12px; } 100% { opacity: 0; width: 90px; height: 90px; } }
+.strat-particle {
+  position: absolute; z-index: 68; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--c, #ffd45e); transform: translate(-50%,-50%); pointer-events: none;
+  animation: stratParticle .8s ease-out forwards;
+}
+@keyframes stratParticle {
+  0% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(.3); }
+}
+.strat-flash {
+  position: absolute; inset: 0; z-index: 80; pointer-events: none; background: #fff;
+  animation: stratFlash .45s ease-out forwards; border-radius: 12px;
+}
+@keyframes stratFlash { 0% { opacity: .95; } 100% { opacity: 0; } }
+.strat-tile {
+  position: absolute; z-index: 75; pointer-events: none; opacity: .85;
+  animation: stratTile 1s cubic-bezier(.2,.8,.3,1) forwards;
+  box-shadow: 0 0 18px #ffd45e88;
+}
+@keyframes stratTile {
+  0% { transform: translate(0,0) rotateX(0) rotateZ(0) scale(1); opacity: .9; }
+  100% { transform: translate(var(--tx), var(--ty)) rotateX(75deg) rotateZ(var(--rz)) scale(.35); opacity: 0; }
+}
+.sq.strat-mine { box-shadow: inset 0 0 0 3px #66d9ff, inset 0 0 20px #66d9ffaa !important; animation: minePulse 1s infinite alternate; }
+@keyframes minePulse { from { filter: brightness(1); } to { filter: brightness(1.45); } }
+.sq.strat-rad { background-image: linear-gradient(#8dff0055, #8dff0055) !important; box-shadow: inset 0 0 22px #8dff00aa !important; animation: radPulse 1.2s infinite alternate; }
+@keyframes radPulse { from { opacity: .75; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .strat-proj, .strat-ring, .strat-particle, .strat-flash, .strat-tile, .sq.strat-mine, .sq.strat-rad { animation-duration: .01s !important; }
+}
