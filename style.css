@@ -3385,9 +3385,7 @@ html[data-brawl="1"] .clock { display: none !important; }
 
 /* ПК: без лишних покачиваний меню; эффекты тряски остаются только у ладей */
 @media (min-width: 1000px) {
-  .screen.active, .screen.active .wide-card, .home-head, .home-card, .home-card > *,
-  .mode-tile, .modes-group-title, .settings-grid .field, .stat-cell, .brawl-card,
-  #welcomeSetup, #profilePop:not(.hidden), .modal:not(.hidden) .modal-card { animation: none !important; }
+  /* плавные открытия меню на ПК, но без «покачиваний» карточек при наведении */
   .mode-tile:hover, .pset:hover, .swatch:hover, .online-box:hover, .theme-preview:hover,
   .mode-tile:hover .mt-icon { transform: none !important; }
 }
@@ -3728,3 +3726,8 @@ strategy-bar, .strategy-bar {
 @keyframes flyToKing {
   to { left: var(--target-x); top: var(--target-y); transform: scale(.2); opacity: 0; }
 }
+
+
+/* плавное закрытие групп времени */
+.tg-list { overflow: hidden; transition: max-height .24s ease, opacity .18s ease; }
+.time-group.closing .tg-list { opacity: 0; }

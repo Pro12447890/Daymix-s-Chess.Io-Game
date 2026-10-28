@@ -1511,6 +1511,35 @@ function setPieces(id) {
   closeSkinModal();
 }
 
+function closeTimeGroup(d) {
+  if (!d || !d.open || d.classList.contains('closing')) return;
+  const list = d.querySelector('.tg-list');
+  if (!list) { d.open = false; return; }
+  d.classList.add('closing');
+  list.style.maxHeight = list.scrollHeight + 'px';
+  list.style.opacity = '0';
+  requestAnimationFrame(() => { list.style.maxHeight = '0px'; });
+  setTimeout(() => {
+    d.open = false;
+    d.classList.remove('closing');
+    list.style.maxHeight = '';
+    list.style.opacity = '';
+  }, 250);
+}
+
+function openTimeGroup(d) {
+  const list = d.querySelector('.tg-list');
+  if (!list) { d.open = true; return; }
+  d.classList.remove('closing');
+  d.open = true;
+  list.style.maxHeight = '0px';
+  list.style.opacity = '0';
+  requestAnimationFrame(() => {
+    list.style.maxHeight = list.scrollHeight + 'px';
+    list.style.opacity = '1';
+  });
+}
+
 function renderTimeGroups() {
   const box = $('#timeGroups');
   box.innerHTML = '';
@@ -1533,12 +1562,21 @@ function renderTimeGroups() {
         profile.timeLabel = item.label;
         saveProfile();
         box.querySelectorAll('.time-item').forEach((el) => el.classList.toggle('active', el === b));
-        box.querySelectorAll('details.time-group').forEach((d) => { d.open = false; });
+        box.querySelectorAll('details.time-group').forEach((d) => closeTimeGroup(d));
         renderTimeSummary();
       });
       list.appendChild(b);
     }
     wrap.appendChild(list);
+    sum.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (wrap.open) {
+        closeTimeGroup(wrap);
+      } else {
+        box.querySelectorAll('details.time-group').forEach((d) => { if (d !== wrap) closeTimeGroup(d); });
+        openTimeGroup(wrap);
+      }
+    });
     box.appendChild(wrap);
   }
   renderTimeSummary();
