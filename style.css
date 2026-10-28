@@ -3374,3 +3374,10 @@ html[data-brawl="1"] .clock { display: none !important; }
 /* предпросмотр: фигуры используют выбранный набор, но не ломают сетку */
 .tp-piece.piece { transition: none; will-change: auto; padding: 0; }
 .tp-piece.piece .pc-svg { width: 100%; height: 100%; }
+
+
+/* в предпросмотре показываем чистые цвета выбранного набора,
+   а не градиенты/контуры, которые на мини-размере выглядят чёрными */
+.tp-piece.piece .pc-svg .body { fill: currentColor !important; stroke: var(--edge, #111) !important; stroke-width: var(--sw, 2) !important; }
+.tp-piece.piece .pc-svg .detail { fill: var(--detail, #555) !important; }
+.tp-piece.piece .pc-svg .line { stroke: var(--detail, #555) !important; }
