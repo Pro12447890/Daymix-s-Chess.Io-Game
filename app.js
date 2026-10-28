@@ -4041,6 +4041,9 @@ class Relay {
     this.startPolling();
     return new Promise((resolve, reject) => {
       let settled = false;
+      /* Вкладки одного браузера общаются через BroadcastChannel сразу,
+         не дожидаясь внешней сети. */
+      if (this.bc) resolve();
       const ws = new WebSocket(`${RELAY_WS}${this.topic}/ws`);
       const timer = setTimeout(() => {
         if (settled) return;
