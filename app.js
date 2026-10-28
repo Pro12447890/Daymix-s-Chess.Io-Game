@@ -2428,6 +2428,7 @@ function brawlDeck() {
 function brawlDraftPool() {
   return ['p', 'p', 'b', 'n', 'r', 'q'].map((type, i) => ({
     id: type + '-' + i + '-' + Math.random().toString(36).slice(2, 6),
+    slot: type + '-' + i,
     t: type,
   }));
 }
@@ -2437,11 +2438,11 @@ function startBrawlDraft() {
   if (!st || !st.flags.clashBrawl) return;
   const poolW = brawlDraftPool();
   const poolB = brawlDraftPool();
-  const types = ['p', 'p', 'b', 'n', 'r', 'q'];
+  const slots = ['p-0', 'p-1', 'b-2', 'n-3', 'r-4', 'q-5'];
   const protectCount = 1 + (Math.random() < 0.5 ? 1 : 0);
   const protectedTypes = new Set();
   while (protectedTypes.size < protectCount) {
-    protectedTypes.add(types[Math.floor(Math.random() * types.length)]);
+    protectedTypes.add(slots[Math.floor(Math.random() * slots.length)]);
   }
   const botColor = ui.bot ? (Math.random() < 0.5 ? 'w' : 'b') : null;
   ui.brawl.draft = {
@@ -2479,7 +2480,7 @@ function renderBrawlDraft() {
   $('#bdStatus').textContent = status;
   const prot = $('#bdProtected');
   if (prot) {
-    const names = [...new Set([...d.protected].map((t) => BRAWL_NAME[t]))];
+    const names = [...new Set([...d.protected].map((slot) => BRAWL_NAME[slot[0]]))];
     prot.textContent = names.length
       ? (en ? 'Protected this game: ' : 'Защищены в этой партии: ') + names.join(', ')
       : '';
@@ -2490,7 +2491,7 @@ function renderBrawlDraft() {
     for (const card of d.pools[color]) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'brawl-card' + (d.protected.has(card.t) ? ' protected' : '');
+      b.className = 'brawl-card' + (d.protected.has(card.slot) ? ' protected' : '');
       b.style.color = color === 'w' ? '#fff' : '#9fc6ff';
       b.innerHTML = `<span class="brawl-card-cost">${BRAWL_COST[card.t]}</span>${pieceSvg(card.t, 'brawl-pc')}<span class="brawl-card-name">${BRAWL_NAME[card.t]}</span>`;
       b.addEventListener('click', () => brawlDraftCard(card.id));
@@ -2511,7 +2512,7 @@ function brawlDraftCard(id) {
   const card = pool.find((c) => c.id === id);
   if (!card) return;
   if (d.step === 'ban') {
-    if (d.protected.has(card.t)) {
+    if (d.protected.has(card.slot)) {
       toast(profile.language === 'en' ? 'This piece is protected this game' : 'Эту фигуру нельзя запретить в этой партии');
       return;
     }
@@ -2549,7 +2550,7 @@ function draftBotTurn() {
   const color = d.turn;
   const pool = d.pools[color];
   const valid = pool.filter((card) => {
-    if (d.step === 'ban') return !d.protected.has(card.t);
+    if (d.step === 'ban') return !d.protected.has(card.slot);
     const np = d.picks[color].filter((t) => t === 'n' || t === 'r' || t === 'q').length;
     if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && np >= 2) return false;
     return true;
@@ -2591,7 +2592,7 @@ function autoBrawlDraft() {
     const pool = ui.brawl.draft.pools[color];
     if (!pool || !pool.length) break;
     const valid = pool.filter((card) => {
-      if (ui.brawl.draft.step === 'ban') return !ui.brawl.draft.protected.has(card.t);
+      if (ui.brawl.draft.step === 'ban') return !ui.brawl.draft.protected.has(card.slot);
       const np = ui.brawl.draft.picks[color].filter((t) => t === 'n' || t === 'r' || t === 'q').length;
       if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && np >= 2) return false;
       return true;
