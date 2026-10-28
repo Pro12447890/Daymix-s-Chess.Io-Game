@@ -100,14 +100,14 @@ const MODES = [
     W: 8, H: 10, flags: { classic: true, tall: true },
   },
   {
-    id: 'jester', n: 12, name: 'Шут 12×10', icon: '🃏',
-    desc: 'Доска 12×10 и новый Шут: прыгает вперёд через клетку на две, умеет и через три. Всего пять ходов за партию.',
-    W: 12, H: 10, flags: { classic: true, jester: true }, square: true,
+    id: 'jester', n: 12, name: 'Шут 10×8', icon: '🃏',
+    desc: 'Доска 10×8 и Шут: ходит на две клетки в любую сторону, перепрыгивая через одну. Всего пять ходов за партию.',
+    W: 10, H: 8, flags: { classic: true, jester: true },
   },
   {
-    id: 'boy', n: 13, name: 'Пацанчики 14×10', icon: '🧢',
-    desc: 'Доска 14×10: Шуты рядом со слонами и Пацанчики — ходят как ладья, а на чужой половине проходят сквозь одну фигуру и берут две.',
-    W: 14, H: 10, flags: { classic: true, jester: true, boy: true }, square: true,
+    id: 'boy', n: 13, name: 'Пацанчики 12×8', icon: '🧢',
+    desc: 'Доска 12×8: Шуты и Пацанчики — ходят как ладья, а на чужой половине проходят сквозь одну фигуру и берут две.',
+    W: 12, H: 8, flags: { classic: true, jester: true, boy: true },
   },
   {
     id: 'crossCastle', n: 14, name: 'Перекрёстная рокировка', icon: '🔄',
@@ -484,7 +484,9 @@ function setupBoard(st) {
     board[(H - 1) * W + 3] = newPiece('q', 'b');
     board[(H - 1) * W + 4] = newPiece('k', 'b');
   } else {
-    const back = BACK_RANKS[W] || 'rnbqkbnr';
+    const back = flags.jester
+      ? (flags.boy ? 'rgnjbqkbjngr' : 'rnbjqkjbnr')
+      : (BACK_RANKS[W] || 'rnbqkbnr');
     for (let x = 0; x < Math.min(W, back.length); x++) {
       board[x] = newPiece(back[x], 'w');
       board[(H - 1) * W + x] = newPiece(back[x], 'b');
@@ -780,10 +782,8 @@ function genPseudo(st, color) {
 
     if (p.t === 'j') {
       if (p.used >= 5) continue;
-      const dir = color === 'w' ? 1 : -1;
-      const leaps = [[-1, 2], [0, 2], [1, 2], [0, 3]];
-      for (const [dx, dy] of leaps) {
-        const nx = x + dx, ny = y + dir * dy;
+      for (const [dx, dy] of ROOK_DIRS) {
+        const nx = x + dx * 2, ny = y + dy * 2;
         if (!inside(st, nx, ny)) continue;
         const t = sqAt(st, nx, ny);
         if (isBlocked(st, t)) continue;
@@ -1016,9 +1016,7 @@ function attacked(st, sq, by) {
     }
     if (p.t === 'j') {
       if (p.used >= 5) continue;
-      const dir = by === 'w' ? 1 : -1;
-      const leaps = [[-1, 2], [0, 2], [1, 2], [0, 3]];
-      for (const [lx, ly] of leaps) if (dx === lx && dy === dir * ly) return true;
+      if ((Math.abs(dx) === 2 && dy === 0) || (dx === 0 && Math.abs(dy) === 2)) return true;
       continue;
     }
     if (p.t === 'q' && st.flags.queenPierce) {

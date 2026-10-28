@@ -1246,7 +1246,7 @@ function renderProfile() {
   const rejoin = $('#rejoinRow');
   if (rejoin) {
     const last = profile.lastRoom;
-    const fresh = last && Date.now() - last.ts < 30 * 60 * 1000 && !ui.online;
+    const fresh = last && Date.now() - last.ts < 15 * 1000 && !ui.online;
     rejoin.classList.toggle('hidden', !fresh);
     if (fresh && $('#rejoinBtn')) $('#rejoinBtn').textContent = `↩ Вернуться в комнату ${last.code}`;
   }
@@ -1255,7 +1255,6 @@ function renderProfile() {
   applySkin();
   $('#optFlip').checked = profile.flip;
   if ($('#optFlipAll')) $('#optFlipAll').checked = !!profile.flipAll;
-  if ($('#optTableFlip')) $('#optTableFlip').checked = profile.tableFlip !== false;
   if ($('#optEpicFx')) $('#optEpicFx').checked = !!profile.epicFx;
   if ($('#quickEpicFx')) $('#quickEpicFx').checked = !!profile.epicFx;
   document.documentElement.classList.toggle('epic-fx', !!profile.epicFx && !profile.calm);
@@ -1450,17 +1449,25 @@ function renderThemePreview() {
   const box = $('#themePreview');
   if (!box) return;
   const theme = THEMES.find((t) => t.id === profile.theme) || THEMES[0];
+  const st = ui.st || createState('classic', {});
+  const W = st.W;
+  const H = st.H;
   let cells = '';
-  for (let y = 0; y < 4; y++) {
-    for (let x = 0; x < 4; x++) {
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
       const light = (x + y) % 2 === 0;
       cells += `<span class="tp-sq" style="background:${light ? theme.light : theme.dark}"></span>`;
     }
   }
-  box.innerHTML = `<div class="tp-board">${cells}
-    <span class="tp-piece tp-w">${pieceSvg('q')}</span>
-    <span class="tp-piece tp-b">${pieceSvg('n')}</span>
-  </div>
+  let pieces = '';
+  for (let i = 0; i < st.board.length; i++) {
+    const p = st.board[i];
+    if (!p) continue;
+    const x = i % W;
+    const y = Math.floor(i / W);
+    pieces += `<span class="tp-piece" style="left:${((x + 0.5) / W) * 100}%;top:${((y + 0.5) / H) * 100}%;width:${100 / W}%;height:${100 / H}%;color:${p.c === 'w' ? '#fff' : '#1b1b1b'}">${pieceSvg(p.t)}</span>`;
+  }
+  box.innerHTML = `<div class="tp-board" style="grid-template-columns:repeat(${W},1fr);aspect-ratio:${W}/${H}">${cells}${pieces}</div>
   <div class="tp-caption">${theme.name} · ${PIECE_SKINS.find((s) => s.id === profile.pieces)?.name || 'Классика'}</div>`;
 }
 
@@ -2054,8 +2061,17 @@ function showScreen(name) {
   if (name !== 'game') { closeDrawer(); closePanel(); }
   const wasGame = ui.screen === 'game';
   const activeGame = ui.st && ui.st.status === 'play' && !ui.scored;
-  if (wasGame && name !== 'game' && activeGame && !ui.away) suspendGame();
-  if (name === 'game' && ui.away) resumeGame();
+  if (wasGame && name !== 'game') {
+    if (ui.st && ui.st.flags.clashBrawl) document.documentElement.dataset.brawl = '0';
+    if (activeGame && ui.bot) hardStopBotGame();
+    else if (activeGame && !ui.away) suspendGame();
+    document.body.classList.remove('flip-all');
+  }
+  if (name === 'game') {
+    if (ui.st && ui.st.flags.clashBrawl) document.documentElement.dataset.brawl = '1';
+    if (ui.rotated) document.body.classList.add('flip-all');
+    if (ui.away) resumeGame();
+  }
   ui.screen = name;
   $$('.screen').forEach((s) => s.classList.toggle('active', s.id === 'screen-' + name));
   $$('.sb-btn').forEach((b) => b.classList.remove('active'));
@@ -3000,9 +3016,12 @@ function newGame(opts = {}) {
   ui.extremeShown = 0;
   ui.confirmAction = null;
   document.documentElement.dataset.infernal = mode.flags.infernal ? '1' : '0';
+  document.body.classList.remove('flip-all');
+  const boardElReset = $('#board');
+  if (boardElReset) boardElReset.classList.remove('board-rotated');
   const shellEl = $('#gameShell');
   if (shellEl) {
-    shellEl.classList.remove('flip-all', 'gray-1', 'gray-2', 'gray-3', 'check-alert');
+    shellEl.classList.remove('gray-1', 'gray-2', 'gray-3', 'check-alert');
   }
   if (mode.flags.inverted && (opts.mode || 'local') === 'local') ui.orientation = 'b';
   stopBrawl();
@@ -3034,7 +3053,13 @@ function newGame(opts = {}) {
   if ($('#brawlBanModal')) $('#brawlBanModal').classList.add('hidden');
   if (mode.flags.clashBrawl) { ui.timeMs = 0; ui.clocks = { w: 0, b: 0 }; initBrawl(ui.st); }
   ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
+  if ((opts.mode || 'local') === 'local' && !opts.bot && !mode.flags.inverted) ui.orientation = 'w';
   ui.mode = opts.mode || 'local';
+  if (ui.mode === 'local' && !opts.bot && profile.flip && window.innerWidth < 1000) {
+    if (profile.flipAll) ui.rotated = ui.st.turn !== ui.orientation;
+    else ui.tableRotated = ui.st.turn !== ui.orientation;
+    if (ui.tableRotated) $('#board').classList.add('board-rotated');
+  }
   ui.role = opts.role || null;
   ui.spectator = !!opts.spectator;
   ui.bot = opts.bot
@@ -3236,6 +3261,7 @@ function renderAll(animate) {
   renderStatus();
   updateNav();
   renderCaptured();
+  if (ui.screen === 'settings') renderThemePreview();
   if (ui.brawl) { renderBrawlHp(); renderBrawl(); }
 }
 
@@ -3532,31 +3558,21 @@ function commitMove(m, opts = {}) {
   }
 
   let flippedNow = false;
+  const prevRotated = ui.rotated;
+  const prevTable = ui.tableRotated;
   if (ui.mode === 'local' && !ui.bot && profile.flip && !opts.remote && !opts.silent
       && window.innerWidth < 1000) {
     if (profile.flipAll) {
-      ui.rotated = !ui.rotated;
+      ui.rotated = st.turn !== ui.orientation;
       ui.tableRotated = false;
-      const boardReset = $('#board');
-      if (boardReset) boardReset.classList.remove('board-rotated');
-      flippedNow = true;
-    } else if (profile.tableFlip !== false) {
-      ui.tableRotated = !ui.tableRotated;
-      if (ui.rotated) {
-        ui.rotated = false;
-        const shellReset = $('#gameShell');
-        if (shellReset) shellReset.classList.remove('flip-all');
-      }
-      flippedNow = true;
     } else {
-      const prevOrientation = ui.orientation;
-      ui.orientation = st.turn;
-      flippedNow = ui.orientation !== prevOrientation;
+      ui.rotated = false;
+      ui.tableRotated = st.turn !== ui.orientation;
     }
+    flippedNow = ui.rotated !== prevRotated || ui.tableRotated !== prevTable;
   }
   if (!opts.silent) {
-    const shellRot = $('#gameShell');
-    if (shellRot) shellRot.classList.toggle('flip-all', !!ui.rotated);
+    document.body.classList.toggle('flip-all', !!ui.rotated);
     const boardRot = $('#board');
     if (boardRot) boardRot.classList.toggle('board-rotated', !!ui.tableRotated);
     renderAll(flippedNow ? false : !opts.noAnim);
@@ -3987,6 +4003,9 @@ class Relay {
     this.onClose = null;
     this.onOpen = null;
     this.closed = false;
+    this.seen = new Set();
+    this.pollOk = false;
+    this.pollTimer = 0;
   }
 
   connect(code, rawTopic) {
@@ -4000,6 +4019,7 @@ class Relay {
         if (this.onMessage && typeof event.data === 'string') this.onMessage(event.data);
       };
     } catch (error) { this.bc = null; }
+    this.startPolling();
     return new Promise((resolve, reject) => {
       let settled = false;
       const ws = new WebSocket(`${RELAY_WS}${this.topic}/ws`);
@@ -4007,7 +4027,8 @@ class Relay {
         if (settled) return;
         settled = true;
         try { ws.close(); } catch (error) { /* уже закрыт */ }
-        reject(new Error('служба связи не отвечает'));
+        if (this.pollOk) resolve();
+        else reject(new Error('служба связи не отвечает'));
       }, 12000);
       ws.onopen = () => {
         if (settled) return;
@@ -4027,16 +4048,43 @@ class Relay {
       ws.onclose = () => {
         clearTimeout(timer);
         this.ws = null;
-        if (!settled) { settled = true; reject(new Error('соединение закрыто')); return; }
+        if (!settled) {
+          if (this.pollOk) { settled = true; resolve(); }
+          return;
+        }
         if (this.onClose) this.onClose();
       };
       ws.onerror = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(new Error('ошибка соединения'));
+        try { ws.close(); } catch (error) { /* уже закрыт */ }
       };
     });
+  }
+
+  startPolling() {
+    if (this.pollTimer) return;
+    const poll = async () => {
+      if (this.closed || !this.topic) return;
+      try {
+        const res = await fetch(`${RELAY_HTTP}${this.topic}/json?poll=1&since=8s&limit=50`, { cache: 'no-store' });
+        if (!res.ok) return;
+        this.pollOk = true;
+        const text = await res.text();
+        for (const line of text.split('\n')) {
+          if (!line.trim()) continue;
+          let packet;
+          try { packet = JSON.parse(line); } catch (error) { continue; }
+          if (!packet || packet.event !== 'message' || typeof packet.message !== 'string') continue;
+          if (packet.id) {
+            if (this.seen.has(packet.id)) continue;
+            this.seen.add(packet.id);
+            if (this.seen.size > 400) this.seen.delete(this.seen.values().next().value);
+          }
+          if (this.onMessage) this.onMessage(packet.message);
+        }
+      } catch (error) { /* сеть моргнула */ }
+    };
+    poll();
+    this.pollTimer = setInterval(poll, 2500);
   }
 
   publish(payload) {
@@ -4053,6 +4101,8 @@ class Relay {
 
   close() {
     this.closed = true;
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = 0;
     try { if (this.ws) this.ws.close(); } catch (error) { /* уже закрыт */ }
     try { if (this.bc) this.bc.close(); } catch (error) { /* уже закрыт */ }
     this.ws = null;
@@ -4092,7 +4142,7 @@ function handleLobby(text) {
   let msg;
   try { msg = JSON.parse(text); } catch (error) { return; }
   if (!msg || msg.app !== 'daymix-chess' || msg.t !== 'lobby-room' || !msg.code) return;
-  if (msg.ts && Date.now() - msg.ts > 40000) return;
+  if (msg.ts && Date.now() - msg.ts > 15000) return;
   if (!ui.lobbyRooms) ui.lobbyRooms = new Map();
   if (!ui.liveRooms) ui.liveRooms = new Map();
   const room = {
@@ -4121,7 +4171,7 @@ function renderLobby() {
   for (const map of [ui.lobbyRooms, ui.liveRooms]) {
     if (!map) continue;
     for (const [code, room] of map) {
-      if (now - room.ts > 40000) map.delete(code);
+      if (now - room.ts > 15000) map.delete(code);
     }
   }
   const own = ui.online && ui.online.code;
@@ -4201,6 +4251,7 @@ function switchOnlineTab(tab) {
 
 
 async function createRoom() {
+  if (ui.online && ui.online.code) leaveOnline(true);
   if (!ui.online) {
     ui.online = { code: '', role: 'host', sid: Math.random().toString(36).slice(2, 10) };
   }
@@ -4704,6 +4755,21 @@ function confirmLeaveGame() {
   setTimeout(leaveGame, 260);
 }
 
+function hardStopBotGame() {
+  ui.scored = true;
+  ui.running = false;
+  clearInterval(ui.timer);
+  stopBrawl();
+  stopRaceClock();
+  ui.race = null;
+  ui.st = null;
+  ui.bot = null;
+  ui.away = false;
+  ui.selected = -1;
+  updateResumeFloat();
+  toast('Партия с ботом остановлена');
+}
+
 function suspendGame() {
   if (!ui.st || ui.st.status !== 'play') return;
   ui.away = true;
@@ -4732,6 +4798,9 @@ function updateResumeFloat() {
 }
 
 function leaveGame() {
+  document.body.classList.remove('flip-all');
+  const boardLeave = $('#board');
+  if (boardLeave) boardLeave.classList.remove('board-rotated');
   stopBrawl();
   stopRaceClock();
   try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
@@ -4822,11 +4891,6 @@ function bindEvents() {
   if ($('#welcomeSettings')) $('#welcomeSettings').addEventListener('click', () => finishWelcome(true));
   if ($('#optEpicFx')) $('#optEpicFx').addEventListener('change', (e) => setEpic(e.target.checked));
   if ($('#resumeFloat')) $('#resumeFloat').addEventListener('click', () => showScreen('game'));
-  if ($('#optTableFlip')) $('#optTableFlip').addEventListener('change', (e) => {
-    profile.tableFlip = e.target.checked;
-    saveProfile();
-    toast(profile.tableFlip ? 'Доска будет физически переворачиваться' : 'Доска будет менять стороны без поворота');
-  });
   if ($('#optFlipAll')) $('#optFlipAll').addEventListener('change', (e) => {
     profile.flipAll = e.target.checked;
     saveProfile();
@@ -5011,22 +5075,15 @@ function bindEvents() {
   $('#railFlip').addEventListener('click', () => {
     if (profile.flipAll) {
       ui.rotated = !ui.rotated;
-      $('#gameShell').classList.toggle('flip-all', ui.rotated);
-      renderAll(false);
-      return;
-    }
-    if (profile.tableFlip !== false) {
+      ui.tableRotated = false;
+      document.body.classList.toggle('flip-all', ui.rotated);
+      $('#board').classList.remove('board-rotated');
+    } else {
       ui.tableRotated = !ui.tableRotated;
-      if (ui.rotated) {
-        ui.rotated = false;
-        $('#gameShell').classList.remove('flip-all');
-      }
+      ui.rotated = false;
+      document.body.classList.remove('flip-all');
       $('#board').classList.toggle('board-rotated', ui.tableRotated);
-      renderAll(false);
-      renderPlayers();
-      return;
     }
-    ui.orientation = other(ui.orientation);
     renderAll(false);
     renderPlayers();
   });

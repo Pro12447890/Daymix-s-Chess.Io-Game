@@ -2443,8 +2443,9 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
 @keyframes convertedPop { 0% { transform: scale(.6); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
 
 /* ═══ переворот всего стола ═══ */
-.game-shell.flip-all { transform: rotate(180deg); }
-@media (max-width: 999px) { .game-shell.flip-all .panel-toggle { transform: rotate(180deg); } }
+body.flip-all .app { transform: rotate(180deg); transform-origin: 50% 50%; }
+body.flip-all .app * { transform-origin: 50% 50%; }
+body.flip-all #result, body.flip-all .modal { transform: rotate(180deg); }
 
 /* ═══ пешка: падает и растворяется ═══ */
 .cap-ghost.soft .pc-svg { animation: capFade .45s ease-in both; }
@@ -2959,14 +2960,13 @@ html.epic-fx .confetti-piece { animation-duration: 2.1s; }
 .tp-board {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
   width: 100%;
   aspect-ratio: 1;
   border-radius: 7px;
   overflow: hidden;
 }
 .tp-sq { display: block; }
-.tp-piece { position: absolute; width: 36px; height: 36px; }
+.tp-piece { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
 .tp-piece svg { width: 100%; height: 100%; }
 .tp-w { left: 4%; bottom: 4%; }
 .tp-b { right: 4%; top: 4%; }
@@ -3114,8 +3114,8 @@ html[data-brawl="1"] {
   --accent-green: #00d2ff;
   --accent-green-hover: #4de3ff;
   --accent-green-shadow: #0088b3;
-  --light: #f7d358;
-  --dark: #1b3561;
+  --light: #f7d358 !important;
+  --dark: #1b3561 !important;
 }
 html[data-brawl="1"] .board { border-radius: 10px; box-shadow: 0 0 30px #00d2ff33; }
 
@@ -3325,3 +3325,12 @@ html[data-brawl="1"] .clock { display: none !important; }
 .bd-decks { display: flex; gap: 16px; justify-content: center; font-size: 11px; color: #bcd7ff; margin-bottom: 8px; }
 .bd-decks b { color: #fff; }
 #brawlBan { display: none !important; }
+
+
+/* вкладки онлайн: равные, Интернет — голубой, симметрично по центру */
+.online-tabs { justify-content: center; gap: 8px; }
+.online-tab { flex: 0 1 220px; width: 220px; text-align: center; }
+.online-tab[data-otab="internet"] { background: #1f6feb; border-color: #60a5fa; color: #fff; }
+.online-tab[data-otab="internet"].active { background: #2f81f7; border-color: #93c5fd; color: #fff; }
+.online-tab[data-otab="friend"].active { background: var(--accent-green); color: #1d2b10; }
+@media (max-width: 999px) { .online-tab { flex: 1 1 0; width: auto; } }
