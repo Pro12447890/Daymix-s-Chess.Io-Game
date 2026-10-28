@@ -3585,3 +3585,7 @@ html[data-strategy="1"] { --light: #e6edf7 !important; --dark: #33415c !importan
 
 /* в Стратегии нижняя плашка заменена карточками */
 html[data-strategy="1"] #barBottom { display: none; }
+
+
+/* нижние часы не выглядывают из-под карточек Стратегии */
+html[data-strategy="1"] #bottomClock, html[data-strategy="1"] #bottomLink { display: none !important; }
