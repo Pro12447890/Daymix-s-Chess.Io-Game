@@ -2166,7 +2166,7 @@ function layoutBoard() {
   const phone = window.innerWidth < 1000;
   const brawlH = ui.st && ui.st.flags.clashBrawl ? (cinema ? 112 : 150) : 0;
   const barH = (phone
-    ? (cinema ? 52 + 26 : 76 + 22 + 38)
+    ? (cinema ? 24 + 24 : 76 + 22 + 38)
     : 96) + brawlH;   // фиксировано: доска не дёргается при взятии
   const gaps = 8;
   const shell = $('#gameShell');
@@ -2456,7 +2456,9 @@ const BRAWL_POINTS = { p: 1, b: 3, n: 3, r: 5, q: 9, k: 10 };
 
 function brawlDeck() {
   const keep = ['n', 'r', 'q'][Math.floor(Math.random() * 3)];
-  return ['p', 'p', 'b', keep].map((type) => ({ t: type, cost: BRAWL_COST[type] }));
+  return ['p', 'p', 'b', keep]
+    .map((type) => ({ t: type, cost: BRAWL_COST[type] }))
+    .sort((a, b) => a.cost - b.cost || a.t.localeCompare(b.t));
 }
 
 
@@ -2600,8 +2602,10 @@ function finishBrawlDraft() {
   const d = ui.brawl && ui.brawl.draft;
   if (!d) return;
   d.done = true;
-  ui.brawl.decks.w = d.picks.w.map((t) => ({ t, cost: BRAWL_COST[t] }));
-  ui.brawl.decks.b = d.picks.b.map((t) => ({ t, cost: BRAWL_COST[t] }));
+  ui.brawl.decks.w = d.picks.w.map((t) => ({ t, cost: BRAWL_COST[t] }))
+    .sort((a, b) => a.cost - b.cost || a.t.localeCompare(b.t));
+  ui.brawl.decks.b = d.picks.b.map((t) => ({ t, cost: BRAWL_COST[t] }))
+    .sort((a, b) => a.cost - b.cost || a.t.localeCompare(b.t));
   $('#brawlDraft').classList.add('hidden');
   ui.brawl.draft = null;
   ui.gameLocked = false;
@@ -2651,11 +2655,15 @@ function initBrawl(st) {
     shieldUses: { w: 3, b: 3 },
     shieldTurns: { w: 0, b: 0 },
     banUsed: { w: false, b: false },
+    deckKey: null,
+    deckButtons: [],
     lastCheck: null,
   };
   st.brawl = st.brawl || { hp: { w: 50, b: 50 }, shieldTurns: { w: 0, b: 0 } };
   ui.brawl.hp = st.brawl.hp;
   document.documentElement.dataset.brawl = '1';
+  const deckBox = $('#brawlDeck');
+  if (deckBox) deckBox.innerHTML = '';
   $('#brawlPanel').classList.remove('hidden');
   ui.timeMs = 0;
   ui.clocks = { w: 0, b: 0 };
@@ -2691,6 +2699,8 @@ function brawlCanDeploy(sq, color) {
   if (!st || !st.flags.clashBrawl || !ui.brawl || ui.brawl.selected === null) return false;
   if (st.board[sq]) return false;
   const y = Math.floor(sq / st.W);
+  const early = (st.full || 0) < 6;
+  if (early) return color === 'w' ? y < 2 : y >= st.H - 2;
   return color === 'w' ? y < 4 : y >= 4;
 }
 
@@ -2712,8 +2722,12 @@ function renderBrawl() {
   if (banBtn) banBtn.disabled = ui.st.status !== 'play' || ui.brawl.banUsed[color] || ui.moves.length > 0;
   const deck = $('#brawlDeck');
   if (deck) {
-    deck.innerHTML = '';
     const cards = ui.brawl.decks[color] || [];
+    const deckKey = color + '|' + cards.map((c) => c.t).join(',');
+    if (ui.brawl.deckKey !== deckKey) {
+    ui.brawl.deckKey = deckKey;
+    ui.brawl.deckButtons = [];
+    deck.innerHTML = '';
     cards.forEach((card, index) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -2730,7 +2744,15 @@ function renderBrawl() {
         renderSquares();
       });
       deck.appendChild(b);
+      ui.brawl.deckButtons.push(b);
     });
+    } else {
+      (ui.brawl.deckButtons || []).forEach((b, index) => {
+        const card = cards[index];
+        if (!card) return;
+        b.className = 'brawl-card' + (ui.brawl.selected === index ? ' selected' : '') + (elixir < card.cost ? ' disabled' : '');
+      });
+    }
   }
   renderBrawlHp();
 }
@@ -4911,6 +4933,8 @@ function bindEvents() {
   if ($('#quickEpicFx')) $('#quickEpicFx').addEventListener('change', (e) => setEpic(e.target.checked));
   if ($('#optCalm')) $('#optCalm').addEventListener('change', (e) => setCalm(e.target.checked));
   if ($('#btnRefreshGame')) $('#btnRefreshGame').addEventListener('click', refreshActiveGame);
+  if ($('#btnImportLocal')) $('#btnImportLocal').addEventListener('click', openImport);
+  if ($('#btnExportCurrent')) $('#btnExportCurrent').addEventListener('click', exportGameFile);
   if ($('#langSelect')) $('#langSelect').addEventListener('change', (e) => {
     profile.language = e.target.value === 'en' ? 'en' : 'ru';
     saveProfile();

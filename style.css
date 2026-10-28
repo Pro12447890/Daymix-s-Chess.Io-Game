@@ -3381,3 +3381,46 @@ html[data-brawl="1"] .clock { display: none !important; }
 .tp-piece.piece .pc-svg .body { fill: currentColor !important; stroke: var(--edge, #111) !important; stroke-width: var(--sw, 2) !important; }
 .tp-piece.piece .pc-svg .detail { fill: var(--detail, #555) !important; }
 .tp-piece.piece .pc-svg .line { stroke: var(--detail, #555) !important; }
+
+
+/* ПК: без лишних покачиваний меню; эффекты тряски остаются только у ладей */
+@media (min-width: 1000px) {
+  .screen.active, .screen.active .wide-card, .home-head, .home-card, .home-card > *,
+  .mode-tile, .modes-group-title, .settings-grid .field, .stat-cell, .brawl-card,
+  #welcomeSetup, #profilePop:not(.hidden), .modal:not(.hidden) .modal-card { animation: none !important; }
+  .mode-tile:hover, .pset:hover, .swatch:hover, .online-box:hover, .theme-preview:hover,
+  .mode-tile:hover .mt-icon { transform: none !important; }
+}
+
+/* крупный предпросмотр на ПК */
+@media (min-width: 1000px) {
+  .theme-preview { width: 330px; padding: 10px; right: 22px; bottom: 20px; }
+  .tp-board { width: 100%; }
+  .tp-caption { font-size: 11px; }
+}
+
+/* горизонтальный телефон: вертикальный узкий сайдбар, доска на весь рост */
+@media (max-height: 480px) and (orientation: landscape) {
+  .app { flex-direction: row; }
+  .app-sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: 54px; height: 100vh;
+    flex-direction: column; justify-content: flex-start;
+    padding: 4px 2px; z-index: 60;
+  }
+  .sb-brand { height: 34px; justify-content: center; padding: 0; }
+  .sb-brand-name, .sb-label, .sb-user-info, .sb-footer { display: none; }
+  .sb-nav { flex: none; width: 100%; flex-direction: column; align-items: center; gap: 2px; overflow-y: auto; }
+  .sb-btn { width: 44px; height: 40px; padding: 0; flex-direction: column; gap: 1px; border-radius: 9px; }
+  .sb-icon { font-size: 16px; }
+  .main { margin-left: 54px; height: 100vh; padding: 4px 6px 0; }
+  .stage { height: 100%; width: 100%; justify-content: center; }
+  .player-capsule { height: 24px !important; min-height: 24px !important; max-height: 24px !important; }
+  .pc-avatar-wrap { width: 18px; height: 18px; }
+  .pc-avatar { width: 18px !important; height: 18px !important; }
+  .pc-name { font-size: 9.5px; }
+  .clock { font-size: 11px; min-width: 40px; }
+  .mobile-actions { height: 24px; padding: 0; }
+  .mob-btn { height: 21px; font-size: 9.5px; padding: 0 4px; }
+  .side-panel { bottom: 0; }
+}

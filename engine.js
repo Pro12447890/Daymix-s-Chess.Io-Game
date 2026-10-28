@@ -417,9 +417,19 @@ function setupBoard(st) {
   if (flags.noPawns) return setupNoPawns(st);
 
   if (flags.clashBrawl) {
+    board[3] = newPiece('q', 'w');
     board[4] = newPiece('k', 'w');
+    board[2] = newPiece('b', 'w');
+    board[5] = newPiece('b', 'w');
+    board[(H - 1) * W + 3] = newPiece('q', 'b');
     board[(H - 1) * W + 4] = newPiece('k', 'b');
-    st.pawnStart = { w: [], b: [] };
+    board[(H - 1) * W + 2] = newPiece('b', 'b');
+    board[(H - 1) * W + 5] = newPiece('b', 'b');
+    for (let x = 0; x < 4; x++) {
+      board[1 * W + x] = newPiece('p', 'w');
+      board[(H - 2) * W + x] = newPiece('p', 'b');
+    }
+    st.pawnStart = { w: [1], b: [H - 2] };
     st.brawl = { hp: { w: 50, b: 50 }, shieldTurns: { w: 0, b: 0 } };
     return;
   }
