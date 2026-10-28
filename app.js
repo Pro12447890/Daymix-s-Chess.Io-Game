@@ -2251,7 +2251,7 @@ function layoutBoard() {
   const availW = Math.max(160, (desk ? shellW - padX - panelW - infoW - 22 : stage.clientWidth));
   const availH = Math.max(160, stage.clientHeight - barH - gaps);
   const layoutKey = `${availW}x${availH}x${st.W}x${st.H}`;
-  if (ui.layoutKey === layoutKey && wrap.style.width) return;
+  if (ui.layoutKey === layoutKey && wrap.style.width) { layoutStrategyPanel(); return; }
   ui.layoutKey = layoutKey;
   const sq = Math.max(16, Math.min(170,
     Math.floor(availW / st.W),
@@ -2278,6 +2278,24 @@ function layoutBoard() {
     panel.style.height = '';
   }
   document.documentElement.style.setProperty('--sq', sq + 'px');
+  layoutStrategyPanel();
+}
+
+function layoutStrategyPanel() {
+  const panel = $('#stratInfoPanel');
+  const board = $('#boardWrap');
+  const shell = $('#gameShell');
+  if (!panel) return;
+  if (!ui.strategy || window.innerWidth < 1000 || !board || !shell) {
+    panel.style.marginTop = '';
+    panel.style.height = '';
+    return;
+  }
+  const sr = shell.getBoundingClientRect();
+  const br = board.getBoundingClientRect();
+  const padTop = parseFloat(getComputedStyle(shell).paddingTop) || 0;
+  panel.style.marginTop = Math.max(0, br.top - sr.top - padTop) + 'px';
+  panel.style.height = br.height + 'px';
 }
 
 function buildSquares() {
