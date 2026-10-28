@@ -325,6 +325,11 @@ const MODES = [
     W: 8, H: 8, flags: { clashBrawl: true, kingFree: true, customDeploy: true },
   },
   {
+    id: 'zombie', n: 60, name: 'Зомби-апокалипсис', icon: '🧟',
+    desc: 'Белые — медики, чёрные — зелёные зомби. Зомби не едят, а обращают фигуры и заражают соседние клетки за 3 секунды. Съешь чужого короля!',
+    W: 8, H: 8, flags: { classic: true, zombie: true },
+  },
+  {
     id: 'royalBattle', n: 59, name: 'Королевская битва', icon: '👑',
     desc: 'Карта сжимается каждые 6 полуходов, снаружи фигуры ломаются с шансом 90%, а на ход — 5 секунд. Остаться последним королём!',
     W: 8, H: 8, flags: { classic: true, royalBattle: true },
@@ -954,7 +959,8 @@ function pushPawnAdvance(out, st, from, to, ny, extra = {}) {
       out.push({ from, to, vanish: true, capture: st.board[to] ? to : null, ...extra });
       return;
     }
-    for (const promo of ['q', 'r', 'b', 'n']) {
+    const promos = st.flags.zombie ? ['q'] : ['q', 'r', 'b', 'n'];
+    for (const promo of promos) {
       out.push({ from, to, promo, capture: st.board[to] ? to : null, ...extra });
     }
     return;
@@ -1157,10 +1163,34 @@ function applyMove(st, m) {
     }
     let placed = p;
     if (m.vanish) placed = null;
-    else if (m.promo) placed = { ...p, t: m.promo, used: 0 };
+    else if (m.promo) {
+      placed = { ...p, t: m.promo, used: 0 };
+      if (st.flags.zombie) placed.special = p.c === 'w' ? 'redqueen' : 'bluequeen';
+    }
     else if ((m.kingStep && st.flags.bishopKing) || p.t === 'j') placed = { ...p, used: p.used + 1 };
     if (placed) board[m.to] = placed;
   }
+  if (st.flags.zombie && p.c === 'b' && capturedColor === 'w') {
+    const victim = undo.removed.find((r) => r.piece && r.piece.c === 'w' && r.piece.t !== 'k');
+    if (victim) {
+      const x = fileOf(st, m.to);
+      const y = rankOf(st, m.to);
+      const spots = [];
+      for (const [dx, dy] of QUEEN_DIRS) {
+        const nx = x + dx, ny = y + dy;
+        if (!inside(st, nx, ny)) continue;
+        const s = sqAt(st, nx, ny);
+        if (!board[s]) spots.push(s);
+      }
+      if (spots.length) {
+        const target = spots[Math.floor(Math.random() * spots.length)];
+        board[target] = { ...victim.piece, c: 'b', used: 0, zombie: true, special: undefined };
+        st.converted = target;
+        undo.convertedPiece = { sq: target, piece: board[target] };
+      }
+    }
+  }
+
   const takenNow = undo.removed.filter((r) => r.piece && r.piece.c !== p.c).length;
   undo.capsBefore = { w: st.caps.w, b: st.caps.b };
   if (takenNow) st.caps[p.c] = (st.caps[p.c] || 0) + takenNow;

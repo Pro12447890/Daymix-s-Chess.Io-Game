@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261028-16">
+  <link rel="stylesheet" href="style.css?v=20261028-17">
 </head>
 <body>
 
@@ -344,7 +344,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-16 · Королевская битва</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-17 · Зомби-апокалипсис</div>
           </div>
         </div>
       </div>
@@ -431,6 +431,11 @@
                 <div class="promo-row" id="promoRow"></div>
               </div>
             </div>
+          </div>
+
+          <div class="zombie-hud hidden" id="zombieHud">
+            <span>🧟 <b id="zombieCount">0</b></span>
+            <span id="zombieNext">нет заражений</span>
           </div>
 
           <div class="royal-hud hidden" id="royalHud">
@@ -749,6 +754,16 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261028-16"></script>
+<script src="app.js?v=20261028-17"></script>
+  <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
+    <div class="zi-side zi-left">
+      <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>
+    </div>
+    <div class="zi-vs">VS</div>
+    <div class="zi-side zi-right">
+      <span>🧟</span><span>🧟‍♂️</span><span>🧟</span><span>🧟‍♀️</span><span>🧟</span>
+    </div>
+    <div class="zi-title" id="zombieIntroTitle">МЕДИКИ ПРОТИВ ЗОМБИ</div>
+  </div>
 </body>
 </html>

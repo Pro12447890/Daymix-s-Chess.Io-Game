@@ -998,7 +998,7 @@ const MODE_SHORT = {
   noQueen7: 'Семёрка', swapRows: 'Пешки', blackFirst: 'Чёрные', inverted: 'Вверх',
   losAlamos: '6×6', berolina: 'Беролина', checkless: 'Без шахов', raceKings: 'Гонки', andernach: 'Андернах',
   pawnBack: 'Назад', kingKnight: 'Король-конь', queenLose: 'Ферзь', weakKnights: 'Кони',
-  castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно', clashBrawl: 'Brawl', royalBattle: 'Битва',
+  castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно', clashBrawl: 'Brawl', royalBattle: 'Битва', zombie: 'Зомби',
 };
 
 const MODE_EN = {
@@ -1597,7 +1597,7 @@ const MODE_CATS = {
   popular: ['classic', 'fischer', 'threeChecks', 'kingCapture'],
   pieces: ['jester', 'boy', 'queens', 'pawnField', 'pawnFieldQ', 'knights', 'rooks', 'bishops'],
   chaos: ['explode', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center'],
-  mini: ['royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
+  mini: ['zombie', 'royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
 };
 
 function modesByFilter(filter) {
@@ -1614,7 +1614,7 @@ const MODE_GROUP = {
   explode: 3, fog: 3, race: 3, kingOnly: 3, queenPierce: 3, bishopKing: 3, crossCastle: 3,
   touchMove: 3, openIntent: 3, horde: 3, antichess: 3,
   noQueen7: 1, swapRows: 2, blackFirst: 1, inverted: 2, pawnBack: 2, kingKnight: 1,
-  queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3, clashBrawl: 3, royalBattle: 3,
+  queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3, clashBrawl: 3, royalBattle: 3, zombie: 3,
   losAlamos: 2, berolina: 2, checkless: 2, raceKings: 2, andernach: 3,
 };
 const GROUP_TITLES = {
@@ -2084,6 +2084,7 @@ function showScreen(name) {
     if (ui.st && ui.st.flags.clashBrawl) document.documentElement.dataset.brawl = '0';
     if (ui.st && ui.st.flags.infernal) document.documentElement.dataset.infernal = '0';
     if (ui.st && ui.st.flags.royalBattle) document.documentElement.dataset.royal = '0';
+    if (ui.st && ui.st.flags.zombie) document.documentElement.dataset.zombie = '0';
     if (activeGame && ui.bot) hardStopBotGame();
     else if (activeGame && !ui.away) suspendGame();
     document.body.classList.remove('flip-all');
@@ -2092,6 +2093,7 @@ function showScreen(name) {
     if (ui.st && ui.st.flags.clashBrawl) document.documentElement.dataset.brawl = '1';
     if (ui.st && ui.st.flags.infernal) document.documentElement.dataset.infernal = '1';
     if (ui.st && ui.st.flags.royalBattle) document.documentElement.dataset.royal = '1';
+    if (ui.st && ui.st.flags.zombie) document.documentElement.dataset.zombie = '1';
     if (ui.rotated) document.body.classList.add('flip-all');
     if (ui.away) resumeGame();
   }
@@ -2270,6 +2272,7 @@ function renderSquares() {
     if (i === checkSq) cls.push('check');
     if (st.blocked.includes(i)) cls.push('blocked');
     if (ui.brawl && brawlCanDeploy(i, st.turn)) cls.push('brawl-deploy');
+    if (ui.zombie && ui.zombie.infect[i]) cls.push('zombie-threat');
     if (ui.royal) {
       const rx = i % st.W;
       const ry = Math.floor(i / st.W);
@@ -2318,7 +2321,7 @@ function renderPieces(animate) {
       layer.appendChild(el);
       ui.pieceNodes.set(p.id, el);
     }
-    el.className = `piece ${p.c === 'w' ? 'w' : 'b'} t-${p.t}${p.gold ? ' gold' : ''}`;
+    el.className = `piece ${p.c === 'w' ? 'w' : 'b'} t-${p.t}${p.gold ? ' gold' : ''}${p.special ? ' ' + p.special : ''}`;
     const typeKey = p.t + '|' + p.c + '|' + (p.used || 0);
     if (el.dataset.tk !== typeKey) {
       el.innerHTML = pieceSvg(p.t);
@@ -2656,6 +2659,150 @@ function autoBrawlDraft() {
 
 
 /* ═══════════════════ 12.7. КОРОЛЕВСКАЯ БИТВА ═══════════════════ */
+
+
+/* ═══════════════════ 12.8. ЗОМБИ-АПОКАЛИПСИС ═══════════════════ */
+
+function zombieInit(st) {
+  stopZombie();
+  ui.zombie = { infect: {}, timer: 0, lastScan: 0 };
+  document.documentElement.dataset.zombie = '1';
+  $('#zombieHud').classList.remove('hidden');
+  showZombieIntro('intro');
+  clearInterval(ui.zombie.timer);
+  ui.zombie.timer = setInterval(zombieTick, 100);
+  zombieScan();
+}
+
+function stopZombie(hideIntro = true) {
+  if (ui.zombie && ui.zombie.timer) clearInterval(ui.zombie.timer);
+  if (ui.zombie && ui.zombie.introTimer) clearTimeout(ui.zombie.introTimer);
+  ui.zombie = null;
+  document.documentElement.dataset.zombie = '0';
+  const hud = $('#zombieHud');
+  if (hud) hud.classList.add('hidden');
+  if (hideIntro) {
+    const intro = $('#zombieIntro');
+    if (intro) intro.classList.add('hidden');
+  }
+}
+
+function showZombieIntro(kind, res) {
+  const el = $('#zombieIntro');
+  if (!el) return;
+  const title = $('#zombieIntroTitle');
+  const en = profile.language === 'en';
+  let text = en ? 'MEDICS VS ZOMBIES' : 'МЕДИКИ ПРОТИВ ЗОМБИ';
+  let rev = false;
+  if (kind === 'outro' && res) {
+    if (res.winner === 'w') text = en ? 'MEDICS WIN' : 'МЕДИКИ ПОБЕДИЛИ';
+    else if (res.winner === 'b') { text = en ? 'ZOMBIES WIN' : 'ЗОМБИ ПОБЕДИЛИ'; rev = true; }
+    else text = en ? 'DRAW' : 'НИЧЬЯ';
+  }
+  if (title) title.textContent = text;
+  el.classList.toggle('rev', rev);
+  el.classList.remove('hidden');
+  clearTimeout(showZombieIntro.timer);
+  showZombieIntro.timer = setTimeout(() => el.classList.add('hidden'), 2200);
+}
+
+function zombieNeighbors(st, sq) {
+  const x = sq % st.W;
+  const y = Math.floor(sq / st.W);
+  const out = [];
+  for (const [dx, dy] of ROOK_DIRS) {
+    const nx = x + dx, ny = y + dy;
+    if (!inside(st, nx, ny)) continue;
+    out.push(sqAt(st, nx, ny));
+  }
+  return out;
+}
+
+function zombieScan() {
+  if (!ui.zombie || !ui.st || ui.st.status !== 'play') return;
+  const st = ui.st;
+  const now = performance.now();
+  const next = {};
+  for (let i = 0; i < st.board.length; i++) {
+    const p = st.board[i];
+    if (!p || p.c !== 'w') continue;
+    const enemies = zombieNeighbors(st, i).map((s) => st.board[s]).filter((q) => q && q.c === 'b');
+    if (!enemies.length) continue;
+    let delay = 3000;
+    if (p.special === 'redqueen') delay = 6000;
+    if (enemies.some((q) => q.special === 'bluequeen')) delay = Math.min(delay, 1500);
+    const old = ui.zombie.infect[i];
+    next[i] = old || { deadline: now + delay };
+  }
+  ui.zombie.infect = next;
+  renderZombieHud();
+}
+
+function zombieTick() {
+  if (!ui.zombie || !ui.st || ui.st.status !== 'play') return;
+  if (ui.paused || ui.away || ui.gameLocked || ui.screen !== 'game') {
+    for (const key of Object.keys(ui.zombie.infect)) ui.zombie.infect[key].deadline += 100;
+    return;
+  }
+  const now = performance.now();
+  if (now - ui.zombie.lastScan > 300) {
+    ui.zombie.lastScan = now;
+    zombieScan();
+  }
+  for (const [key, item] of Object.entries(ui.zombie.infect)) {
+    if (item.deadline > now) continue;
+    const sq = Number(key);
+    const p = ui.st.board[sq];
+    if (!p || p.c !== 'w') { delete ui.zombie.infect[key]; continue; }
+    const still = zombieNeighbors(ui.st, sq).some((s) => {
+      const q = ui.st.board[s];
+      return q && q.c === 'b';
+    });
+    if (!still) { delete ui.zombie.infect[key]; continue; }
+    ui.st.board[sq] = { ...p, c: 'b', used: 0, zombie: true, special: undefined };
+    delete ui.zombie.infect[key];
+    if (p.t === 'k') ui.st.capturedKing = 'w';
+    zombieConvertFx(sq);
+    toast('🧟 Фигура заражена и стала зомби');
+    renderAll(false);
+    const res = updateStatus(ui.st);
+    if (res) finishGame(res);
+    else zombieScan();
+  }
+  renderZombieHud();
+}
+
+function zombieAfterMove() {
+  if (!ui.zombie || !ui.st || ui.st.status !== 'play') return;
+  zombieScan();
+  renderZombieHud();
+}
+
+function renderZombieHud() {
+  if (!ui.zombie || !ui.st) return;
+  const keys = Object.keys(ui.zombie.infect);
+  const count = $('#zombieCount');
+  if (count) count.textContent = String(keys.length);
+  const next = $('#zombieNext');
+  if (next) {
+    let min = Infinity;
+    for (const key of keys) min = Math.min(min, ui.zombie.infect[key].deadline);
+    next.textContent = keys.length ? `заражение через ${Math.max(0, (min - performance.now()) / 1000).toFixed(1)} с` : 'нет заражений';
+  }
+}
+
+function zombieConvertFx(sq) {
+  const layer = $('#brawlLayer');
+  if (!layer || !ui.st) return;
+  const { dx, dy } = disp(ui.st, sq);
+  const el = document.createElement('span');
+  el.className = 'zombie-burst';
+  el.textContent = '🧟';
+  el.style.left = ((dx + 0.5) * ui.sq) + 'px';
+  el.style.top = ((dy + 0.5) * ui.sq) + 'px';
+  layer.appendChild(el);
+  setTimeout(() => el.remove(), 900);
+}
 
 function royalInit(st) {
   stopRoyal();
@@ -3239,6 +3386,8 @@ function newGame(opts = {}) {
   if (mode.flags.clashBrawl) { ui.timeMs = 0; ui.clocks = { w: 0, b: 0 }; initBrawl(ui.st); }
   else if (mode.flags.royalBattle) royalInit(ui.st);
   else stopRoyal();
+  if (mode.flags.zombie) zombieInit(ui.st);
+  else stopZombie();
   ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
   if ((opts.mode || 'local') === 'local' && !opts.bot && !mode.flags.inverted) ui.orientation = 'w';
   ui.mode = opts.mode || 'local';
@@ -3451,6 +3600,7 @@ function renderAll(animate) {
   updateNav();
   renderCaptured();
   if (ui.royal) renderRoyalHud();
+  if (ui.zombie) renderZombieHud();
   if (ui.screen === 'settings') renderThemePreview();
   if (ui.brawl) { renderBrawlHp(); renderBrawl(); }
 }
@@ -3786,6 +3936,7 @@ function commitMove(m, opts = {}) {
     }
     renderMoves();
     if (ui.royal) setTimeout(royalAfterMove, 30);
+    if (ui.zombie) setTimeout(zombieAfterMove, 30);
     saveCurrentGame();
   }
 
@@ -3829,6 +3980,8 @@ function scoreGame(res, st) {
 
 function finishGame(res) {
   stopRaceClock();
+  if (ui.st && ui.st.flags.zombie) showZombieIntro('outro', res);
+  stopZombie(false);
   stopRoyal();
   try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
   ui.running = false;
@@ -5000,6 +5153,7 @@ function updateResumeFloat() {
 
 function leaveGame() {
   stopRoyal();
+  stopZombie();
   document.body.classList.remove('flip-all');
   const boardLeave = $('#board');
   if (boardLeave) boardLeave.classList.remove('board-rotated');
@@ -5505,7 +5659,7 @@ function boot() {
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
-    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft,
+    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink,
     captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),
