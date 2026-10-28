@@ -3369,3 +3369,8 @@ html[data-brawl="1"] .clock { display: none !important; }
   .home-nick { width: min(130px, 34vw); }
   .home-profile-edit em { display: none; }
 }
+
+
+/* предпросмотр: фигуры используют выбранный набор, но не ломают сетку */
+.tp-piece.piece { transition: none; will-change: auto; padding: 0; }
+.tp-piece.piece .pc-svg { width: 100%; height: 100%; }

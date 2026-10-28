@@ -1443,6 +1443,7 @@ function setTheme(id) {
   document.documentElement.dataset.theme = id;
   $$('.swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === id));
   renderPreview();
+  renderThemePreview();
   saveProfile();
 }
 
@@ -1466,7 +1467,7 @@ function renderThemePreview() {
     if (!p) continue;
     const x = i % W;
     const y = Math.floor(i / W);
-    pieces += `<span class="tp-piece" style="left:${((x + 0.5) / W) * 100}%;top:${((y + 0.5) / H) * 100}%;width:${100 / W}%;height:${100 / H}%;color:${p.c === 'w' ? '#fff' : '#1b1b1b'}">${pieceSvg(p.t)}</span>`;
+    pieces += `<span class="tp-piece piece ${p.c === 'w' ? 'w' : 'b'}" style="left:${((x + 0.5) / W) * 100}%;top:${((y + 0.5) / H) * 100}%;width:${100 / W}%;height:${100 / H}%">${pieceSvg(p.t)}</span>`;
   }
   box.innerHTML = `<div class="tp-board" style="grid-template-columns:repeat(${W},1fr);aspect-ratio:${W}/${H}">${cells}${pieces}</div>
   <div class="tp-caption">${theme.name} · ${PIECE_SKINS.find((s) => s.id === profile.pieces)?.name || 'Классика'}</div>`;
@@ -1478,6 +1479,7 @@ function setPieces(id) {
   document.documentElement.dataset.pieces = profile.pieces;
   applySkin();
   $$('.pset').forEach((b) => b.classList.toggle('active', b.dataset.pieces === profile.pieces));
+  renderThemePreview();
   saveProfile();
   closeSkinModal();
 }
