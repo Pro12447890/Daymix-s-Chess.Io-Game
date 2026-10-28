@@ -1806,6 +1806,7 @@ function renderProfilePop() {
       b.addEventListener('click', () => {
         profile.avatar = a;
         saveProfile(true);
+        renderProfile();
         renderProfilePop();
       });
       box.appendChild(b);
@@ -1826,6 +1827,7 @@ function saveHomeNick() {
   input.value = name;
   input.blur();
   saveProfile(true);
+  renderProfile();
   toast(profile.language === 'en' ? 'Name saved' : 'Имя сохранено');
 }
 
@@ -1835,6 +1837,7 @@ function saveProfileName() {
   const name = input.value.trim().slice(0, 18) || 'Игрок';
   profile.name = name;
   saveProfile(true);
+  renderProfile();
   toast('Имя сохранено');
 }
 
