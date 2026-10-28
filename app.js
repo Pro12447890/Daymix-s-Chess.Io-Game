@@ -2667,6 +2667,10 @@ function strategyTerritory() {
   const s = st && st.strategy;
   if (!s) return {};
   const map = {};
+  for (let i = 0; i < st.board.length; i++) {
+    const y = Math.floor(i / st.W);
+    map[i] = y < Math.ceil(st.H / 2) ? 'w' : 'b';
+  }
   const ownNear = (sq, color, source) => {
     const x = sq % st.W;
     const y = Math.floor(sq / st.W);
@@ -2955,21 +2959,25 @@ function strategyNuke(sq) {
   const board = $('#board');
   const layer = $('#brawlLayer');
   if (!board || !layer || !ui.st) return;
+  const dark = document.createElement('div');
+  dark.className = 'strat-nuke-dark';
+  board.appendChild(dark);
+  setTimeout(() => dark.remove(), 800);
   const flash = document.createElement('div');
   flash.className = 'strat-flash';
   board.appendChild(flash);
   setTimeout(() => flash.remove(), 500);
   const x = sq % ui.st.W;
   const y = Math.floor(sq / ui.st.W);
-  for (let dy = -2; dy <= 2; dy++) {
-    for (let dx = -2; dx <= 2; dx++) {
+  const br = board.getBoundingClientRect();
+  for (let dy = -3; dy <= 3; dy++) {
+    for (let dx = -3; dx <= 3; dx++) {
       const nx = x + dx, ny = y + dy;
       if (!inside(ui.st, nx, ny)) continue;
       const cell = sqAt(ui.st, nx, ny);
       const src = ui.squareEls[cell];
       if (!src) continue;
       const rect = src.getBoundingClientRect();
-      const br = board.getBoundingClientRect();
       const tile = document.createElement('div');
       tile.className = 'strat-tile';
       tile.style.left = (rect.left - br.left) + 'px';
@@ -2977,12 +2985,25 @@ function strategyNuke(sq) {
       tile.style.width = rect.width + 'px';
       tile.style.height = rect.height + 'px';
       tile.style.background = getComputedStyle(src).backgroundColor;
-      tile.style.setProperty('--tx', (Math.random() * 120 - 60) + 'px');
-      tile.style.setProperty('--ty', (-40 - Math.random() * 90) + 'px');
-      tile.style.setProperty('--rz', (Math.random() * 100 - 50) + 'deg');
+      tile.style.setProperty('--tx', (dx * 20 + (Math.random() * 160 - 80)) + 'px');
+      tile.style.setProperty('--ty', (-60 - Math.random() * 160) + 'px');
+      tile.style.setProperty('--rz', (Math.random() * 180 - 90) + 'deg');
       layer.appendChild(tile);
-      setTimeout(() => tile.remove(), 1000);
+      setTimeout(() => tile.remove(), 1350);
     }
+  }
+  for (let i = 0; i < 26; i++) {
+    const shard = document.createElement('span');
+    shard.className = 'strat-shard';
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 60 + Math.random() * 180;
+    shard.style.left = strategyCellXY(sq).x + 'px';
+    shard.style.top = strategyCellXY(sq).y + 'px';
+    shard.style.setProperty('--tx', Math.cos(ang) * dist + 'px');
+    shard.style.setProperty('--ty', Math.sin(ang) * dist - 40 + 'px');
+    shard.style.setProperty('--c', i % 2 ? '#30d5ff' : '#f5fbff');
+    layer.appendChild(shard);
+    setTimeout(() => shard.remove(), 1000);
   }
   board.classList.remove('shake-2');
   void board.offsetWidth;

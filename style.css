@@ -3547,8 +3547,8 @@ html[data-strategy="1"] { --light: #e6edf7 !important; --dark: #33415c !importan
   left: 50%; top: 50%; transform: translate(-50%,-50%);
   background: #ffd45e; box-shadow: 0 0 10px #ffd45e, 0 0 0 3px #1e2a16; z-index: 20;
 }
-.sq.strat-w { background-image: linear-gradient(#3b6fd966, #3b6fd966) !important; }
-.sq.strat-b { background-image: linear-gradient(#b33a3a66, #b33a3a66) !important; }
+.sq.strat-w { background-image: linear-gradient(#4a86ffb8, #4a86ffb8) !important; }
+.sq.strat-b { background-image: linear-gradient(#c62828c9, #c62828c9) !important; }
 .hp-badge {
   position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%);
   z-index: 15; padding: 0 3px; border-radius: 4px; background: #0a0e16dd;
@@ -3614,13 +3614,19 @@ html[data-strategy="1"] #bottomClock, html[data-strategy="1"] #bottomLink { disp
 }
 @keyframes stratFlash { 0% { opacity: .95; } 100% { opacity: 0; } }
 .strat-tile {
-  position: absolute; z-index: 75; pointer-events: none; opacity: .85;
-  animation: stratTile 1s cubic-bezier(.2,.8,.3,1) forwards;
-  box-shadow: 0 0 18px #ffd45e88;
+  position: absolute; z-index: 75; pointer-events: none; opacity: 1;
+  animation: stratTile 1.2s cubic-bezier(.15,.75,.25,1) forwards;
+  box-shadow: 0 0 0 2px #fff, 0 0 24px #30d5ffaa;
+  filter: brightness(1.25);
 }
+.strat-nuke-dark { position: absolute; inset: 0; z-index: 72; background: #000c; pointer-events: none; animation: nukeDark .8s ease-out forwards; }
+@keyframes nukeDark { 0% { opacity: 1; } 100% { opacity: 0; } }
+.strat-shard { position: absolute; z-index: 78; width: 14px; height: 14px; background: var(--c, #fff); clip-path: polygon(50% 0, 100% 100%, 0 70%); transform: translate(-50%,-50%); animation: shardFly 1s ease-out forwards; pointer-events: none; }
+@keyframes shardFly { 0% { opacity: 1; transform: translate(-50%,-50%) rotate(0) scale(1); } 100% { opacity: 0; transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) rotate(220deg) scale(.4); } }
 @keyframes stratTile {
-  0% { transform: translate(0,0) rotateX(0) rotateZ(0) scale(1); opacity: .9; }
-  100% { transform: translate(var(--tx), var(--ty)) rotateX(75deg) rotateZ(var(--rz)) scale(.35); opacity: 0; }
+  0% { transform: translate(0,0) rotateX(0) rotateZ(0) scale(1); opacity: 1; }
+  55% { opacity: 1; }
+  100% { transform: translate(var(--tx), var(--ty)) rotateX(65deg) rotateZ(var(--rz)) scale(.75); opacity: 0; }
 }
 .sq.strat-mine { box-shadow: inset 0 0 0 3px #66d9ff, inset 0 0 20px #66d9ffaa !important; animation: minePulse 1s infinite alternate; }
 @keyframes minePulse { from { filter: brightness(1); } to { filter: brightness(1.45); } }
