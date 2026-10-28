@@ -1665,7 +1665,11 @@ function renderModesGrid(filter) {
   const appendGrid = (parent, items) => {
     const grid = document.createElement('div');
     grid.className = 'modes-grid grouped';
-    for (const m of items) grid.appendChild(makeModeCard(m, mode));
+    items.forEach((m, i) => {
+    const card = makeModeCard(m, mode);
+    card.style.setProperty('--i', String(Math.min(i, 10)));
+    grid.appendChild(card);
+  });
     parent.appendChild(grid);
   };
   if (mode === 'all') {
@@ -1698,7 +1702,7 @@ function renderStats() {
   $('#statsGrid').innerHTML = [
     ['Партий', total], ['Побед', s.wins], ['Ничьих', s.draws], ['Поражений', s.losses],
     ['Процент побед', rate + '%'], ['Мат', s.mates], ['По времени', s.timeWins], ['Лучшая серия', s.best],
-  ].map(([k, v]) => `<div class="stat-cell"><b>${v}</b><span>${k}</span></div>`).join('');
+  ].map(([k, v], i) => `<div class="stat-cell" style="--i:${Math.min(i, 10)}"><b>${v}</b><span>${k}</span></div>`).join('');
 
   const box = $('#historyList');
   if (!profile.history.length) {
@@ -2494,6 +2498,7 @@ function renderBrawl() {
       b.type = 'button';
       b.className = 'brawl-card' + (ui.brawl.selected === index ? ' selected' : '') + (elixir < card.cost ? ' disabled' : '');
       b.style.color = color === 'w' ? '#ffffff' : '#9fc6ff';
+      b.style.setProperty('--i', String(index));
       b.innerHTML = `<span class="brawl-card-cost">${card.cost}</span>${pieceSvg(card.t, 'brawl-pc')}<span class="brawl-card-name">${BRAWL_NAME[card.t]}</span>`;
       b.addEventListener('pointerdown', (e) => brawlCardDragStart(e, index));
       b.addEventListener('click', () => {

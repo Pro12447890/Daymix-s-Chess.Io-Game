@@ -3228,3 +3228,84 @@ html[data-brawl="1"] .clock { display: none !important; }
 .bbm-card p { margin: 0 0 12px; color: #9fc6ff; font-size: 12px; }
 .bbm-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
 .bbm-row .brawl-card { width: 64px; height: 82px; }
+
+
+/* ═══ приятные анимации меню (transform/opacity, без тяжёлых фильтров) ═══ */
+@keyframes screenFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes menuUp { from { opacity: 0; transform: translateY(10px) scale(.995); } to { opacity: 1; transform: none; } }
+@keyframes cardIn { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes statPop { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: none; } }
+@keyframes modalPop { from { opacity: 0; transform: translateY(12px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes dealIn { from { opacity: 0; transform: translateY(16px) rotate(-4deg) scale(.9); } to { opacity: 1; transform: none; } }
+
+.screen.active:not(#screen-game) { animation: screenFade .26s cubic-bezier(.2,.8,.2,1) both; }
+.screen.active:not(#screen-game) .wide-card { animation: menuUp .3s cubic-bezier(.2,.8,.2,1) both; }
+.home-head { animation: menuUp .3s cubic-bezier(.2,.8,.2,1) both; }
+.home-card { animation: menuUp .34s cubic-bezier(.2,.8,.2,1) .04s both; }
+.home-card > .mode-pick,
+.home-card > .time-head,
+.home-card > .time-groups,
+.home-card > .quick-setup,
+.home-card > .play-actions,
+.home-card > .bot-row,
+.home-card > .fake-bots,
+.home-card > .home-foot { animation: menuUp .3s cubic-bezier(.2,.8,.2,1) both; }
+.home-card > .mode-pick { animation-delay: .05s; }
+.home-card > .time-head { animation-delay: .08s; }
+.home-card > .time-groups { animation-delay: .1s; }
+.home-card > .quick-setup { animation-delay: .12s; }
+.home-card > .play-actions { animation-delay: .14s; }
+.home-card > .bot-row { animation-delay: .16s; }
+.home-card > .fake-bots { animation-delay: .18s; }
+.home-card > .home-foot { animation-delay: .2s; }
+
+.mode-tile { animation: cardIn .3s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 18ms); }
+.mode-tile:hover { transform: translateY(-3px); border-color: var(--accent-green); }
+.modes-group-title { animation: menuUp .28s ease both; }
+
+.settings-grid .field { animation: menuUp .28s cubic-bezier(.2,.8,.2,1) both; }
+.stats-grid .stat-cell, #statsGrid .stat-cell { animation: statPop .28s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 30ms); }
+.online-box { transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.online-box:hover { transform: translateY(-2px); border-color: var(--line-light); }
+.sb-btn .sb-icon { transition: transform .18s cubic-bezier(.2,.8,.2,1); }
+.sb-btn:hover .sb-icon { transform: translateY(-1px) scale(1.12); }
+.sb-btn.active .sb-icon { transform: scale(1.08); }
+
+.btn, .btn-game-green, .time-item, .pset, .swatch, .bot-choice, .brawl-card, .side-pick {
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease;
+}
+.btn:active, .btn-game-green:active, .time-item:active, .pset:active, .swatch:active, .side-pick:active { transform: translateY(1px) scale(.985); }
+.pset:hover, .swatch:hover { transform: translateY(-2px) scale(1.03); }
+.bot-choice:hover { transform: translateY(-2px); border-color: var(--accent-green); }
+.time-item:hover { background: var(--panel-card-hover); }
+
+.modal:not(.hidden) .modal-card { animation: modalPop .26s cubic-bezier(.2,.8,.2,1) both; }
+.modal:not(.hidden) { animation: screenFade .18s ease both; }
+.result:not(.hidden) .result-card { animation: modalPop .32s cubic-bezier(.2,.8,.2,1) both; }
+#profilePop:not(.hidden) { animation: modalPop .2s cubic-bezier(.2,.8,.2,1) both; }
+#welcomeSetup { animation: modalPop .28s cubic-bezier(.2,.8,.2,1) both; }
+.welcome-lang b { transition: transform .18s ease; }
+.welcome-lang:hover b { transform: scale(1.06); }
+
+.brawl-card { animation: dealIn .3s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 55ms); }
+.theme-preview { transition: transform .2s ease, box-shadow .2s ease; }
+.theme-preview:hover { transform: translateY(-2px); box-shadow: 0 16px 34px #00000088; }
+
+@media (max-width: 999px) {
+  .screen.active:not(#screen-game) { animation-duration: .2s; }
+  .mode-tile { animation-duration: .22s; animation-delay: calc(var(--i, 0) * 10ms); }
+  .mode-tile:hover { transform: none; }
+  .home-card > .mode-pick, .home-card > .time-head, .home-card > .time-groups,
+  .home-card > .quick-setup, .home-card > .play-actions, .home-card > .bot-row,
+  .home-card > .fake-bots, .home-card > .home-foot { animation-delay: 0s; }
+  .pset:hover, .swatch:hover { transform: none; }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .screen.active, .screen.active .wide-card, .home-head, .home-card, .home-card > *,
+  .mode-tile, .modes-group-title, .settings-grid .field, .stat-cell, .brawl-card,
+  .modal:not(.hidden), .modal:not(.hidden) .modal-card, .result:not(.hidden) .result-card,
+  #welcomeSetup, #profilePop:not(.hidden) { animation: none !important; }
+  .mode-tile:hover, .pset:hover, .swatch:hover, .online-box:hover, .theme-preview:hover { transform: none !important; }
+}
