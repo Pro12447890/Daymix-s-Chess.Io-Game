@@ -2238,7 +2238,7 @@ function layoutBoard() {
   const brawlH = ui.st && ui.st.flags.clashBrawl ? (cinema ? 112 : 150) : 0;
   const barH = (phone
     ? (cinema ? 24 + 24 : 76 + 22 + 38)
-    : 96) + brawlH + (ui.strategy ? 128 : 0);   // фиксировано: доска не дёргается при взятии
+    : 96) + brawlH + (ui.strategy ? 46 : 0);   // фиксировано: доска не дёргается при взятии
   const gaps = 8;
   const shell = $('#gameShell');
   const panel = $('#sidePanel');
@@ -2246,7 +2246,9 @@ function layoutBoard() {
   const panelW = desk && panel ? panel.offsetWidth : 0;
   const padX = desk ? 32 : 0;
   const shellW = shell ? shell.clientWidth : stage.clientWidth;
-  const availW = Math.max(160, (desk ? shellW - padX - panelW - 22 : stage.clientWidth));
+  const infoPanel = $('#stratInfoPanel');
+  const infoW = ui.strategy && desk && infoPanel ? infoPanel.offsetWidth + 16 : 0;
+  const availW = Math.max(160, (desk ? shellW - padX - panelW - infoW - 22 : stage.clientWidth));
   const availH = Math.max(160, stage.clientHeight - barH - gaps);
   const layoutKey = `${availW}x${availH}x${st.W}x${st.H}`;
   if (ui.layoutKey === layoutKey && wrap.style.width) return;
