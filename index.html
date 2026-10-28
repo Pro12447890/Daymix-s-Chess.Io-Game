@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261028-4">
+  <link rel="stylesheet" href="style.css?v=20261028-5">
 </head>
 <body>
 
@@ -340,7 +340,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-4 · анимации меню</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-5 · драфт Clash Brawl</div>
           </div>
         </div>
       </div>
@@ -439,6 +439,17 @@
               </div>
             </div>
             <div class="brawl-deck" id="brawlDeck"></div>
+          </div>
+
+          <div class="brawl-draft hidden" id="brawlDraft">
+            <div class="bd-card">
+              <h2 id="bdTitle">Драфт колоды</h2>
+              <p id="bdStatus"></p>
+              <div class="bd-protected" id="bdProtected"></div>
+              <div class="bd-pool" id="bdPool"></div>
+              <div class="bd-decks" id="bdDecks"></div>
+              <button class="btn btn-sm hidden" id="bdDone" type="button">В бой!</button>
+            </div>
           </div>
 
           <div class="brawl-ban-modal hidden" id="brawlBanModal">
@@ -729,6 +740,6 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261028-4"></script>
+<script src="app.js?v=20261028-5"></script>
 </body>
 </html>

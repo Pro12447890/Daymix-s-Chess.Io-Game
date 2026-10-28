@@ -3309,3 +3309,19 @@ html[data-brawl="1"] .clock { display: none !important; }
   #welcomeSetup, #profilePop:not(.hidden) { animation: none !important; }
   .mode-tile:hover, .pset:hover, .swatch:hover, .online-box:hover, .theme-preview:hover { transform: none !important; }
 }
+
+
+/* драфт Clash Brawl */
+.brawl-draft { position: absolute; inset: 0; z-index: 300; display: grid; place-items: center; background: #04101ee6; padding: 10px; }
+.brawl-draft.hidden { display: none; }
+.bd-card { width: min(620px, 96vw); max-height: 92vh; overflow-y: auto; background: #162a4a; border: 2px solid #00d2ff; border-radius: 16px; padding: 16px; text-align: center; box-shadow: 0 0 40px #00d2ff44; }
+.bd-card h2 { margin: 0 0 4px; }
+.bd-card p { color: #9fc6ff; font-size: 12.5px; margin: 0 0 10px; min-height: 18px; }
+.bd-protected { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-bottom: 8px; font-size: 10.5px; color: #ffd700; }
+.bd-pool { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; }
+.bd-pool .brawl-card { width: 68px; height: 88px; }
+.bd-pool .brawl-card.protected { border-color: #ffd700; box-shadow: 0 0 14px #ffd70066; }
+.bd-pool .brawl-card.protected::before { content: '🛡'; position: absolute; top: -10px; right: -6px; font-size: 16px; }
+.bd-decks { display: flex; gap: 16px; justify-content: center; font-size: 11px; color: #bcd7ff; margin-bottom: 8px; }
+.bd-decks b { color: #fff; }
+#brawlBan { display: none !important; }

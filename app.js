@@ -222,6 +222,7 @@ function chooseBotMove(st, level) {
 
 function maybeBotTurn() {
   if (ui.paused || ui.away) return;
+  if (ui.brawl && ui.brawl.draft) return;
   if (!ui.bot || !ui.st || ui.st.status !== 'play' || ui.mode !== 'local') return;
   if (ui.st.turn !== ui.bot.color || ui.bot.busy) return;
   ui.bot.busy = true;
@@ -2421,6 +2422,186 @@ function brawlDeck() {
   return ['p', 'p', 'b', keep].map((type) => ({ t: type, cost: BRAWL_COST[type] }));
 }
 
+
+/* ─────────── драфт Clash Brawl: баны, пики, случайные цвета ─────────── */
+
+function brawlDraftPool() {
+  return ['p', 'p', 'b', 'n', 'r', 'q'].map((type, i) => ({
+    id: type + '-' + i + '-' + Math.random().toString(36).slice(2, 6),
+    t: type,
+  }));
+}
+
+function startBrawlDraft() {
+  const st = ui.st;
+  if (!st || !st.flags.clashBrawl) return;
+  const poolW = brawlDraftPool();
+  const poolB = brawlDraftPool();
+  const types = ['p', 'p', 'b', 'n', 'r', 'q'];
+  const protectCount = 1 + (Math.random() < 0.5 ? 1 : 0);
+  const protectedTypes = new Set();
+  while (protectedTypes.size < protectCount) {
+    protectedTypes.add(types[Math.floor(Math.random() * types.length)]);
+  }
+  const botColor = ui.bot ? (Math.random() < 0.5 ? 'w' : 'b') : null;
+  ui.brawl.draft = {
+    pools: { w: poolW, b: poolB },
+    protected: protectedTypes,
+    bans: { w: [], b: [] },
+    picks: { w: [], b: [] },
+    step: 'ban',
+    turn: 'w',
+    botColor,
+    done: false,
+  };
+  ui.brawl.decks = { w: [], b: [] };
+  ui.gameLocked = true;
+  $('#brawlDraft').classList.remove('hidden');
+  renderBrawlDraft();
+  if (botColor === 'w') setTimeout(draftBotTurn, 500);
+}
+
+function draftColorName(color) {
+  const en = profile.language === 'en';
+  return color === 'w' ? (en ? 'White' : 'Белые') : (en ? 'Black' : 'Чёрные');
+}
+
+function renderBrawlDraft() {
+  const d = ui.brawl && ui.brawl.draft;
+  if (!d) return;
+  const en = profile.language === 'en';
+  const color = d.turn;
+  const pick = d.step === 'pick';
+  const status = pick
+    ? (en ? `${draftColorName(color)} picks cards: ${d.picks[color].length}/4` : `${draftColorName(color)} выбирает карты: ${d.picks[color].length}/4`)
+    : (en ? `${draftColorName(color)} bans one piece` : `${draftColorName(color)} запрещает одну фигуру`);
+  $('#bdTitle').textContent = en ? 'Clash Brawl draft' : 'Драфт Clash Brawl';
+  $('#bdStatus').textContent = status;
+  const prot = $('#bdProtected');
+  if (prot) {
+    const names = [...new Set([...d.protected].map((t) => BRAWL_NAME[t]))];
+    prot.textContent = names.length
+      ? (en ? 'Protected this game: ' : 'Защищены в этой партии: ') + names.join(', ')
+      : '';
+  }
+  const pool = $('#bdPool');
+  if (pool) {
+    pool.innerHTML = '';
+    for (const card of d.pools[color]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'brawl-card' + (d.protected.has(card.t) ? ' protected' : '');
+      b.style.color = color === 'w' ? '#fff' : '#9fc6ff';
+      b.innerHTML = `<span class="brawl-card-cost">${BRAWL_COST[card.t]}</span>${pieceSvg(card.t, 'brawl-pc')}<span class="brawl-card-name">${BRAWL_NAME[card.t]}</span>`;
+      b.addEventListener('click', () => brawlDraftCard(card.id));
+      pool.appendChild(b);
+    }
+  }
+  const decks = $('#bdDecks');
+  if (decks) {
+    decks.innerHTML = ['w', 'b'].map((c) => `<span>${draftColorName(c)}: <b>${d.picks[c].map((t) => BRAWL_NAME[t]).join(' · ') || '—'}</b></span>`).join('');
+  }
+}
+
+function brawlDraftCard(id) {
+  const d = ui.brawl && ui.brawl.draft;
+  if (!d || d.done) return;
+  const color = d.turn;
+  const pool = d.pools[color];
+  const card = pool.find((c) => c.id === id);
+  if (!card) return;
+  if (d.step === 'ban') {
+    if (d.protected.has(card.t)) {
+      toast(profile.language === 'en' ? 'This piece is protected this game' : 'Эту фигуру нельзя запретить в этой партии');
+      return;
+    }
+    d.pools[color] = pool.filter((c) => c.id !== id);
+    d.bans[color].push(card.t);
+    if (color === 'w') {
+      d.turn = 'b';
+    } else {
+      d.step = 'pick';
+      d.turn = 'w';
+    }
+    renderBrawlDraft();
+    if (d.botColor === d.turn) setTimeout(draftBotTurn, 450);
+    return;
+  }
+  const np = d.picks[color].filter((t) => t === 'n' || t === 'r' || t === 'q').length;
+  if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && np >= 2) {
+    toast(profile.language === 'en' ? 'Only two non-pawn cards are allowed' : 'Можно выбрать только две не-пешки');
+    return;
+  }
+  d.pools[color] = pool.filter((c) => c.id !== id);
+  d.picks[color].push(card.t);
+  if (d.picks[color].length >= 4) {
+    if (color === 'w') d.turn = 'b';
+    else finishBrawlDraft();
+  }
+  renderBrawlDraft();
+  if (d.done) return;
+  if (d.botColor === d.turn) setTimeout(draftBotTurn, 450);
+}
+
+function draftBotTurn() {
+  const d = ui.brawl && ui.brawl.draft;
+  if (!d || d.done || d.botColor !== d.turn) return;
+  const color = d.turn;
+  const pool = d.pools[color];
+  const valid = pool.filter((card) => {
+    if (d.step === 'ban') return !d.protected.has(card.t);
+    const np = d.picks[color].filter((t) => t === 'n' || t === 'r' || t === 'q').length;
+    if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && np >= 2) return false;
+    return true;
+  });
+  if (!valid.length) return;
+  brawlDraftCard(valid[Math.floor(Math.random() * valid.length)].id);
+}
+
+function finishBrawlDraft() {
+  const d = ui.brawl && ui.brawl.draft;
+  if (!d) return;
+  d.done = true;
+  ui.brawl.decks.w = d.picks.w.map((t) => ({ t, cost: BRAWL_COST[t] }));
+  ui.brawl.decks.b = d.picks.b.map((t) => ({ t, cost: BRAWL_COST[t] }));
+  $('#brawlDraft').classList.add('hidden');
+  ui.brawl.draft = null;
+  ui.gameLocked = false;
+  if (d.botColor) {
+    ui.bot.color = d.botColor;
+    profile.side = other(d.botColor);
+    ui.orientation = other(d.botColor);
+  } else {
+    ui.orientation = Math.random() < 0.5 ? 'w' : 'b';
+  }
+  if (Math.random() < 0.5) ui.st.turn = 'b';
+  renderAll(false);
+  renderPlayers();
+  renderBrawl();
+  toast(profile.language === 'en' ? 'Draft complete — fight!' : 'Драфт завершён — в бой!');
+  if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
+}
+
+function autoBrawlDraft() {
+  const d = ui.brawl && ui.brawl.draft;
+  if (!d) return;
+  let guard = 0;
+  while (ui.brawl && ui.brawl.draft && guard < 40) {
+    const color = ui.brawl.draft.turn;
+    const pool = ui.brawl.draft.pools[color];
+    if (!pool || !pool.length) break;
+    const valid = pool.filter((card) => {
+      if (ui.brawl.draft.step === 'ban') return !ui.brawl.draft.protected.has(card.t);
+      const np = ui.brawl.draft.picks[color].filter((t) => t === 'n' || t === 'r' || t === 'q').length;
+      if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && np >= 2) return false;
+      return true;
+    });
+    if (!valid.length) break;
+    brawlDraftCard(valid[0].id);
+    guard += 1;
+  }
+}
+
 function initBrawl(st) {
   stopBrawl();
   ui.brawl = {
@@ -2452,6 +2633,8 @@ function initBrawl(st) {
 
 function stopBrawl() {
   if (ui.brawl && ui.brawl.timer) clearInterval(ui.brawl.timer);
+  const draftOverlay = $('#brawlDraft');
+  if (draftOverlay) draftOverlay.classList.add('hidden');
   ui.brawl = null;
   document.documentElement.dataset.brawl = '0';
   const panel = $('#brawlPanel');
@@ -2920,6 +3103,7 @@ function newGame(opts = {}) {
     if (ui.race) startRaceClock();
     if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
   }
+  if (mode.flags.clashBrawl && (opts.mode || 'local') === 'local') startBrawlDraft();
   updateNav();
 }
 
@@ -5051,7 +5235,7 @@ function boot() {
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
-    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm,
+    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft,
     captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),
