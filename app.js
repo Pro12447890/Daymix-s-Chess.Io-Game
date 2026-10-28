@@ -498,7 +498,7 @@ function fastRookWave(st, sq) {
 function showExtremeDiff(sq) {
   const stage = $('#stage');
   const wrap = $('#boardWrap');
-  if (!stage || !wrap) return;
+  if (!stage || !wrap || !ui.st) return;
   const br = wrap.getBoundingClientRect();
   const sr = stage.getBoundingClientRect();
   const badge = document.createElement('div');
@@ -508,6 +508,33 @@ function showExtremeDiff(sq) {
   badge.style.top = (br.top - sr.top + br.height * 0.16) + 'px';
   stage.appendChild(badge);
   setTimeout(() => badge.remove(), 1700);
+
+  /* Король лидера втягивает ауру частиц */
+  let leader = 'w';
+  try { leader = evaluateWhite(ui.st) >= 0 ? 'w' : 'b'; } catch (error) { leader = ui.st.turn; }
+  const kSq = findKing(ui.st, leader);
+  if (kSq < 0) return;
+  const king = ui.pieceNodes.get(ui.st.board[kSq] && ui.st.board[kSq].id);
+  if (king) {
+    king.classList.add('king-absorbing');
+    setTimeout(() => king.classList.remove('king-absorbing'), 1900);
+  }
+  const layer = $('#brawlLayer');
+  const target = disp(ui.st, kSq);
+  for (let i = 0; i < 18; i++) {
+    const el = document.createElement('span');
+    el.className = 'absorb-particle';
+    const rx = Math.floor(Math.random() * ui.st.W);
+    const ry = Math.floor(Math.random() * ui.st.H);
+    const from = disp(ui.st, sqAt(ui.st, rx, ry));
+    el.style.left = ((from.dx + .5) * ui.sq) + 'px';
+    el.style.top = ((from.dy + .5) * ui.sq) + 'px';
+    el.style.setProperty('--target-x', ((target.dx + .5) * ui.sq) + 'px');
+    el.style.setProperty('--target-y', ((target.dy + .5) * ui.sq) + 'px');
+    el.style.animationDelay = (Math.random() * .5) + 's';
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 1600);
+  }
 }
 
 function infernalJoke() {
@@ -2173,7 +2200,7 @@ function layoutBoard() {
   const brawlH = ui.st && ui.st.flags.clashBrawl ? (cinema ? 112 : 150) : 0;
   const barH = (phone
     ? (cinema ? 24 + 24 : 76 + 22 + 38)
-    : 96) + brawlH + (ui.strategy ? 220 : 0);   // фиксировано: доска не дёргается при взятии
+    : 96) + brawlH + (ui.strategy ? 128 : 0);   // фиксировано: доска не дёргается при взятии
   const gaps = 8;
   const shell = $('#gameShell');
   const panel = $('#sidePanel');
@@ -2528,10 +2555,13 @@ function strategyInit(st) {
   };
   for (const p of st.board) if (p) st.strategy.hp[p.id] = STRAT[p.t].hp;
   ui.strategy = st.strategy;
+  st.strategy.gold = { w: 30, b: 30 };
+  st.strategy.cap = 50;
   document.documentElement.dataset.strategy = '1';
-  $('#strategyHud').classList.remove('hidden');
   $('#strategyBar').classList.remove('hidden');
+  $('#stratInfoPanel').classList.remove('hidden');
   strategyDrawHand(st.turn);
+  strategyUpdateInfo(st.board.find((p) => p && p.c === 'w' && p.t === 'q') || st.board.find((p) => p && p.c === 'w'));
   st.strategy.radTimer = setInterval(strategyRadiationTick, 250);
   strategyRender();
 }
@@ -2540,10 +2570,10 @@ function stopStrategy() {
   if (ui.strategy && ui.strategy.radTimer) clearInterval(ui.strategy.radTimer);
   ui.strategy = null;
   document.documentElement.dataset.strategy = '0';
-  const hud = $('#strategyHud');
   const bar = $('#strategyBar');
-  if (hud) hud.classList.add('hidden');
   if (bar) bar.classList.add('hidden');
+  const info = $('#stratInfoPanel');
+  if (info) info.classList.add('hidden');
 }
 
 function strategyHp(p) {
@@ -2586,10 +2616,13 @@ function strategyDrawHand(color) {
   const types = [...new Set(ui.st.board.filter((p) => p && p.c === color).map((p) => p.t))];
   const hand = [];
   const addSupport = () => (Math.random() < 0.3 ? 'heal' : (Math.random() < 0.15 && s.gold[color] >= 50 ? 'shield' : null));
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     const support = addSupport();
-    if (support) hand.push({ kind: support });
-    else hand.push({ kind: 'piece', type: types[Math.floor(Math.random() * types.length)] || 'p' });
+    if (support) hand.push({ kind: support, cost: support === 'shield' ? 50 : 35 });
+    else {
+      const type = types[Math.floor(Math.random() * types.length)] || 'p';
+      hand.push({ kind: 'piece', type, cost: STRAT[type].atk });
+    }
   }
   s.hand = hand;
   s.selected = 1;
@@ -2610,6 +2643,10 @@ function strategyRender() {
   const gb = $('#stratGoldB');
   if (gw) gw.textContent = `${s.gold.w}/${s.cap}`;
   if (gb) gb.textContent = `${s.gold.b}/${s.cap}`;
+  const badgeW = $('#stratGoldBadgeW');
+  const badgeB = $('#stratGoldBadgeB');
+  if (badgeW) badgeW.classList.toggle('active', st.turn === 'w');
+  if (badgeB) badgeB.classList.toggle('active', st.turn === 'b');
   const phase = $('#stratPhase');
   if (phase) phase.textContent = st.turn === 'w' ? (s.phase === 'move' ? 'Ход белых' : 'Атака белых') : (s.phase === 'move' ? 'Ход чёрных' : 'Атака чёрных');
   strategyRenderCards();
@@ -2628,38 +2665,62 @@ function strategyRenderCards() {
   const s = ui.strategy;
   if (!box || !s) return;
   box.innerHTML = '';
-  s.hand.forEach((card, i) => {
+  s.hand.slice(0, 4).forEach((card, i) => {
     const el = document.createElement('button');
     el.type = 'button';
-    el.className = 'strat-card' + (i === s.selected ? ' sel' : '') + (card.kind === 'heal' ? ' heal' : card.kind === 'shield' ? ' shield' : '');
+    const cost = card.cost != null ? card.cost : (card.kind === 'piece' ? STRAT[card.type].atk : card.kind === 'shield' ? 50 : 35);
+    const locked = s.gold[ui.st.turn] < cost;
+    el.className = 'strat-card' + (i === s.selected ? ' sel' : '') + (card.kind === 'heal' ? ' heal' : card.kind === 'shield' ? ' shield' : '') + (locked ? ' locked' : '');
     if (card.kind === 'piece') {
       const meta = STRAT[card.type] || STRAT.p;
-      el.innerHTML = `<span class="sc-icon">${pieceSvg(card.type)}</span><span class="sc-name">${STRAT_NAMES[card.type] || card.type}</span><span class="sc-stats">${meta.hp} HP · ход ${meta.move} · атака ${meta.atk}</span>`;
+      el.innerHTML = `<span class="sc-icon">${pieceSvg(card.type)}</span><span class="sc-name">${STRAT_NAMES[card.type] || card.type}</span><span class="sc-stats">${meta.hp} HP · ${meta.move}/${meta.atk}</span><span class="strat-card-cost">${cost}💰</span>`;
     } else {
-      el.innerHTML = `<span class="sc-icon">${card.kind === 'heal' ? '💜' : '🛡'}</span><span class="sc-name">${card.kind === 'heal' ? 'Хилл' : 'Щит'}</span><span class="sc-stats">${card.kind === 'heal' ? '15–25 HP · ×1.5' : '+30 HP · 50 очков'}</span>`;
+      el.innerHTML = `<span class="sc-icon">${card.kind === 'heal' ? '💜' : '🛡'}</span><span class="sc-name">${card.kind === 'heal' ? 'Хилл' : 'Щит'}</span><span class="sc-stats">${card.kind === 'heal' ? '15–25 HP' : '+30 HP'}</span><span class="strat-card-cost">${cost}💰</span>`;
     }
     el.addEventListener('click', () => {
+      if (locked) { toast('Не хватает золота на эту карточку'); return; }
       s.selected = i;
       strategyRenderCards();
-      const info = $('#stratInfo');
-      if (info) info.textContent = card.kind === 'piece'
-        ? `${STRAT_NAMES[card.type]}: нажми на свою фигуру, чтобы открыть карточку.`
-        : (card.kind === 'heal' ? 'Выбери свою фигуру для лечения.' : 'Выбери свою фигуру для щита.');
     });
     box.appendChild(el);
   });
 }
 
+function strategyUpdateInfo(p) {
+  if (!p || !ui.st || !ui.st.strategy) return;
+  const meta = STRAT[p.t] || STRAT.p;
+  const f = $('#sipFaction');
+  if (f) f.textContent = ui.st.strategy.factions[p.c];
+  const glyph = $('#sipGlyph');
+  if (glyph) glyph.innerHTML = pieceSvg(p.t);
+  const name = $('#sipName');
+  if (name) name.textContent = STRAT_NAMES[p.t] || p.t;
+  const hp = $('#sipHp');
+  if (hp) hp.textContent = `${strategyHp(p)} / ${meta.hp} HP`;
+  const mc = $('#sipMoveCost');
+  if (mc) mc.textContent = String(meta.move);
+  const ac = $('#sipAtkCost');
+  if (ac) ac.textContent = String(meta.atk);
+  const dmg = $('#sipDmg');
+  if (dmg) dmg.textContent = p.t === 'q' ? '35–55' : String(meta.dmg);
+  const desc = $('#sipDesc');
+  if (desc) {
+    desc.textContent = p.t === 'n' ? 'Спецатака: мина на 3 хода, взрыв 25–35.'
+      : p.t === 'r' ? 'Спецатака: катапульта на 2–6 клеток, камень 30.'
+      : p.t === 'q' ? 'Спецатака: ракета по 8 направлениям, 35–55 и отбрасывание.'
+      : p.t === 'k' ? 'Спецатака: ядерка 150, разброс и радиация.'
+      : p.t === 'b' ? 'Атака: три шара — 8 и по 4 по бокам.'
+      : p.t === 'p' ? 'Атака: снаряд на 2 клетки (4, если не ходила).'
+      : 'Карточка фигуры.';
+  }
+}
+
 function strategyShowPieceCard(p) {
   const s = ui.strategy;
   if (!s || !p) return;
-  s.hand[s.selected] = { kind: 'piece', type: p.t };
+  s.hand[s.selected] = { kind: 'piece', type: p.t, cost: STRAT[p.t].atk };
   strategyRenderCards();
-  const info = $('#stratInfo');
-  if (info) {
-    const meta = STRAT[p.t];
-    info.textContent = `${STRAT_NAMES[p.t]}: ${strategyHp(p)}/${meta.hp} HP · ход ${meta.move} · атака ${meta.atk} · урон ${meta.dmg}.`;
-  }
+  strategyUpdateInfo(p);
 }
 
 function strategyTerritory() {
@@ -2811,6 +2872,7 @@ function strategyClick(sq) {
   if (!s || st.status !== 'play' || ui.gameLocked || ui.paused) return;
   if (ui.bot && st.turn === ui.bot.color) return;
   const p = st.board[sq];
+  if (p) strategyUpdateInfo(p);
 
   if (s.phase === 'attack') {
     if (p && p.c === st.turn) {

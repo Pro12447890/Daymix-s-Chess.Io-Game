@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261028-21">
+  <link rel="stylesheet" href="style.css?v=20261028-22">
 </head>
 <body>
 
@@ -344,7 +344,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-21 · территории и ядерка</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-22 · 3 колонки Стратегии</div>
           </div>
         </div>
       </div>
@@ -394,6 +394,24 @@
       <div class="game-shell" id="gameShell">
 
         <!-- ИГРОВОЙ СТОЛ (ПО ЦЕНТРУ) -->
+        <aside class="strategy-info-panel hidden" id="stratInfoPanel">
+          <div class="sip-card" id="sipCard">
+            <div class="sip-badge" id="sipFaction">WhiteTown</div>
+            <div class="sip-glyph" id="sipGlyph"></div>
+            <div class="sip-name" id="sipName">Ферзь</div>
+            <div class="sip-stats">
+              <div class="sip-stat"><span>Здоровье</span><b id="sipHp">75 HP</b></div>
+              <div class="sip-stat"><span>Цена хода</span><b id="sipMoveCost">35</b></div>
+              <div class="sip-stat"><span>Цена атаки</span><b id="sipAtkCost">57</b></div>
+              <div class="sip-stat"><span>Урон</span><b id="sipDmg">35–55</b></div>
+            </div>
+            <div class="sip-desc" id="sipDesc">Спецатака: ракета с отбрасыванием.</div>
+          </div>
+          <div class="sip-actions">
+            <button class="btn btn-sm btn-game-green" id="stratCap" type="button">+5 к лимиту (20)</button>
+          </div>
+        </aside>
+
         <div class="stage" id="stage">
           <div class="player-capsule top" id="barTop">
             <div class="pc-left">
@@ -412,6 +430,7 @@
                 </div>
               </div>
             </div>
+            <div class="strat-gold-badge" id="stratGoldBadgeB"><span id="stratFactionB">BlackTown</span>: <b id="stratGoldB">30/50</b></div>
             <div class="clock" id="topClock">—</div>
           </div>
 
@@ -433,24 +452,7 @@
             </div>
           </div>
 
-          <div class="strategy-hud hidden" id="strategyHud">
-            <span class="sh-faction" id="stratFactionW">WhiteTown</span>
-            <b class="sh-gold" id="stratGoldW">30</b>
-            <button class="sh-btn" id="stratX2" type="button">×2 доход</button>
-            <button class="sh-btn" id="stratPlus" type="button">+25%</button>
-            <span class="sh-phase" id="stratPhase">Ход</span>
-            <button class="sh-btn" id="stratSkipMove" type="button">Не ходить</button>
-            <button class="sh-btn" id="stratSkipAttack" type="button">Пропуск атаки</button>
-            <button class="sh-btn" id="stratCap" type="button">+5 лимит (20)</button>
-            <button class="sh-btn" id="stratSpecial" type="button">Спец</button>
-            <b class="sh-gold" id="stratGoldB">30</b>
-            <span class="sh-faction" id="stratFactionB">BlackTown</span>
-          </div>
 
-          <div class="strategy-bar hidden" id="strategyBar">
-            <div class="strat-cards" id="stratCards"></div>
-            <div class="strat-info" id="stratInfo"></div>
-          </div>
 
           <div class="zombie-hud hidden" id="zombieHud">
             <span>🧟 <b id="zombieCount">0</b></span>
@@ -511,7 +513,20 @@
                 </div>
               </div>
             </div>
+            <div class="strat-gold-badge" id="stratGoldBadgeW"><span id="stratFactionW">WhiteTown</span>: <b id="stratGoldW">30/50</b></div>
             <div class="clock" id="bottomClock">—</div>
+          </div>
+
+          <div class="strategy-bar hidden" id="strategyBar">
+            <div class="strat-toolbar">
+              <span class="sh-phase" id="stratPhase">Ход</span>
+              <button class="sh-btn" id="stratSkipMove" type="button">Не ходить (+10)</button>
+              <button class="sh-btn" id="stratSkipAttack" type="button">Пропуск атаки</button>
+              <button class="sh-btn" id="stratX2" type="button">×2 доход</button>
+              <button class="sh-btn" id="stratPlus" type="button">+25%</button>
+              <button class="sh-btn" id="stratSpecial" type="button">Спецатака</button>
+            </div>
+            <div class="strat-cards" id="stratCards"></div>
           </div>
 
           <div class="mobile-actions">
@@ -773,7 +788,7 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261028-21"></script>
+<script src="app.js?v=20261028-22"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>

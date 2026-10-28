@@ -3635,3 +3635,96 @@ html[data-strategy="1"] #bottomClock, html[data-strategy="1"] #bottomLink { disp
 @media (prefers-reduced-motion: reduce) {
   .strat-proj, .strat-ring, .strat-particle, .strat-flash, .strat-tile, .sq.strat-mine, .sq.strat-rad { animation-duration: .01s !important; }
 }
+
+
+/* ═══ Стратегия: 3 колонки, казна в плашках, карточки 4 шт. ═══ */
+.strat-gold-badge { display: none; }
+html[data-strategy="1"] .strat-gold-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #111a2e; border: 1px solid #ffd700; border-radius: 6px;
+  padding: 2px 7px; font-size: 11px; color: #ffd700; white-space: nowrap;
+}
+html[data-strategy="1"] .strat-gold-badge b { color: #fff; font-size: 12px; }
+html[data-strategy="1"] .game-shell {
+  display: grid !important;
+  grid-template-columns: 230px minmax(0, 1fr) 360px !important;
+  gap: 16px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 8px 12px !important;
+  box-sizing: border-box !important;
+  align-items: stretch !important;
+}
+html[data-strategy="1"] .stage { min-width: 0; width: 100%; }
+html[data-strategy="1"] .side-panel { justify-self: end; width: 100%; max-width: 360px; height: 100%; }
+html[data-strategy="1"] #barBottom { display: flex !important; }
+html[data-strategy="1"] #bottomClock { display: flex !important; }
+
+.strategy-info-panel {
+  display: none; flex-direction: column; gap: 10px; width: 100%;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 12px; box-sizing: border-box; align-self: start;
+}
+html[data-strategy="1"] .strategy-info-panel { display: flex; }
+.sip-card { background: var(--panel-card); border: 1px solid var(--line-light); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5px; }
+.sip-badge { font-size: 10px; font-weight: 800; color: #60a5fa; text-transform: uppercase; letter-spacing: 1px; }
+.sip-glyph { width: 64px; height: 64px; margin: 2px 0; }
+.sip-glyph svg { width: 100%; height: 100%; }
+.sip-name { font-size: 17px; font-weight: 800; color: #fff; }
+.sip-stats { width: 100%; display: flex; flex-direction: column; gap: 3px; margin: 4px 0; }
+.sip-stat { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
+.sip-stat b { color: #fff; }
+.sip-desc { font-size: 10.5px; color: var(--text-dim); line-height: 1.35; }
+.sip-actions .btn { width: 100%; }
+
+strategy-bar, .strategy-bar {
+  position: static !important; left: auto !important; bottom: auto !important; transform: none !important;
+  width: 100% !important; max-width: 620px; margin: 4px auto 0; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 6px 8px; border-radius: 12px; background: #0b1220ee; border: 1px solid #46618f;
+}
+.strategy-bar.hidden { display: none; }
+.strat-toolbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: center; }
+.strat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 100%; }
+.strat-card { width: 100%; min-height: 68px; opacity: .78; transform: none; position: relative; }
+.strat-card.sel { opacity: 1; border-color: #ffd45e; box-shadow: 0 0 12px #ffd45e55; }
+.strat-card.locked { opacity: .48; cursor: not-allowed; background: #18191c; border-color: #333; }
+.strat-card.locked::after { content: '🔒'; position: absolute; top: 3px; right: 5px; font-size: 13px; }
+.strat-card-cost { font-size: 9px; font-weight: 800; color: #ffd45e; }
+.strat-card .sc-stats { font-size: 8px; text-align: center; line-height: 1.15; }
+.strat-info { display: none; }
+.strategy-hud { display: none !important; }
+
+@media (max-width: 999px) {
+  html[data-strategy="1"] .game-shell { display: flex !important; flex-direction: column; padding: 4px !important; }
+  .strategy-info-panel { display: none !important; }
+  .strategy-bar { max-width: 100%; bottom: auto !important; margin-top: 2px; }
+  .strat-cards { gap: 4px; }
+  .strat-card { min-height: 54px; }
+  .strat-card .sc-icon { font-size: 16px; }
+  .strat-card .sc-name { font-size: 8px; }
+  .strat-card .sc-stats { font-size: 7px; }
+}
+
+
+/* компактные карточки Стратегии */
+.strat-card { height: 84px; min-height: 84px; max-height: 84px; overflow: hidden; }
+.strat-card .sc-icon { font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center; height: 26px; }
+.strat-card .sc-icon svg { width: 24px; height: 24px; display: block; }
+.strat-card .sc-name { font-size: 10px; line-height: 1.1; }
+.strat-card .sc-stats { font-size: 8px; line-height: 1.1; text-align: center; }
+.strat-card-cost { position: absolute; left: 4px; bottom: 2px; font-size: 8px; }
+
+
+/* поглощение ауры королём при Extreme Diff */
+.piece.king-absorbing { filter: drop-shadow(0 0 20px #ffd700) drop-shadow(0 0 40px #ff9800) !important; }
+.piece.king-absorbing .pc-svg { animation: kingAbsorbPulse .4s ease-in-out infinite alternate; transform-origin: 50% 55%; }
+@keyframes kingAbsorbPulse { from { transform: scale(1); } to { transform: scale(1.18); } }
+.absorb-particle {
+  position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  background: #ffd700; box-shadow: 0 0 10px #ff9800; pointer-events: none; z-index: 110;
+  animation: flyToKing .8s cubic-bezier(.2,.8,.3,1) forwards;
+}
+@keyframes flyToKing {
+  to { left: var(--target-x); top: var(--target-y); transform: scale(.2); opacity: 0; }
+}
