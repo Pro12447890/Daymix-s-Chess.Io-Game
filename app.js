@@ -998,7 +998,7 @@ const MODE_SHORT = {
   noQueen7: 'Семёрка', swapRows: 'Пешки', blackFirst: 'Чёрные', inverted: 'Вверх',
   losAlamos: '6×6', berolina: 'Беролина', checkless: 'Без шахов', raceKings: 'Гонки', andernach: 'Андернах',
   pawnBack: 'Назад', kingKnight: 'Король-конь', queenLose: 'Ферзь', weakKnights: 'Кони',
-  castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно', clashBrawl: 'Brawl',
+  castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно', clashBrawl: 'Brawl', royalBattle: 'Битва',
 };
 
 const MODE_EN = {
@@ -1597,7 +1597,7 @@ const MODE_CATS = {
   popular: ['classic', 'fischer', 'threeChecks', 'kingCapture'],
   pieces: ['jester', 'boy', 'queens', 'pawnField', 'pawnFieldQ', 'knights', 'rooks', 'bishops'],
   chaos: ['explode', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center'],
-  mini: ['clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
+  mini: ['royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
 };
 
 function modesByFilter(filter) {
@@ -1614,7 +1614,7 @@ const MODE_GROUP = {
   explode: 3, fog: 3, race: 3, kingOnly: 3, queenPierce: 3, bishopKing: 3, crossCastle: 3,
   touchMove: 3, openIntent: 3, horde: 3, antichess: 3,
   noQueen7: 1, swapRows: 2, blackFirst: 1, inverted: 2, pawnBack: 2, kingKnight: 1,
-  queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3, clashBrawl: 3,
+  queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3, clashBrawl: 3, royalBattle: 3,
   losAlamos: 2, berolina: 2, checkless: 2, raceKings: 2, andernach: 3,
 };
 const GROUP_TITLES = {
@@ -2083,6 +2083,7 @@ function showScreen(name) {
     if (splash) splash.classList.remove('show');
     if (ui.st && ui.st.flags.clashBrawl) document.documentElement.dataset.brawl = '0';
     if (ui.st && ui.st.flags.infernal) document.documentElement.dataset.infernal = '0';
+    if (ui.st && ui.st.flags.royalBattle) document.documentElement.dataset.royal = '0';
     if (activeGame && ui.bot) hardStopBotGame();
     else if (activeGame && !ui.away) suspendGame();
     document.body.classList.remove('flip-all');
@@ -2090,6 +2091,7 @@ function showScreen(name) {
   if (name === 'game') {
     if (ui.st && ui.st.flags.clashBrawl) document.documentElement.dataset.brawl = '1';
     if (ui.st && ui.st.flags.infernal) document.documentElement.dataset.infernal = '1';
+    if (ui.st && ui.st.flags.royalBattle) document.documentElement.dataset.royal = '1';
     if (ui.rotated) document.body.classList.add('flip-all');
     if (ui.away) resumeGame();
   }
@@ -2268,6 +2270,14 @@ function renderSquares() {
     if (i === checkSq) cls.push('check');
     if (st.blocked.includes(i)) cls.push('blocked');
     if (ui.brawl && brawlCanDeploy(i, st.turn)) cls.push('brawl-deploy');
+    if (ui.royal) {
+      const rx = i % st.W;
+      const ry = Math.floor(i / st.W);
+      const z = ui.royal;
+      const outside = rx < z.x0 || rx > z.x1 || ry < z.y0 || ry > z.y1;
+      if (outside) cls.push('royal-out');
+      else if (rx === z.x0 || rx === z.x1 || ry === z.y0 || ry === z.y1) cls.push('royal-edge');
+    }
     if (centerCellsList && centerCellsList.includes(i)) cls.push('center-mark');
     if (st.flags.radiusCheck) {
       const dist = radiusDist(st, i);
@@ -2642,6 +2652,138 @@ function autoBrawlDraft() {
     brawlDraftCard(valid[0].id);
     guard += 1;
   }
+}
+
+
+/* ═══════════════════ 12.7. КОРОЛЕВСКАЯ БИТВА ═══════════════════ */
+
+function royalInit(st) {
+  stopRoyal();
+  ui.royal = {
+    x0: 0, y0: 0, x1: st.W - 1, y1: st.H - 1,
+    plies: 0, deadline: 0, timer: 0, remaining: 5000,
+  };
+  document.documentElement.dataset.royal = '1';
+  $('#royalHud').classList.remove('hidden');
+  renderRoyalHud();
+}
+
+function stopRoyal() {
+  if (ui.royal && ui.royal.timer) clearInterval(ui.royal.timer);
+  ui.royal = null;
+  document.documentElement.dataset.royal = '0';
+  const hud = $('#royalHud');
+  if (hud) hud.classList.add('hidden');
+}
+
+function royalTurnText() {
+  if (!ui.st) return '';
+  return ui.st.turn === 'w' ? 'ход белых' : 'ход чёрных';
+}
+
+function renderRoyalHud() {
+  if (!ui.royal || !ui.st) return;
+  const z = ui.royal;
+  const zone = $('#royalZone');
+  const timer = $('#royalTimer');
+  if (zone) zone.textContent = `Зона ${z.x1 - z.x0 + 1}×${z.y1 - z.y0 + 1}`;
+  const left = Math.max(0, z.deadline - performance.now());
+  if (timer) timer.textContent = (left / 1000).toFixed(1);
+  const hud = $('#royalHud');
+  if (hud) hud.classList.toggle('danger', left < 2200);
+}
+
+function startRoyalTimer() {
+  if (!ui.royal || !ui.st || ui.st.status !== 'play') return;
+  ui.royal.remaining = 5000;
+  ui.royal.deadline = performance.now() + 5000;
+  clearInterval(ui.royal.timer);
+  ui.royal.timer = setInterval(() => {
+    if (!ui.royal || !ui.st || ui.st.status !== 'play') return;
+    if (ui.paused || ui.away || ui.gameLocked || ui.spectator) {
+      ui.royal.deadline += 100;
+      return;
+    }
+    renderRoyalHud();
+    if (performance.now() >= ui.royal.deadline) royalTimeout();
+  }, 100);
+  renderRoyalHud();
+}
+
+function royalTimeout() {
+  const st = ui.st;
+  if (!st || st.status !== 'play') return;
+  const color = st.turn;
+  const pieces = [];
+  for (let i = 0; i < st.board.length; i++) {
+    const p = st.board[i];
+    if (p && p.c === color) pieces.push(i);
+  }
+  if (!pieces.length) return;
+  const nonKings = pieces.filter((i) => st.board[i].t !== 'k');
+  const victim = (nonKings.length ? nonKings : pieces)[Math.floor(Math.random() * (nonKings.length || pieces.length))];
+  const lost = st.board[victim];
+  st.board[victim] = null;
+  if (lost.t === 'k') st.capturedKing = color;
+  st.turn = other(color);
+  st.full += 1;
+  ui.moves.push({ san: '⏱', from: victim, to: victim, color, captured: true, spent: 5000, at: Date.now() });
+  ui.frames.push(snap(st));
+  ui.viewPly = ui.frames.length - 1;
+  toast(`5 секунд вышли: ${lost.t === 'k' ? 'король' : 'фигура'} разбита`);
+  const res = updateStatus(st);
+  renderAll(false);
+  if (res) finishGame(res);
+  else startRoyalTimer();
+}
+
+function royalAfterMove() {
+  if (!ui.royal || !ui.st || ui.st.status !== 'play') return;
+  ui.royal.plies += 1;
+  if (ui.royal.plies % 6 === 0) royalShrink();
+  startRoyalTimer();
+  renderRoyalHud();
+}
+
+function royalShrink() {
+  const st = ui.st;
+  const z = ui.royal;
+  if (!st || !z) return;
+  const side = Math.floor((st.seed + z.plies * 7) % 4);
+  if (side === 0 && z.x1 - z.x0 > 2) z.x0 += 1;
+  else if (side === 1 && z.x1 - z.x0 > 2) z.x1 -= 1;
+  else if (side === 2 && z.y1 - z.y0 > 2) z.y0 += 1;
+  else if (z.y1 - z.y0 > 2) z.y1 -= 1;
+  const broken = [];
+  for (let i = 0; i < st.board.length; i++) {
+    const p = st.board[i];
+    if (!p) continue;
+    const x = i % st.W;
+    const y = Math.floor(i / st.W);
+    if (x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1) continue;
+    const hazard = ((st.seed + i * 17 + z.plies * 31) % 10) < 9;
+    if (!hazard) continue;
+    broken.push({ i, p });
+    st.board[i] = null;
+    if (p.t === 'k') st.capturedKing = p.c;
+  }
+  if (broken.length) {
+    toast(`Зона сжалась: разбито фигур — ${broken.length}`);
+    sound.capture();
+    for (const b of broken) {
+      const el = document.createElement('span');
+      el.className = 'royal-break';
+      el.textContent = '💥';
+      const { dx, dy } = disp(st, b.i);
+      el.style.left = ((dx + .5) * ui.sq) + 'px';
+      el.style.top = ((dy + .5) * ui.sq) + 'px';
+      $('#brawlLayer').appendChild(el);
+      setTimeout(() => el.remove(), 700);
+    }
+  }
+  renderAll(false);
+  const res = updateStatus(st);
+  if (res) finishGame(res);
 }
 
 function initBrawl(st) {
@@ -3095,6 +3237,8 @@ function newGame(opts = {}) {
   ui.clocks = { w: ui.timeMs, b: ui.timeMs };
   if ($('#brawlBanModal')) $('#brawlBanModal').classList.add('hidden');
   if (mode.flags.clashBrawl) { ui.timeMs = 0; ui.clocks = { w: 0, b: 0 }; initBrawl(ui.st); }
+  else if (mode.flags.royalBattle) royalInit(ui.st);
+  else stopRoyal();
   ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
   if ((opts.mode || 'local') === 'local' && !opts.bot && !mode.flags.inverted) ui.orientation = 'w';
   ui.mode = opts.mode || 'local';
@@ -3163,6 +3307,7 @@ function newGame(opts = {}) {
       renderStatus();
       scheduleFirstMoveTimer();
       if (ui.race) startRaceClock();
+      if (ui.royal) startRoyalTimer();
       if (ui.bot && ui.st.turn === ui.bot.color) maybeBotTurn();
     }, 2200);
   } else {
@@ -3170,6 +3315,7 @@ function newGame(opts = {}) {
     startClocks();
     scheduleFirstMoveTimer();
     if (ui.race) startRaceClock();
+    if (ui.royal) startRoyalTimer();
     if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
   }
   if (mode.flags.clashBrawl && (opts.mode || 'local') === 'local') startBrawlDraft();
@@ -3304,6 +3450,7 @@ function renderAll(animate) {
   renderStatus();
   updateNav();
   renderCaptured();
+  if (ui.royal) renderRoyalHud();
   if (ui.screen === 'settings') renderThemePreview();
   if (ui.brawl) { renderBrawlHp(); renderBrawl(); }
 }
@@ -3638,6 +3785,7 @@ function commitMove(m, opts = {}) {
       }
     }
     renderMoves();
+    if (ui.royal) setTimeout(royalAfterMove, 30);
     saveCurrentGame();
   }
 
@@ -3681,6 +3829,7 @@ function scoreGame(res, st) {
 
 function finishGame(res) {
   stopRaceClock();
+  stopRoyal();
   try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
   ui.running = false;
   clearInterval(ui.timer);
@@ -4850,6 +4999,7 @@ function updateResumeFloat() {
 }
 
 function leaveGame() {
+  stopRoyal();
   document.body.classList.remove('flip-all');
   const boardLeave = $('#board');
   if (boardLeave) boardLeave.classList.remove('board-rotated');

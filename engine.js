@@ -325,6 +325,11 @@ const MODES = [
     W: 8, H: 8, flags: { clashBrawl: true, kingFree: true, customDeploy: true },
   },
   {
+    id: 'royalBattle', n: 59, name: 'Королевская битва', icon: '👑',
+    desc: 'Карта сжимается каждые 6 полуходов, снаружи фигуры ломаются с шансом 90%, а на ход — 5 секунд. Остаться последним королём!',
+    W: 8, H: 8, flags: { classic: true, royalBattle: true },
+  },
+  {
     id: 'infernal', n: 48, name: 'Инфернальный', icon: '🔥',
     desc: 'Всё красное, а на значимых ходах звучат теоремы гамбитов, кипяточка и ферзюшки. Дота головного мозга.',
     W: 8, H: 8, flags: { classic: true, infernal: true },
