@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261028-9">
+  <link rel="stylesheet" href="style.css?v=20261028-10">
 </head>
 <body>
 
@@ -192,9 +192,12 @@
       </div>
 
       <div class="home-foot">
-            <span class="home-profile">
-              <span class="home-avatar" id="homeAvatar"></span>
-              <b id="homeName">Игрок</b>
+            <span class="home-profile-edit">
+              <button class="home-avatar-btn" id="homeAvatarBtn" type="button" title="Сменить аватар">
+                <span class="home-avatar" id="homeAvatar"></span>
+              </button>
+              <input class="home-nick" id="homeNickInput" maxlength="18" placeholder="Игрок" autocomplete="off" spellcheck="false" aria-label="Ник">
+              <button class="home-nick-save" id="homeNickSave" type="button" title="Сохранить ник">✎</button>
               <em id="homePoints">0 очков</em>
             </span>
             <span class="home-actions">
@@ -339,7 +342,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-9 · тема мини-игр</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-10 · ник и аватар на главной</div>
           </div>
         </div>
       </div>
@@ -739,6 +742,6 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261028-9"></script>
+<script src="app.js?v=20261028-10"></script>
 </body>
 </html>

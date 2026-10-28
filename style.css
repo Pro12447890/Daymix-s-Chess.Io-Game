@@ -3341,3 +3341,31 @@ html[data-brawl="1"] .clock { display: none !important; }
 /* поля настроек только проявляются, чтобы не ломать абсолютный предпросмотр */
 @keyframes fieldFade { from { opacity: 0; } to { opacity: 1; } }
 .settings-grid .field { animation: fieldFade .24s ease both !important; transform: none !important; }
+
+
+/* ник и аватар прямо в нижней плашке главной */
+.home-profile-edit { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 auto; }
+.home-avatar-btn {
+  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--line-light); background: var(--panel-card);
+  display: grid; place-items: center; flex: none;
+}
+.home-avatar-btn:hover { border-color: var(--accent-green); transform: translateY(-1px); }
+.home-avatar-btn .home-avatar { width: 26px; height: 26px; }
+.home-nick {
+  width: min(170px, 30vw); height: 30px; padding: 0 8px;
+  border-radius: 7px; border: 1px solid var(--line); background: var(--bg-darker);
+  color: #fff; font-size: 12.5px; font-weight: 700;
+}
+.home-nick:focus { outline: none; border-color: var(--accent-green); box-shadow: 0 0 0 2px #7fb74d33; }
+.home-nick-save {
+  width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--line);
+  background: var(--panel-card); color: var(--text-muted);
+}
+.home-nick-save:hover { color: #fff; border-color: var(--accent-green); }
+.home-profile-edit em { font-style: normal; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+@media (max-width: 999px) {
+  .home-profile-edit { gap: 5px; }
+  .home-nick { width: min(130px, 34vw); }
+  .home-profile-edit em { display: none; }
+}

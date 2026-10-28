@@ -1237,6 +1237,7 @@ function renderProfile() {
   if ($('#sbAvatar')) $('#sbAvatar').innerHTML = pieceSvg(profile.avatar, 'av-pc');
   if ($('#homeAvatar')) $('#homeAvatar').innerHTML = pieceSvg(profile.avatar, 'av-pc');
   if ($('#homeName')) $('#homeName').textContent = profile.name;
+  if ($('#homeNickInput') && document.activeElement !== $('#homeNickInput')) $('#homeNickInput').value = profile.name;
   if ($('#homePoints')) $('#homePoints').textContent = `${profile.points} очков`;
   if ($('#resumeBtn')) $('#resumeBtn').classList.toggle('hidden', !loadCurrentGame());
   renderFakeBots();
@@ -1815,6 +1816,17 @@ function renderProfilePop() {
     const wins = profile.stats.wins || 0;
     $('#ppStats').innerHTML = `<span><b>${games}</b> партий</span><span><b>${wins}</b> побед</span><span><b>${profile.points}</b> очков</span>`;
   }
+}
+
+function saveHomeNick() {
+  const input = $('#homeNickInput');
+  if (!input) return;
+  const name = input.value.trim().slice(0, 18) || (profile.language === 'en' ? 'Player' : 'Игрок');
+  profile.name = name;
+  input.value = name;
+  input.blur();
+  saveProfile(true);
+  toast(profile.language === 'en' ? 'Name saved' : 'Имя сохранено');
 }
 
 function saveProfileName() {
@@ -4039,6 +4051,7 @@ class Relay {
         settled = true;
         clearTimeout(timer);
         this.ws = ws;
+        this.stopPolling();
         if (this.onOpen) this.onOpen();
         resolve();
       };
@@ -4057,6 +4070,7 @@ class Relay {
           return;
         }
         if (this.onClose) this.onClose();
+        if (!this.closed) this.startPolling();
       };
       ws.onerror = () => {
         try { ws.close(); } catch (error) { /* уже закрыт */ }
@@ -4088,7 +4102,12 @@ class Relay {
       } catch (error) { /* сеть моргнула */ }
     };
     poll();
-    this.pollTimer = setInterval(poll, 2500);
+    this.pollTimer = setInterval(poll, 3500);
+  }
+
+  stopPolling() {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = 0;
   }
 
   publish(payload) {
@@ -4105,8 +4124,7 @@ class Relay {
 
   close() {
     this.closed = true;
-    if (this.pollTimer) clearInterval(this.pollTimer);
-    this.pollTimer = 0;
+    this.stopPolling();
     try { if (this.ws) this.ws.close(); } catch (error) { /* уже закрыт */ }
     try { if (this.bc) this.bc.close(); } catch (error) { /* уже закрыт */ }
     this.ws = null;
@@ -5040,6 +5058,14 @@ function bindEvents() {
     if (!pop.classList.contains('hidden')) renderProfilePop();
   });
   if ($('#ppClose')) $('#ppClose').addEventListener('click', () => $('#profilePop').classList.add('hidden'));
+  if ($('#homeAvatarBtn')) $('#homeAvatarBtn').addEventListener('click', () => {
+    const pop = $('#profilePop');
+    if (!pop) return;
+    pop.classList.toggle('hidden');
+    if (!pop.classList.contains('hidden')) renderProfilePop();
+  });
+  if ($('#homeNickSave')) $('#homeNickSave').addEventListener('click', saveHomeNick);
+  if ($('#homeNickInput')) $('#homeNickInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveHomeNick(); });
   if ($('#ppSaveName')) $('#ppSaveName').addEventListener('click', saveProfileName);
   if ($('#ppName')) $('#ppName').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveProfileName(); });
   if ($('#ppBoards')) $('#ppBoards').addEventListener('click', () => { $('#profilePop').classList.add('hidden'); showScreen('settings'); });
