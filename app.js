@@ -5649,43 +5649,75 @@ function switchOnlineTab(tab) {
 
 /* Дополнительный P2P-канал (Trystero/WebRTC). Если ntfy режет сеть,
    браузеры соединяются напрямую; сигнализация идёт через публичные Nostr-релеи. */
-let trysteroModulePromise = null;
+const P2P_ROOM_CONFIG = {
+  appId: 'daymix-chess-p2p-v1',
+  relayConfig: { warnOnRelayFailure: false },
+  rtcConfig: {
+    iceServers: [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+      {
+        urls: [
+          'turn:openrelay.metered.ca:80',
+          'turn:openrelay.metered.ca:443',
+          'turns:openrelay.metered.ca:443',
+        ],
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+    ],
+  },
+};
+const P2P_SOURCES = [
+  'https://esm.run/trystero',
+  'https://esm.run/@trystero-p2p/mqtt',
+];
+
+async function startP2PSource(url, code) {
+  const mod = await import(url);
+  if (!ui.online || ui.online.code !== code) return;
+  const room = mod.joinRoom(P2P_ROOM_CONFIG, 'room-' + code);
+  const action = room.makeAction('msg');
+  action.onMessage = (data) => {
+    if (!ui.online || ui.online.code !== code) return;
+    handleNet(JSON.stringify(data));
+  };
+  if (!ui.online.p2p) {
+    const links = [];
+    ui.online.p2p = {
+      links,
+      publish: (payload) => {
+        for (const link of links) {
+          try { link.action.send(payload); } catch (error) { /* канал отвалился */ }
+        }
+      },
+      close: () => {
+        for (const link of links) {
+          try { link.room.leave(); } catch (error) { /* уже закрыт */ }
+        }
+      },
+    };
+  }
+  ui.online.p2p.links.push({ room, action, url });
+  room.onPeerJoin = () => {
+    if (!ui.online || ui.online.code !== code) return;
+    ui.online.connected = true;
+    updateLinkDots();
+    if (ui.online.role === 'guest' && !ui.online.started) {
+      netPublish({ t: 'join', name: profile.name, avatar: profile.avatar });
+    } else if (ui.online.role === 'host') {
+      announceRoom();
+    }
+  };
+  room.onPeerLeave = () => {
+    if (ui.online && !ui.online.started) updateLinkDots();
+  };
+}
 
 async function startTrysteroRoom(code) {
   if (!ui.online || ui.online.role === 'spectator') return;
-  if (navigator.webdriver) return; // не шумим в автотестах
-  try {
-    if (!trysteroModulePromise) trysteroModulePromise = import('https://esm.run/trystero');
-    const { joinRoom } = await trysteroModulePromise;
-    if (!ui.online || ui.online.code !== code) return;
-    const room = joinRoom({ appId: 'daymix-chess-p2p-v1' }, 'room-' + code);
-    const action = room.makeAction('msg');
-    let p2pPeer = false;
-    action.onMessage = (data) => {
-      if (!ui.online || ui.online.code !== code) return;
-      handleNet(JSON.stringify(data));
-    };
-    ui.online.p2p = {
-      publish: (payload) => action.send(payload),
-      close: () => room.leave(),
-    };
-    room.onPeerJoin = () => {
-      if (!ui.online || ui.online.code !== code) return;
-      p2pPeer = true;
-      ui.online.connected = true;
-      updateLinkDots();
-      if (ui.online.role === 'guest' && !ui.online.started) {
-        netPublish({ t: 'join', name: profile.name, avatar: profile.avatar });
-      } else if (ui.online.role === 'host') {
-        announceRoom();
-      }
-    };
-    room.onPeerLeave = () => {
-      p2pPeer = false;
-      if (ui.online && !ui.online.started) updateLinkDots();
-    };
-  } catch (error) {
-    /* P2P необязателен: основной канал уже работает */
+  if (navigator.webdriver) return;
+  for (const url of P2P_SOURCES) {
+    startP2PSource(url, code).catch(() => { /* этот сигнальный канал недоступен */ });
   }
 }
 
