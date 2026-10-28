@@ -3334,3 +3334,8 @@ html[data-brawl="1"] .clock { display: none !important; }
 .online-tab[data-otab="internet"].active { background: #2f81f7; border-color: #93c5fd; color: #fff; }
 .online-tab[data-otab="friend"].active { background: var(--accent-green); color: #1d2b10; }
 @media (max-width: 999px) { .online-tab { flex: 1 1 0; width: auto; } }
+
+
+/* поля настроек только проявляются, чтобы не ломать абсолютный предпросмотр */
+@keyframes fieldFade { from { opacity: 0; } to { opacity: 1; } }
+.settings-grid .field { animation: fieldFade .24s ease both !important; transform: none !important; }

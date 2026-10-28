@@ -2062,6 +2062,8 @@ function showScreen(name) {
   const wasGame = ui.screen === 'game';
   const activeGame = ui.st && ui.st.status === 'play' && !ui.scored;
   if (wasGame && name !== 'game') {
+    const splash = $('#phaseSplash');
+    if (splash) splash.classList.remove('show');
     if (ui.st && ui.st.flags.clashBrawl) document.documentElement.dataset.brawl = '0';
     if (activeGame && ui.bot) hardStopBotGame();
     else if (activeGame && !ui.away) suspendGame();
