@@ -983,6 +983,67 @@ const MODE_SHORT = {
   castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно', clashBrawl: 'Brawl',
 };
 
+const MODE_EN = {
+  classic: ['Classic', "Standard 8×8 chess: castling, en passant, promotion, mate, stalemate and the 50-move rule."],
+  threeChecks: ['Three-check', "No mate needed: give three checks to win."],
+  kingCapture: ['King capture', "The king may move into danger. Lose your king and you lose."],
+  kingOnly: ['Lone king', "As soon as you have only your king left, you lose."],
+  pawnRows: ['Double pawn rows', "Two full rows of pawns for each side."],
+  kqp: ['King, queen & pawns', "Only kings, queens and eight pawns each."],
+  explode: ['Explosions', "Every capture explodes the four orthogonal neighbours. Kings survive."],
+  queenPierce: ['Piercing queen', "The queen sweeps enemy pieces along her line, through friends and foes."],
+  bishopKing: ['Bishop-king', "A bishop may step like a king up to four times per game."],
+  race: ['King race', "Kings in the corners, pawns on both sides. First king to the far rank wins."],
+  wide10: ['Wide 10×8', "Ten files, eight ranks and extra rooks."],
+  tall10: ['Tall 8×10', "Eight files and ten ranks for more vertical play."],
+  jester: ['Jester 12×10', "A 12×10 board with the Jester: jumps two or three squares forward, five times per game."],
+  boy: ['Boys 14×10', "A huge 14×10 board with Jesters and Boys that slide and break through."],
+  crossCastle: ['Cross castling', "Swap the king with any friendly piece up to three times."],
+  fog: ['Fog of war', "Enemy pieces are visible only next to yours."],
+  fischer: ['Fischer', "Random back rank with bishops on opposite colours and the king between rooks."],
+  blocks: ['Random blocks', "Every third move may lock a random empty square."],
+  queens: ['Queens only', "Three queens and a king each. Every line is deadly."],
+  bishops: ['Bishops only', "Four bishops on opposite colours each."],
+  knights: ['Knights only', "Four knights and a king each — pure jumping."],
+  rooks: ['Rooks only', "Four rooks and a king each; castling opens once lines clear."],
+  pawnField: ['Pawn field', "The board is packed with four full rows of pawns per side."],
+  pawnFieldQ: ['Pawn field + queen', "The same pawn sea, plus one queen each."],
+  noPawns: ['No pawns', "Full armies without a single pawn — open lines from move one."],
+  center: ['Center', "Get your king to d4, e4, d5 or e5 to win. Mate also wins."],
+  touchMove: ['Touch-move', "Touch a piece with moves and you must move it — no take-backs."],
+  openIntent: ['Open intentions', "Your opponent sees the square you press before moving. Bluff or read them."],
+  random: ['Random', "A random mode from all the others every time."],
+  chess960: ['Chess960', "True Fischer Random: 960 positions with proper castling."],
+  swapReplace: ['Swap pieces', "Before the game 1–3 non-king pieces per side are replaced."],
+  vanishEdge: ['Edge of the void', "A pawn reaching the last rank vanishes instead of promoting."],
+  pawnRush: ['Pawn rockets', "Pawns may always advance 1, 2 or 3 squares when the path is clear."],
+  backCapture: ['Pawn hunter', "Pawns capture backwards diagonally but still cannot move backwards."],
+  convert20: ['Defector', "A captured piece has a 20% chance to join your side on a random empty square."],
+  radiusCheck: ['Storm radius', "Any enemy within three squares of your king gives check. The zone is outlined."],
+  horde: ['Horde', "White has a king and three pawn rows against a full black army."],
+  antichess: ['Antichess', "Lose all your pieces to win. Captures are forced and the king can be taken."],
+  noQueen7: ['Seven', "A 7×8 board without queens; kings in the centre."],
+  swapRows: ['Pawns first', "Ranks are swapped: pieces on the second rank, pawns on the first."],
+  blackFirst: ['Black first', "Black moves first. Everything else is classic."],
+  inverted: ['Upside down', "You play normally, but White starts at the top and Black at the bottom."],
+  pawnBack: ['Pawns back', "Pawns may always move backwards too, but not onto the last rank."],
+  kingKnight: ['King-knight', "The king moves like a knight plus one square forward."],
+  queenLose: ['Queen under guard', "Lose your queen and you lose the game."],
+  weakKnights: ['Weak knights', "Knights only use the long part of the L — half their jumps are gone."],
+  castleReturn: ['Castling returns', "If the king returns home, castling rights are restored."],
+  square10: ['Square 10×10', "A big 10×10 square board with room to manoeuvre."],
+  square12: ['Square 12×12', "A huge 12×12 board for true strategists."],
+  devourAll: ['Devour all', "The king may be eaten — that is not a win. Eat every enemy piece to win."],
+  captureRace: ['Capture race', "Kings may be eaten; the winner is whoever captures more in 60–180 seconds."],
+  losAlamos: ['Los Alamos', "A 6×6 board without bishops — fast chess invented at Los Alamos."],
+  berolina: ['Berolina', "Pawns move diagonally forward and capture straight ahead."],
+  checkless: ['Checkless', "Giving check is illegal. Only quiet moves, defences and captures."],
+  raceKings: ['Racing kings', "No pawns and no checks: race your king to the far rank."],
+  andernach: ['Andernach', "A capturing piece changes colour. Every capture is a small betrayal."],
+  clashBrawl: ['Clash Brawl', "A mobile-game parody: 50 HP kings, purple elixir, a 4-card deck, shields and knockback."],
+  infernal: ['Infernal', "Everything is red, and big moves trigger gambit theorems and meme lines."],
+};
+
 const THEMES = [
   { id: 'brown', name: 'Коричневая', light: '#f0d9b5', dark: '#9a6a47' },
   { id: 'green', name: 'Зелёная', light: '#eeeed2', dark: '#769656' },
@@ -1434,8 +1495,8 @@ function renderTimeSummary() {
 function renderModeCard() {
   const m = modeById(profile.modeId);
   $('#modeIcon').textContent = m.icon;
-  $('#modeName').textContent = m.name;
-  $('#modeDesc').textContent = m.desc;
+  $('#modeName').textContent = modeName(m);
+  $('#modeDesc').textContent = modeDesc(m);
   $('#modesCurrent').textContent = m.name;
   $('#optSquareWrap').style.display = m.square ? '' : 'none';
   renderPreview();
@@ -1471,9 +1532,9 @@ function rollRandomMode(done) {
       setTimeout(step, 38 + tick * 7);
     } else {
       icon.textContent = final.icon;
-      name.textContent = final.name;
-      sub.textContent = 'режим выбран';
-      if ($('#rouletteDesc')) $('#rouletteDesc').textContent = final.desc;
+      name.textContent = modeName(final);
+      sub.textContent = profile.language === 'en' ? 'mode selected' : 'режим выбран';
+      if ($('#rouletteDesc')) $('#rouletteDesc').textContent = modeDesc(final);
       overlay.classList.add('win');
       sound.click();
       setTimeout(() => {
@@ -1532,21 +1593,29 @@ const GROUP_TITLES = {
   2: 'Средние изменения',
   3: 'Сильные изменения и хаос',
 };
+const GROUP_TITLES_EN = {
+  1: 'Classic & light changes',
+  2: 'Medium changes',
+  3: 'Heavy changes & chaos',
+};
+
+function modeName(m) { return profile.language === 'en' && MODE_EN[m.id] ? MODE_EN[m.id][0] : m.name; }
+function modeDesc(m) { return profile.language === 'en' && MODE_EN[m.id] ? MODE_EN[m.id][1] : m.desc; }
 
 function makeModeCard(m, mode) {
   const card = document.createElement('button');
   card.type = 'button';
   card.className = 'mode-tile big' + (profile.modeId === m.id ? ' active' : '') + (m.flags.randomPick ? ' random-tile' : '');
-  const onlineNote = m.id === 'openIntent' ? '<span class="mt-online">только онлайн</span>' : '';
+  const onlineNote = m.id === 'openIntent' ? `<span class="mt-online">${profile.language === 'en' ? 'online only' : 'только онлайн'}</span>` : '';
   const size = m.square && profile.square ? `${m.W}×${m.W}` : `${m.W}×${m.H}`;
   const group = MODE_GROUP[m.id] || 1;
   card.innerHTML = `
     <span class="mt-icon">${m.icon}</span>
     <span class="mt-body">
-      <span class="mt-name full">${m.name}</span>
-      <span class="mt-name short">${MODE_SHORT[m.id] || m.name}</span>
-      <span class="mt-desc">${m.desc}</span>
-      <span class="mt-meta"><i class="mt-badge g${group}">${group === 1 ? 'лёгкий' : group === 2 ? 'средний' : 'сильный'}</i> ${size}${m.n ? ' · режим ' + m.n : ''} ${onlineNote}</span>
+      <span class="mt-name full">${modeName(m)}</span>
+      <span class="mt-name short">${profile.language === 'en' ? modeName(m) : (MODE_SHORT[m.id] || m.name)}</span>
+      <span class="mt-desc">${modeDesc(m)}</span>
+      <span class="mt-meta"><i class="mt-badge g${group}">${group === 1 ? (profile.language === 'en' ? 'easy' : 'лёгкий') : group === 2 ? (profile.language === 'en' ? 'medium' : 'средний') : (profile.language === 'en' ? 'hard' : 'сильный')}</i> ${size}${m.n ? (profile.language === 'en' ? ' · mode ' + m.n : ' · режим ' + m.n) : ''} ${onlineNote}</span>
     </span>`;
   card.addEventListener('click', () => {
     profile.modeId = m.id;
@@ -1589,7 +1658,7 @@ function renderModesGrid(filter) {
       section.className = 'modes-group';
       const title = document.createElement('h3');
       title.className = 'modes-group-title g' + g;
-      title.innerHTML = `<b>${GROUP_TITLES[g]}</b><span class="chip">${items.length}</span>`;
+      title.innerHTML = `<b>${profile.language === 'en' ? GROUP_TITLES_EN[g] : GROUP_TITLES[g]}</b><span class="chip">${items.length}</span>`;
       section.appendChild(title);
       appendGrid(section, items);
       box.appendChild(section);
@@ -1731,7 +1800,7 @@ function updateOnlineModeLine() {
   const el = $('#onlineModeLine');
   if (!el) return;
   const m = modeById(profile.modeId);
-  el.innerHTML = `Режим: <b>${escapeHtml(m.name)}</b> · ${m.W}×${m.H} · ${escapeHtml(profile.timeLabel || 'без ограничений')}`;
+  el.innerHTML = `${profile.language === 'en' ? 'Mode' : 'Режим'}: <b>${escapeHtml(modeName(m))}</b> · ${m.W}×${m.H} · ${escapeHtml(profile.timeLabel || (profile.language === 'en' ? 'no limit' : 'без ограничений'))}`;
 }
 
 const SKIP_WELCOME = location.search.includes('skipwelcome=1') || (!!navigator.webdriver && !location.search.includes('welcome=1'));
@@ -1771,7 +1840,7 @@ const EN_STATIC = {
   'Язык / Language': 'Language', 'В локальной игре я играю за': 'In local games I play as',
   'белых': 'white', 'чёрных': 'black',
   'Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.': 'Games, points and stats are stored in this browser. History keeps the last 60 games.',
-  'Все': 'All', 'Популярные': 'Popular', 'Хаос': 'Chaos', 'Фигуры ': 'Pieces ',
+  'Все': 'All', 'Популярные': 'Popular', 'Хаос': 'Chaos', 'Мини-игры': 'Mini-games', 'Фигуры ': 'Pieces ',
   'Очки, счёт партий и последние игры.': 'Points, game count and recent games.',
   'История партий': 'Game history', 'Соперник': 'Opponent', 'чёрные': 'black', 'Вы': 'You',
   'Превращение': 'Promotion', '≡ Ходы': '≡ Moves', '⚑ Сдаться': '⚑ Resign', 'Выйти': 'Leave',
@@ -2404,7 +2473,9 @@ function renderBrawl() {
       b.className = 'brawl-card' + (ui.brawl.selected === index ? ' selected' : '') + (elixir < card.cost ? ' disabled' : '');
       b.style.color = color === 'w' ? '#ffffff' : '#9fc6ff';
       b.innerHTML = `<span class="brawl-card-cost">${card.cost}</span>${pieceSvg(card.t, 'brawl-pc')}<span class="brawl-card-name">${BRAWL_NAME[card.t]}</span>`;
+      b.addEventListener('pointerdown', (e) => brawlCardDragStart(e, index));
       b.addEventListener('click', () => {
+        if (ui.brawl.suppressCardClick) { ui.brawl.suppressCardClick = false; return; }
         if (ui.brawl.selected === index) ui.brawl.selected = null;
         else ui.brawl.selected = index;
         renderBrawl();
@@ -2484,6 +2555,46 @@ function brawlYeet(st, sq, piece) {
     fly.style.opacity = '0';
   });
   setTimeout(() => fly.remove(), 900);
+}
+
+function brawlCardDragStart(e, index) {
+  if (!ui.brawl || !ui.st || ui.st.status !== 'play') return;
+  const color = brawlColor();
+  const card = ui.brawl.decks[color][index];
+  if (!card || ui.brawl.elixir[color] < card.cost) return;
+  if (ui.brawl.selected === index) {
+    ui.brawl.selected = null;
+    renderBrawl();
+    renderSquares();
+    return;
+  }
+  ui.brawl.selected = index;
+  ui.brawl.suppressCardClick = true;
+  ui.brawl.drag = { index, x: e.clientX, y: e.clientY, active: false };
+  renderBrawl();
+  renderSquares();
+}
+
+function brawlCardDragMove(e) {
+  if (!ui.brawl || !ui.brawl.drag) return;
+  const d = ui.brawl.drag;
+  if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) d.active = true;
+}
+
+function brawlCardDragEnd(e) {
+  if (!ui.brawl || !ui.brawl.drag) return;
+  const d = ui.brawl.drag;
+  ui.brawl.drag = null;
+  if (!d.active) return;
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  const sqEl = under && under.closest ? under.closest('.sq') : null;
+  if (sqEl) {
+    const to = Number(sqEl.dataset.sq);
+    if (brawlCanDeploy(to, brawlColor())) {
+      brawlDeploy(to);
+      return;
+    }
+  }
 }
 
 function brawlShieldAction() {
@@ -2897,13 +3008,15 @@ function renderStatus() {
   const shell = $('#gameShell');
   if (!st) return;
   if (ui.imported) {
-    el.textContent = 'Импортированная партия';
-    sub.textContent = 'просмотр и экспорт · ходы недоступны';
+    el.textContent = profile.language === 'en' ? 'Imported game' : 'Импортированная партия';
+    sub.textContent = profile.language === 'en' ? 'review and export · moves disabled' : 'просмотр и экспорт · ходы недоступны';
     return;
   }
   if (ui.viewPly !== ui.frames.length - 1) {
-    el.textContent = 'Просмотр партии';
-    sub.textContent = `позиция после ${ui.viewPly}-го полухода · вернитесь в конец, чтобы играть`;
+    el.textContent = profile.language === 'en' ? 'Game review' : 'Просмотр партии';
+    sub.textContent = profile.language === 'en'
+      ? `position after ${ui.viewPly} plies · return to the end to play`
+      : `позиция после ${ui.viewPly}-го полухода · вернитесь в конец, чтобы играть`;
     return;
   }
   if (st.status === 'over' && st.result) {
@@ -2921,12 +3034,14 @@ function renderStatus() {
   }
   if (shell) shell.classList.toggle('check-alert', !!st.check && st.status === 'play');
   if (ui.botThinking) {
-    el.textContent = 'Бот думает…';
+    el.textContent = profile.language === 'en' ? 'Bot is thinking…' : 'Бот думает…';
   } else {
-    el.textContent = st.turn === 'w' ? 'Ход белых' : 'Ход чёрных';
+    el.textContent = st.turn === 'w'
+      ? (profile.language === 'en' ? 'White to move' : 'Ход белых')
+      : (profile.language === 'en' ? 'Black to move' : 'Ход чёрных');
   }
-  const bits = [st.mode.name];
-  if (st.check) bits.push('шах!');
+  const bits = [modeName(st.mode)];
+  if (st.check) bits.push(profile.language === 'en' ? 'check!' : 'шах!');
   if (st.flags.checksToWin) bits.push(`шахи ${st.mv.w.checks}:${st.mv.b.checks}`);
   if (st.flags.crossCastle) bits.push(`обмены ${st.mv.w.cross}/${st.flags.crossCastle}`);
   if (st.flags.race) bits.push('цель: верхний ряд');
@@ -2947,12 +3062,25 @@ function renderStatus() {
 
 function resultTitle(res) {
   const my = myColor();
-  if (!res || !res.winner) return 'Ничья';
-  return res.winner === my ? 'Победа' : 'Поражение';
+  const en = profile.language === 'en';
+  if (!res || !res.winner) return en ? 'Draw' : 'Ничья';
+  return res.winner === my ? (en ? 'Victory' : 'Победа') : (en ? 'Defeat' : 'Поражение');
 }
 
 function resultReason(res) {
   if (!res) return '';
+  if (profile.language === 'en') {
+    const en = {
+      mate: 'checkmate', time: 'time out', resign: 'resigned', stalemate: 'stalemate',
+      fifty: '50-move rule', material: 'insufficient material', repetition: 'threefold repetition',
+      draw: 'agreed draw', king: 'king captured', race: 'king reached the last rank',
+      center: 'king in the centre', checks: 'three checks', kingOnly: 'opponent has only a king',
+      abort: 'game aborted', brawl: 'king defeated', devoured: 'all pieces eaten',
+      raceKing: 'king reached the edge', idle: 'white made no first move',
+      monotony: 'one piece — stalemate', queenLost: 'queen lost', extreme: 'huge advantage',
+    };
+    return en[res.reason] || res.reason;
+  }
   const map = {
     mate: 'мат', time: 'время истекло', resign: 'сдался', stalemate: 'пат',
     fifty: 'правило 50 ходов', material: 'недостаточно материала',
@@ -3292,7 +3420,7 @@ function finishGame(res) {
     profile.history.unshift({
       ts: Date.now(),
       date: new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
-      mode: st.mode.name,
+      mode: modeName(st.mode),
       result: win ? 'win' : lost ? 'loss' : 'draw',
       reason: res.reason,
       reasonText: REASON_TEXT[res.reason] || res.reason,
@@ -3808,7 +3936,7 @@ function lobbyAnnounce() {
     t: 'lobby-room',
     code: ui.online.code,
     name: profile.name,
-    modeName: mode.name,
+    modeName: modeName(mode),
     timeLabel: profile.timeLabel,
     status: ui.st && ui.st.status === 'play' ? 'live' : 'waiting',
     moves: ui.moves.length,
@@ -4566,6 +4694,9 @@ function bindEvents() {
   $('#railPause').addEventListener('click', () => togglePause());
   if ($('#mobPause')) $('#mobPause').addEventListener('click', () => togglePause());
   if ($('#brawlShield')) $('#brawlShield').addEventListener('click', brawlShieldAction);
+  window.addEventListener('pointermove', brawlCardDragMove);
+  window.addEventListener('pointerup', brawlCardDragEnd);
+  window.addEventListener('pointercancel', brawlCardDragEnd);
   if ($('#mobResign')) $('#mobResign').addEventListener('click', () => {
     if (ui.st && ui.st.status === 'play') askResign();
     else toast('Партия ещё не начата');
