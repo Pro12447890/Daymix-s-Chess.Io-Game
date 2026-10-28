@@ -1515,29 +1515,54 @@ function closeTimeGroup(d) {
   if (!d || !d.open || d.classList.contains('closing')) return;
   const list = d.querySelector('.tg-list');
   if (!list) { d.open = false; return; }
+  if (list._anim) list._anim.cancel();
+  const h = list.offsetHeight;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   d.classList.add('closing');
-  list.style.maxHeight = list.scrollHeight + 'px';
-  list.style.opacity = '0';
-  requestAnimationFrame(() => { list.style.maxHeight = '0px'; });
-  setTimeout(() => {
+  if (reduce) {
     d.open = false;
     d.classList.remove('closing');
-    list.style.maxHeight = '';
-    list.style.opacity = '';
-  }, 250);
+    return;
+  }
+  list.style.height = h + 'px';
+  list.style.paddingTop = '8px';
+  list.style.paddingBottom = '8px';
+  list._anim = list.animate([
+    { height: h + 'px', opacity: 1, paddingTop: '8px', paddingBottom: '8px' },
+    { height: '0px', opacity: 0, paddingTop: '0px', paddingBottom: '0px' },
+  ], { duration: 300, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
+  list._anim.onfinish = () => {
+    d.open = false;
+    d.classList.remove('closing');
+    list.style.height = '';
+    list.style.paddingTop = '';
+    list.style.paddingBottom = '';
+    list._anim = null;
+  };
 }
 
 function openTimeGroup(d) {
   const list = d.querySelector('.tg-list');
   if (!list) { d.open = true; return; }
+  if (list._anim) list._anim.cancel();
   d.classList.remove('closing');
   d.open = true;
-  list.style.maxHeight = '0px';
-  list.style.opacity = '0';
-  requestAnimationFrame(() => {
-    list.style.maxHeight = list.scrollHeight + 'px';
-    list.style.opacity = '1';
-  });
+  const target = list.scrollHeight;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) return;
+  list.style.height = '0px';
+  list.style.paddingTop = '0px';
+  list.style.paddingBottom = '0px';
+  list._anim = list.animate([
+    { height: '0px', opacity: 0, paddingTop: '0px', paddingBottom: '0px' },
+    { height: target + 'px', opacity: 1, paddingTop: '8px', paddingBottom: '8px' },
+  ], { duration: 300, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
+  list._anim.onfinish = () => {
+    list.style.height = '';
+    list.style.paddingTop = '';
+    list.style.paddingBottom = '';
+    list._anim = null;
+  };
 }
 
 function renderTimeGroups() {
@@ -2607,8 +2632,9 @@ function strategyInit(st) {
   };
   st.strategy = {
     hp: {}, shield: {}, moved: {}, gold: { w: 30, b: 30 }, cap: 50,
-    factions, phase: 'move', hand: [], selected: 1, attacker: null,
+    factions, phase: 'move', hand: [], hands: {}, selected: 1, attacker: null,
     targets: new Set(), aim: new Set(), x2: false, territory: {},
+    moveDone: { w: false, b: false }, attackDone: { w: false, b: false }, lastMoved: {},
     special: null, mines: [], rad: [], radTimer: 0,
   };
   for (const p of st.board) if (p) st.strategy.hp[p.id] = STRAT[p.t].hp;
@@ -2682,8 +2708,11 @@ function strategyDrawHand(color) {
       hand.push({ kind: 'piece', type, cost: STRAT[type].atk });
     }
   }
-  s.hand = hand;
-  s.selected = 1;
+  s.hands[color] = hand;
+  if (color === ui.st.turn) {
+    s.hand = hand;
+    s.selected = 1;
+  }
   s.attacker = null;
   s.targets = new Set();
   s.aim = new Set();
@@ -2707,6 +2736,12 @@ function strategyRender() {
   if (badgeB) badgeB.classList.toggle('active', st.turn === 'b');
   const phase = $('#stratPhase');
   if (phase) phase.textContent = st.turn === 'w' ? (s.phase === 'move' ? 'Ход белых' : 'Атака белых') : (s.phase === 'move' ? 'Ход чёрных' : 'Атака чёрных');
+  const action = $('#stratAction');
+  if (action) {
+    const who = st.turn === 'w' ? 'белых' : 'чёрных';
+    action.textContent = s.phase === 'move' ? `Ход ${who}: передвинь фигуру` : `Атака ${who}: выбери фигуру и жёлтую клетку`;
+    action.classList.toggle('attack', s.phase === 'attack');
+  }
   strategyRenderCards();
   strategyRenderTerritory();
   const sp = $('#stratSpecial');
@@ -3007,7 +3042,7 @@ function strategyMelee(from, to) {
   renderAll(false);
   const res = updateStatus(st);
   if (res) { finishGame(res); return; }
-  strategyAfterMove();
+  strategyAfterMove(p.c, to);
 }
 
 
@@ -3372,40 +3407,77 @@ function strategyUseSupport(kind, sq) {
   renderAll(false);
 }
 
-function strategyAfterMove() {
+function strategyPrepareAttack(color) {
   const st = ui.st;
   const s = st && st.strategy;
-  if (!s || st.status !== 'play') return;
+  if (!s) return;
   s.phase = 'attack';
+  st.turn = color;
   s.attacker = null;
   s.targets = new Set();
   s.aim = new Set();
-  strategyCheckMines();
-  const last = ui.lastMove;
-  if (last && last.to != null) {
-    const lastPiece = st.board[last.to];
-    if (lastPiece && lastPiece.c === st.turn) strategySelectAttacker(last.to);
+  s.special = null;
+  if (s.hands[color]) s.hand = s.hands[color];
+  const sq = s.lastMoved[color];
+  if (sq != null) {
+    const p = st.board[sq];
+    if (p && p.c === color) strategySelectAttacker(sq);
   }
   renderAll(false);
   if (ui.bot && st.turn === ui.bot.color) setTimeout(strategyBotAttack, 650);
 }
 
-function strategyEndTurn() {
+function strategyAfterMove(mover, to) {
   const st = ui.st;
   const s = st && st.strategy;
-  if (!s) return;
-  s.phase = 'move';
+  if (!s || st.status !== 'play') return;
+  mover = mover || st.turn;
+  if (to != null) s.lastMoved[mover] = to;
+  s.moveDone[mover] = true;
   s.attacker = null;
   s.targets = new Set();
   s.aim = new Set();
-  ui.selected = -1;
-  st.turn = other(st.turn);
+  s.special = null;
+  if (s.moveDone.w && s.moveDone.b) {
+    s.attackDone = { w: false, b: false };
+    strategyCheckMines();
+    strategyPrepareAttack('w');
+    return;
+  }
+  st.turn = other(mover);
+  s.phase = 'move';
   strategyIncome(st.turn);
   strategyDrawHand(st.turn);
-  s.special = null;
   strategyCheckMines();
   renderAll(false);
   if (ui.bot && st.turn === ui.bot.color) setTimeout(maybeBotTurn, 500);
+}
+
+function strategyEndTurn() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s || s.phase !== 'attack') return;
+  const mover = st.turn;
+  s.attackDone[mover] = true;
+  s.attacker = null;
+  s.targets = new Set();
+  s.aim = new Set();
+  s.special = null;
+  if (s.attackDone.w && s.attackDone.b) {
+    s.phase = 'move';
+    s.moveDone = { w: false, b: false };
+    s.attackDone = { w: false, b: false };
+    s.lastMoved = {};
+    st.turn = 'w';
+    strategyIncome('w');
+    strategyDrawHand('w');
+    strategyCheckMines();
+    renderAll(false);
+    if (ui.bot && st.turn === ui.bot.color) setTimeout(maybeBotTurn, 500);
+    return;
+  }
+  st.turn = other(mover);
+  strategyPrepareAttack(st.turn);
 }
 
 function strategyBotAttack() {
@@ -4901,7 +4973,7 @@ function commitMove(m, opts = {}) {
     if (ui.zombie) setTimeout(zombieAfterMove, 30);
     if (st.flags.strategy && !opts.remote) {
       st.turn = mover;
-      setTimeout(strategyAfterMove, 30);
+      setTimeout(() => strategyAfterMove(mover, match.to), 30);
     }
     saveCurrentGame();
   }
@@ -5440,6 +5512,9 @@ function netPublish(payload) {
   payload.mid = Math.random().toString(36).slice(2, 10);
   payload.ts = Date.now();
   ui.online.relay.publish(payload);
+  if (ui.online.p2p) {
+    try { ui.online.p2p.publish(payload); } catch (error) { /* P2P не поднялся */ }
+  }
 }
 
 function randomCode() {
@@ -5571,6 +5646,49 @@ function switchOnlineTab(tab) {
 }
 
 
+
+/* Дополнительный P2P-канал (Trystero/WebRTC). Если ntfy режет сеть,
+   браузеры соединяются напрямую; сигнализация идёт через публичные Nostr-релеи. */
+let trysteroModulePromise = null;
+
+async function startTrysteroRoom(code) {
+  if (!ui.online || ui.online.role === 'spectator') return;
+  if (navigator.webdriver) return; // не шумим в автотестах
+  try {
+    if (!trysteroModulePromise) trysteroModulePromise = import('https://esm.run/trystero');
+    const { joinRoom } = await trysteroModulePromise;
+    if (!ui.online || ui.online.code !== code) return;
+    const room = joinRoom({ appId: 'daymix-chess-p2p-v1' }, 'room-' + code);
+    const action = room.makeAction('msg');
+    let p2pPeer = false;
+    action.onMessage = (data) => {
+      if (!ui.online || ui.online.code !== code) return;
+      handleNet(JSON.stringify(data));
+    };
+    ui.online.p2p = {
+      publish: (payload) => action.send(payload),
+      close: () => room.leave(),
+    };
+    room.onPeerJoin = () => {
+      if (!ui.online || ui.online.code !== code) return;
+      p2pPeer = true;
+      ui.online.connected = true;
+      updateLinkDots();
+      if (ui.online.role === 'guest' && !ui.online.started) {
+        netPublish({ t: 'join', name: profile.name, avatar: profile.avatar });
+      } else if (ui.online.role === 'host') {
+        announceRoom();
+      }
+    };
+    room.onPeerLeave = () => {
+      p2pPeer = false;
+      if (ui.online && !ui.online.started) updateLinkDots();
+    };
+  } catch (error) {
+    /* P2P необязателен: основной канал уже работает */
+  }
+}
+
 async function createRoom() {
   if (ui.online && ui.online.code) leaveOnline(true);
   if (!ui.online) {
@@ -5615,6 +5733,7 @@ async function createRoom() {
     return;
   }
   ui.online.connected = true;
+  startTrysteroRoom(code);
   updateLinkDots();
   $('#roomCode').textContent = code;
   $('#roomRow').classList.remove('hidden');
@@ -5677,6 +5796,7 @@ async function joinRoom(code, opts = {}) {
     return;
   }
   ui.online.connected = true;
+  if (!spectate) startTrysteroRoom(code);
   setLobby(spectate ? 'Подключаемся к наблюдению за комнатой ' + code + '…' : 'Подключаемся к комнате ' + code + '…');
   netPublish(spectate ? { t: 'watch', name: profile.name } : { t: 'join', name: profile.name, avatar: profile.avatar });
   clearInterval(ui.online.joinTimer);
@@ -5937,6 +6057,7 @@ function leaveOnline(silent) {
     clearInterval(ui.online.joinTimer);
     if (!silent) netPublish({ t: 'bye' });
     if (ui.online.relay) ui.online.relay.close();
+    if (ui.online.p2p) { try { ui.online.p2p.close(); } catch (error) { /* уже закрыт */ } }
     ui.online = null;
   }
 }
@@ -6377,12 +6498,10 @@ function bindEvents() {
   if ($('#stratSkipMove')) $('#stratSkipMove').addEventListener('click', () => {
     const s = ui.strategy;
     if (!s || s.phase !== 'move') return;
-    strategyAddGold(ui.st.turn, 10);
-    strategyDrawHand(ui.st.turn);
-    s.phase = 'attack';
-    toast('Ход пропущен: +10 очков и новые карточки');
-    renderAll(false);
-    if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(strategyBotAttack, 600);
+    const mover = ui.st.turn;
+    strategyAddGold(mover, 10);
+    toast('Ход пропущен: +10 очков');
+    strategyAfterMove(mover, null);
   });
   if ($('#stratSkipAttack')) $('#stratSkipAttack').addEventListener('click', () => {
     if (!ui.strategy || ui.strategy.phase !== 'attack') return;

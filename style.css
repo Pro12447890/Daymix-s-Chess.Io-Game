@@ -3729,8 +3729,8 @@ strategy-bar, .strategy-bar {
 
 
 /* плавное закрытие групп времени */
-.tg-list { overflow: hidden; transition: max-height .24s ease, opacity .18s ease; }
-.time-group.closing .tg-list { opacity: 0; }
+.tg-list { overflow: hidden; will-change: height; }
+.time-group.closing .tg-list { overflow: hidden; }
 
 
 /* ПК: более заметные открытия экранов меню */
@@ -3767,3 +3767,12 @@ strategy-bar, .strategy-bar {
   .sip-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: 60px; gap: 4px; flex: none; min-height: 0; margin-top: 2px; }
   .sip-cards .strat-card { height: 60px; min-height: 60px; max-height: 60px; }
 }
+
+
+/* плашка текущего действия Стратегии */
+.strat-action {
+  padding: 6px 10px; border-radius: 8px; text-align: center;
+  background: #1d3557; border: 1px solid #4a86ff; color: #dce8ff;
+  font-size: 12px; font-weight: 800; letter-spacing: .2px;
+}
+.strat-action.attack { background: #4a1d1d; border-color: #ff8a5c; color: #ffe0d0; }
