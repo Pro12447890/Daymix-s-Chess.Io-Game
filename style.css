@@ -2685,6 +2685,8 @@ body.flip-all #result, body.flip-all .modal { transform: rotate(180deg); }
 
 /* ═══ инфернальный режим ═══ */
 html[data-infernal="1"] {
+  --light: #f3cfc9 !important;
+  --dark: #6d1b16 !important;
   --accent-green: #ff3b30;
   --accent-green-hover: #ff6259;
   --accent-green-shadow: #8f1d16;

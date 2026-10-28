@@ -2065,12 +2065,14 @@ function showScreen(name) {
     const splash = $('#phaseSplash');
     if (splash) splash.classList.remove('show');
     if (ui.st && ui.st.flags.clashBrawl) document.documentElement.dataset.brawl = '0';
+    if (ui.st && ui.st.flags.infernal) document.documentElement.dataset.infernal = '0';
     if (activeGame && ui.bot) hardStopBotGame();
     else if (activeGame && !ui.away) suspendGame();
     document.body.classList.remove('flip-all');
   }
   if (name === 'game') {
     if (ui.st && ui.st.flags.clashBrawl) document.documentElement.dataset.brawl = '1';
+    if (ui.st && ui.st.flags.infernal) document.documentElement.dataset.infernal = '1';
     if (ui.rotated) document.body.classList.add('flip-all');
     if (ui.away) resumeGame();
   }
