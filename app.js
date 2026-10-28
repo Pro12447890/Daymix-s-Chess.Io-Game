@@ -467,7 +467,7 @@ function updateSameStreak(id, mover) {
     ring.classList.toggle('hidden', !show);
     ring.style.setProperty('--p', `${Math.min(360, ((n - 4) / 4) * 360)}deg`);
     const label = ring.querySelector('span');
-    if (label) label.textContent = n >= 8 ? 'пат' : `${Math.min(4, n - 4)}/4`;
+    if (label) label.textContent = n >= 8 ? '8×' : `${Math.min(4, n - 4)}/4`;
   }
   return online && mine && endgame && n >= 8;
 }
@@ -4719,7 +4719,7 @@ function resultReason(res) {
     checks: 'три шаха', kingOnly: 'у соперника остался один король',
     abort: 'партия прервана',
   brawl: 'король побеждён',
-  devoured: 'съедены все фигуры', race: 'время вышло — считаем взятия', raceKing: 'король добрался до края', idle: 'белые не сделали первый ход', monotony: 'одной фигурой — пат',
+  devoured: 'съедены все фигуры', race: 'время вышло — считаем взятия', raceKing: 'король добрался до края', idle: 'белые не сделали первый ход', monotony: 'монотонное повторение',
   queenLost: 'ферзь потерян', extreme: 'крайний перевес',
   };
   return map[res.reason] || res.reason;
@@ -5144,8 +5144,13 @@ function maybePhase() {
 function phaseFor(st) {
   const ply = ui.moves.length;
   const mat = materialOf(st, 'w') + materialOf(st, 'b');
-  if (mat <= 20 || ply >= 60) return 'endgame';
-  if (ply >= 20) return 'middle';
+  let pieces = 0;
+  for (const p of st.board) if (p && p.t !== 'k') pieces += 1;
+  /* Дебют — примерно 10–12 ходов. Эндшпиль — не по номеру хода,
+     а по реальному уменьшению материала: полная доска на 30-м ходу
+     больше не считается эндшпилем. */
+  if (mat <= 16 || pieces <= 8 || (ply >= 80 && mat <= 44)) return 'endgame';
+  if (ply >= 24) return 'middle';
   return 'opening';
 }
 
