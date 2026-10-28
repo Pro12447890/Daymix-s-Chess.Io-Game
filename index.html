@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261028-29">
+  <link rel="stylesheet" href="style.css?v=20261028-30">
 </head>
 <body>
 
@@ -225,12 +225,19 @@
           <button class="online-tab" data-otab="internet" type="button">Интернет</button>
         </div>
 
+        <div class="connect-hud hidden" id="connectHud">
+          <div class="ch-head"><b id="chTitle">Подключаемся…</b><span id="chElapsed">0.0 с</span></div>
+          <div class="ch-bar"><i id="chBar"></i></div>
+          <div class="ch-steps" id="chSteps"></div>
+        </div>
+
         <div id="onlineFriend">
         <div class="online-grid">
           <div class="online-box">
             <h3>Создать комнату</h3>
             <p>Будет сгенерирована ссылка. Друг просто перейдёт по ней — и партия начнётся, когда он присоединится.</p>
             <button class="btn-game-green btn-lg" id="btnCreateDirect" type="button">Создать комнату</button>
+            <label class="toggle public-toggle"><input type="checkbox" id="optPublicRoom"><span>Публичная комната — видна в общем списке</span></label>
           </div>
 
           <div class="online-box">
@@ -258,6 +265,11 @@
         <div class="online-bottom">
           <div class="lobby-head">
             <h3>Публичные партии</h3>
+            <span class="lobby-filters">
+              <button class="lobby-filter active" data-lfilter="all" type="button">Все</button>
+              <button class="lobby-filter" data-lfilter="p2p" type="button">P2P</button>
+              <button class="lobby-filter" data-lfilter="internet" type="button">P∞INTERNET</button>
+            </span>
             <button class="btn btn-sm" id="openLobby" type="button">Все →</button>
           </div>
           <div class="lobby-list mini" id="onlineMiniList"><div class="lobby-empty">Пока нет открытых партий — создайте комнату, и она появится здесь.</div></div>
@@ -266,6 +278,11 @@
         <div id="onlineInternet" class="hidden">
           <div class="lobby-head">
             <h3>Ожидают партии</h3>
+            <span class="lobby-filters">
+              <button class="lobby-filter active" data-lfilter="all" type="button">Все</button>
+              <button class="lobby-filter" data-lfilter="p2p" type="button">P2P</button>
+              <button class="lobby-filter" data-lfilter="internet" type="button">P∞INTERNET</button>
+            </span>
             <span class="lobby-actions">
               <button class="btn btn-sm" id="lobbyCreate" type="button">+ Выставить ожидание</button>
               <button class="btn btn-sm" id="lobbyRefresh" type="button" title="Обновить">⟳</button>
@@ -344,7 +361,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-29 · P2P и TURN</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-30 · публичность и выбор канала</div>
           </div>
         </div>
       </div>
@@ -789,7 +806,7 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261028-29"></script>
+<script src="app.js?v=20261028-30"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>

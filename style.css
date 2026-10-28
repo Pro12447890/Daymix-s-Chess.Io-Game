@@ -3776,3 +3776,28 @@ strategy-bar, .strategy-bar {
   font-size: 12px; font-weight: 800; letter-spacing: .2px;
 }
 .strat-action.attack { background: #4a1d1d; border-color: #ff8a5c; color: #ffe0d0; }
+
+
+/* публичность комнаты, фильтры и анимация подключения */
+.public-toggle { margin-top: 8px; font-size: 11px; color: var(--text-muted); }
+.lobby-filters { display: inline-flex; gap: 4px; margin-left: auto; margin-right: 6px; }
+.lobby-filter { padding: 3px 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-card); color: var(--text-muted); font-size: 10px; }
+.lobby-filter.active { border-color: #60a5fa; color: #dcecff; background: #1f3b63; }
+.lobby-net { display: inline-block; margin-left: 5px; padding: 1px 5px; border-radius: 4px; font-size: 9px; background: #17233a; color: #8fb8ff; }
+.lobby-net.p2p { color: #7dffb0; background: #14301f; }
+.connect-hud {
+  margin: 4px 0 10px; padding: 10px 12px; border-radius: 12px;
+  background: #0c1526; border: 1px solid #3a5a8f; color: #dce8ff;
+  box-shadow: 0 0 22px #1f6feb33;
+}
+.connect-hud.hidden { display: none; }
+.ch-head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 7px; }
+.ch-head b { font-weight: 800; }
+.ch-bar { height: 8px; border-radius: 999px; background: #17233a; overflow: hidden; }
+.ch-bar i { display: block; height: 100%; width: 6%; border-radius: inherit; background: linear-gradient(90deg,#1f6feb,#60a5fa,#7dffb0); background-size: 200% 100%; animation: chFlow 1.2s linear infinite; transition: width .5s ease; }
+@keyframes chFlow { to { background-position: 200% 0; } }
+.ch-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 8px; font-size: 10.5px; color: #8fa9cc; }
+.ch-step.done { color: #7dffb0; }
+.ch-step.active { color: #fff; animation: chPulse .8s ease-in-out infinite alternate; }
+@keyframes chPulse { from { opacity: .65; } to { opacity: 1; } }
+.strategy-bar .strat-action { margin-bottom: 2px; }

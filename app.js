@@ -32,6 +32,7 @@ const DEFAULT_PROFILE = {
   square: false,
   timeMs: 5 * 60 * 1000,
   timeLabel: '5 минут',
+  publicRoom: false,
   points: 0,
   stats: { games: 0, wins: 0, losses: 0, draws: 0, mates: 0, timeWins: 0, streak: 0, best: 0 },
   history: [],
@@ -2165,6 +2166,7 @@ function refreshActiveGame() {
 }
 
 function showScreen(name) {
+  if (name === 'game') stopConnectHud();
   if (name !== 'game') { closeDrawer(); closePanel(); }
   const wasGame = ui.screen === 'game';
   const activeGame = ui.st && ui.st.status === 'play' && !ui.scored;
@@ -5547,6 +5549,7 @@ function handleLobby(text) {
     modeName: String(msg.modeName || 'Классика').slice(0, 40),
     timeLabel: String(msg.timeLabel || '').slice(0, 20),
     status: msg.status === 'live' ? 'live' : 'waiting',
+    net: msg.net === 'p2p' ? 'p2p' : 'internet',
     moves: Number(msg.moves) || 0,
     ts: Date.now(),
   };
@@ -5571,9 +5574,10 @@ function renderLobby() {
     }
   }
   const own = ui.online && ui.online.code;
+  const filter = ui.lobbyFilter || 'all';
   const render = (map, kind) => {
     const rooms = [...(map ? map.values() : [])]
-      .filter((r) => r.code !== own)
+      .filter((r) => r.code !== own && (filter === 'all' || r.net === filter))
       .sort((a, b) => b.ts - a.ts)
       .slice(0, 8);
     if (!rooms.length) {
@@ -5583,7 +5587,7 @@ function renderLobby() {
       <div class="lobby-item">
         <div class="lobby-info">
           <b>${escapeHtml(r.name)}</b>
-          <span>${escapeHtml(r.modeName)}${r.timeLabel ? ' · ' + escapeHtml(r.timeLabel) : ''}${kind === 'live' ? ' · ' + r.moves + ' ходов' : ''}</span>
+          <span>${escapeHtml(r.modeName)}${r.timeLabel ? ' · ' + escapeHtml(r.timeLabel) : ''}${kind === 'live' ? ' · ' + r.moves + ' ходов' : ''}<em class="lobby-net ${r.net}">${r.net === 'p2p' ? 'P2P' : 'P∞INTERNET'}</em></span>
         </div>
         <span class="lobby-code">${escapeHtml(r.code)}</span>
         <button class="btn btn-sm" data-${kind === 'live' ? 'watch' : 'join'}="${escapeHtml(r.code)}" type="button">${kind === 'live' ? 'Смотреть' : 'Войти'}</button>
@@ -5602,7 +5606,7 @@ function renderLobby() {
     } else {
       mini.innerHTML = all.map((r) => `
         <div class="lobby-item">
-          <div class="lobby-info"><b>${escapeHtml(r.name)}</b><span>${escapeHtml(r.modeName)}${r.timeLabel ? ' · ' + escapeHtml(r.timeLabel) : ''}${r.live ? ' · идёт' : ''}</span></div>
+          <div class="lobby-info"><b>${escapeHtml(r.name)}</b><span>${escapeHtml(r.modeName)}${r.timeLabel ? ' · ' + escapeHtml(r.timeLabel) : ''}${r.live ? ' · идёт' : ''}<em class="lobby-net ${r.net}">${r.net === 'p2p' ? 'P2P' : 'P∞INTERNET'}</em></span></div>
           <span class="lobby-code">${escapeHtml(r.code)}</span>
           <button class="btn btn-sm" data-${r.live ? 'watch' : 'join'}="${escapeHtml(r.code)}" type="button">${r.live ? 'Смотреть' : 'Войти'}</button>
         </div>`).join('');
@@ -5611,7 +5615,7 @@ function renderLobby() {
 }
 
 function lobbyAnnounce() {
-  if (!ui.online || ui.online.role !== 'host' || !ui.online.code) return;
+  if (!ui.online || ui.online.role !== 'host' || !ui.online.code || !ui.online.publicRoom) return;
   ensureLobby();
   if (!ui.lobbyRelay) return;
   const mode = modeById(ui.st ? ui.st.modeId : profile.modeId);
@@ -5623,6 +5627,7 @@ function lobbyAnnounce() {
     modeName: modeName(mode),
     timeLabel: profile.timeLabel,
     status: ui.st && ui.st.status === 'play' ? 'live' : 'waiting',
+    net: ui.online.p2p ? 'p2p' : 'internet',
     moves: ui.moves.length,
     ts: Date.now(),
   });
@@ -5649,6 +5654,63 @@ function switchOnlineTab(tab) {
 
 /* Дополнительный P2P-канал (Trystero/WebRTC). Если ntfy режет сеть,
    браузеры соединяются напрямую; сигнализация идёт через публичные Nostr-релеи. */
+
+let connectHudTimer = 0;
+let connectHudStarted = 0;
+
+function startConnectHud(role) {
+  const hud = $('#connectHud');
+  if (!hud) return;
+  clearInterval(connectHudTimer);
+  connectHudStarted = performance.now();
+  hud.classList.remove('hidden');
+  const title = $('#chTitle');
+  if (title) { title.textContent = role === 'host' ? 'Создаём комнату и каналы связи…' : 'Подключаемся к комнате…'; title.dataset.long = ''; }
+  const steps = $('#chSteps');
+  if (steps) {
+    steps.innerHTML = [
+      ['room', 'Комната'],
+      ['net', 'Интернет-канал'],
+      ['nostr', 'P2P Nostr'],
+      ['mqtt', 'P2P MQTT'],
+      ['ping', 'Замер пинга'],
+    ].map(([key, label]) => `<span class="ch-step" data-step="${key}">• ${label}</span>`).join('');
+  }
+  connectHudStep('room', 'active');
+  const bar = $('#chBar');
+  if (bar) bar.style.width = '8%';
+  setTimeout(() => connectHudStep('net', 'active'), 250);
+  setTimeout(() => connectHudStep('nostr', 'active'), 650);
+  setTimeout(() => connectHudStep('mqtt', 'active'), 1050);
+  connectHudTimer = setInterval(() => {
+    const elapsed = (performance.now() - connectHudStarted) / 1000;
+    const el = $('#chElapsed');
+    if (el) el.textContent = elapsed.toFixed(1) + ' с';
+    const b = $('#chBar');
+    if (b) b.style.width = Math.min(88, 8 + elapsed * 6) + '%';
+    if (elapsed > 10 && title && !title.dataset.long) {
+      title.dataset.long = '1';
+      title.textContent = 'Дольше обычного — пробуем резервные каналы…';
+    }
+  }, 100);
+}
+
+function connectHudStep(key, state, text) {
+  const el = document.querySelector(`#chSteps .ch-step[data-step="${key}"]`);
+  if (!el) return;
+  el.classList.remove('active', 'done');
+  if (state) el.classList.add(state);
+  if (text) el.textContent = text;
+  else if (state === 'done') el.textContent = '✓ ' + el.textContent.replace(/^[•✓]\s*/, '');
+}
+
+function stopConnectHud() {
+  clearInterval(connectHudTimer);
+  connectHudTimer = 0;
+  const hud = $('#connectHud');
+  if (hud) hud.classList.add('hidden');
+}
+
 const P2P_ROOM_CONFIG = {
   appId: 'daymix-chess-p2p-v1',
   relayConfig: { warnOnRelayFailure: false },
@@ -5685,8 +5747,10 @@ async function startP2PSource(url, code) {
     const links = [];
     ui.online.p2p = {
       links,
+      best: null,
       publish: (payload) => {
-        for (const link of links) {
+        const target = ui.online.p2p.best || null;
+        for (const link of (target ? [target] : links)) {
           try { link.action.send(payload); } catch (error) { /* канал отвалился */ }
         }
       },
@@ -5697,9 +5761,16 @@ async function startP2PSource(url, code) {
       },
     };
   }
-  ui.online.p2p.links.push({ room, action, url });
-  room.onPeerJoin = () => {
+  const link = { room, action, url, peerId: null, ping: null };
+  ui.online.p2p.links.push(link);
+  room.onPeerJoin = (peerId) => {
     if (!ui.online || ui.online.code !== code) return;
+    link.peerId = peerId;
+    connectHudStep(url.includes('mqtt') ? 'mqtt' : 'nostr', 'done');
+    room.ping(peerId).then((ms) => {
+      link.ping = ms;
+      scheduleP2PSelect();
+    }).catch(() => scheduleP2PSelect());
     ui.online.connected = true;
     updateLinkDots();
     if (ui.online.role === 'guest' && !ui.online.started) {
@@ -5709,8 +5780,27 @@ async function startP2PSource(url, code) {
     }
   };
   room.onPeerLeave = () => {
-    if (ui.online && !ui.online.started) updateLinkDots();
+    link.peerId = null;
+    link.ping = null;
+    if (ui.online && ui.online.p2p) {
+      if (ui.online.p2p.best === link) ui.online.p2p.best = null;
+      scheduleP2PSelect();
+      if (!ui.online.started) updateLinkDots();
+    }
   };
+}
+
+function scheduleP2PSelect() {
+  if (!ui.online || !ui.online.p2p) return;
+  clearTimeout(ui.online.p2p.selectTimer);
+  ui.online.p2p.selectTimer = setTimeout(() => {
+    if (!ui.online || !ui.online.p2p) return;
+    const links = ui.online.p2p.links.filter((l) => l.peerId && l.ping != null);
+    if (!links.length) return;
+    links.sort((a, b) => a.ping - b.ping);
+    ui.online.p2p.best = links[0];
+    connectHudStep('ping', 'done', `Замер пинга: ${Math.round(links[0].ping)} мс`);
+  }, 1400);
 }
 
 async function startTrysteroRoom(code) {
@@ -5739,6 +5829,7 @@ async function createRoom() {
   const code = randomCode();
   ui.online.code = code;
   ui.online.role = 'host';
+  ui.online.publicRoom = !!($('#optPublicRoom') && $('#optPublicRoom').checked);
   ui.online.connected = false;
   ui.online.names = { w: profile.name, b: null };
   ui.online.avatars = { w: profile.avatar, b: 'k' };
@@ -5749,6 +5840,7 @@ async function createRoom() {
   setLobby('Код готов. Передайте его другу — он введёт код и присоединится.');
   profile.lastRoom = { code, ts: Date.now(), role: 'guest' };
   saveProfile(true);
+  startConnectHud('host');
   ui.online.relay = new Relay();
   ui.online.relay.onMessage = (text) => handleNet(text);
   ui.online.relay.onClose = () => {
@@ -5761,11 +5853,16 @@ async function createRoom() {
     await ui.online.relay.connect(code);
   } catch (error) {
     setLobby('Не удалось связаться со службой. Проверьте интернет и попробуйте снова.');
+    stopConnectHud();
     ui.online = null;
     return;
   }
   ui.online.connected = true;
+  connectHudStep('net', 'done');
   startTrysteroRoom(code);
+  setTimeout(() => {
+    if (!ui.online || !ui.online.started) stopConnectHud();
+  }, 1600);
   updateLinkDots();
   $('#roomCode').textContent = code;
   $('#roomRow').classList.remove('hidden');
@@ -5773,8 +5870,10 @@ async function createRoom() {
   setLobby(`Комната создана. Режим: ${chosenMode.name}. Ждём соперника — партия начнётся, когда он присоединится.`);
   ensureLobby();
   stopLobbyAnnounce(false);
-  ui.online.lobbyTimer = setInterval(lobbyAnnounce, 8000);
-  lobbyAnnounce();
+  if (ui.online.publicRoom) {
+    ui.online.lobbyTimer = setInterval(lobbyAnnounce, 8000);
+    lobbyAnnounce();
+  }
   ui.online.waiting = true;
   ui.st = null;
   showScreen('online');
@@ -5793,6 +5892,7 @@ function announceRoom() {
     timeMs: ui.st ? ui.timeMs : profile.timeMs,
     timeLabel: profile.timeLabel,
     seed: ui.st ? ui.st.seed : null,
+    net: ui.online.p2p ? 'p2p' : 'internet',
     name: profile.name,
     avatar: profile.avatar,
   });
@@ -5812,6 +5912,7 @@ async function joinRoom(code, opts = {}) {
     names: spectate ? { w: null, b: null } : { w: null, b: profile.name },
     avatars: spectate ? { w: 'k', b: 'k' } : { w: 'k', b: profile.avatar },
   };
+  startConnectHud(spectate ? 'spectator' : 'guest');
   ui.online.relay = new Relay();
   ui.online.relay.onMessage = (text) => handleNet(text);
   ui.online.relay.onClose = () => {
@@ -5824,6 +5925,7 @@ async function joinRoom(code, opts = {}) {
     await ui.online.relay.connect(code);
   } catch (error) {
     setLobby('Комната не отвечает. Проверьте код и интернет.');
+    stopConnectHud();
     ui.online = null;
     return;
   }
@@ -6487,7 +6589,34 @@ function bindEvents() {
   if ($('#mobLeave')) $('#mobLeave').addEventListener('click', askLeave);
   if ($('#mobSettings')) $('#mobSettings').addEventListener('click', () => toggleDrawer());
   $$('.online-tab').forEach((b) => b.addEventListener('click', () => switchOnlineTab(b.dataset.otab)));
+  if ($('#optPublicRoom')) {
+    $('#optPublicRoom').checked = !!profile.publicRoom;
+    $('#optPublicRoom').addEventListener('change', (e) => {
+      profile.publicRoom = e.target.checked;
+      saveProfile(true);
+      if (ui.online && ui.online.role === 'host' && ui.online.code) {
+        ui.online.publicRoom = e.target.checked;
+        if (e.target.checked) {
+          ensureLobby();
+          lobbyAnnounce();
+          clearInterval(ui.online.lobbyTimer);
+          ui.online.lobbyTimer = setInterval(lobbyAnnounce, 8000);
+        } else {
+          clearInterval(ui.online.lobbyTimer);
+          stopLobbyAnnounce(true);
+        }
+      }
+    });
+  }
+  $$('.lobby-filter').forEach((b) => b.addEventListener('click', () => {
+    ui.lobbyFilter = b.dataset.lfilter || 'all';
+    $$('.lobby-filter').forEach((x) => x.classList.toggle('active', x === b));
+    renderLobby();
+  }));
   if ($('#lobbyCreate')) $('#lobbyCreate').addEventListener('click', () => {
+    if ($('#optPublicRoom')) $('#optPublicRoom').checked = true;
+    profile.publicRoom = true;
+    saveProfile(true);
     switchOnlineTab('friend');
     createRoom();
   });
