@@ -2138,10 +2138,10 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 2px 3px #00000066); }
 }
 
 .board.shake-1 { animation: boardQuake .2s ease; --amp: 2px; }
-.board.shake-2 { animation: boardQuake .26s ease; --amp: 4px; }
-.board.shake-3 { animation: boardQuake .34s ease; --amp: 6px; }
-.board.shake-4 { animation: boardQuake .5s ease; --amp: 10px; }
-.board.shake-5 { animation: boardQuake .7s ease; --amp: 16px; }
+.board.shake-2 { animation: boardQuake .18s ease; --amp: 2px; }
+.board.shake-3 { animation: boardQuake .26s ease; --amp: 4px; }
+.board.shake-4 { animation: boardQuake .4s ease; --amp: 7px; }
+.board.shake-5 { animation: boardQuake .55s ease; --amp: 11px; }
 @keyframes boardQuake {
   0%, 100% { transform: translate(0, 0) rotate(0); }
   15% { transform: translate(calc(var(--amp) * -1), calc(var(--amp) * .5)) rotate(-.4deg); }
@@ -3731,3 +3731,20 @@ strategy-bar, .strategy-bar {
 /* плавное закрытие групп времени */
 .tg-list { overflow: hidden; transition: max-height .24s ease, opacity .18s ease; }
 .time-group.closing .tg-list { opacity: 0; }
+
+
+/* ПК: более заметные открытия экранов меню */
+@media (min-width: 1000px) {
+  @keyframes menuUpPC {
+    from { opacity: 0; transform: translateY(22px) scale(.985); }
+    to { opacity: 1; transform: none; }
+  }
+  .screen.active:not(#screen-game) { animation: screenFade .34s cubic-bezier(.2,.8,.2,1) both; }
+  .screen.active:not(#screen-game) .wide-card { animation: menuUpPC .4s cubic-bezier(.2,.8,.2,1) both; }
+  #screen-online .online-box,
+  #screen-settings .settings-grid .field,
+  #screen-stats .stat-cell { animation: cardIn .34s cubic-bezier(.2,.8,.2,1) both; }
+  #screen-online .online-box:nth-child(2) { animation-delay: .05s; }
+  #screen-online .online-box:nth-child(3) { animation-delay: .1s; }
+  #screen-online .online-box:nth-child(4) { animation-delay: .15s; }
+}

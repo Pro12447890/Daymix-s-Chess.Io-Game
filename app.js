@@ -427,7 +427,7 @@ function updateEval() {
   }
 }
 
-const CAP_TIER = { p: 1, n: 2, b: 2, r: 3, q: 4, k: 5 };
+const CAP_TIER = { p: 0, n: 2, b: 1, r: 3, q: 4, k: 5 };
 
 const CURRENT_KEY = 'daymix-chess-current';
 const INFERNAL_LINES = [
@@ -817,11 +817,11 @@ function captureFx(list) {
   const st = ui.st;
   const sq = ui.sq;
   const layer = $('#hints');
-  let topTier = 1;
+  let topTier = 0;
   for (const item of list) {
-    const tier = CAP_TIER[item.type] || 1;
+    const tier = CAP_TIER[item.type] || 0;
     topTier = Math.max(topTier, tier);
-    if (!layer || tier === 4) continue;
+    if (!layer || tier === 4 || tier === 0) continue;
     const { dx, dy } = disp(st, item.square);
     const ghost = document.createElement('div');
     ghost.className = 'cap-ghost ' + (item.color === 'w' ? 'w' : 'b');
@@ -844,7 +844,7 @@ function captureFx(list) {
   const board = $('#board');
   const shell = $('#gameShell');
   const flash = $('#fxFlash');
-  if (topTier === 1) {
+  if (topTier <= 1) {
     for (const el of document.querySelectorAll('.cap-ghost')) el.classList.add('soft');
     return;
   }
