@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261027-21">
+  <link rel="stylesheet" href="style.css?v=20261028-1">
 </head>
 <body>
 
@@ -340,7 +340,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-27-21 · приветствие и язык</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-1 · Clash Brawl и мини-игры</div>
           </div>
         </div>
       </div>
@@ -353,7 +353,7 @@
           <button class="btn btn-sm btn-ghost back-btn" id="modesBack" type="button">← Назад</button>
           <div class="screen-head-text">
             <h2>Режимы</h2>
-            <p id="modesLead">Классика, 56 режимов и рандомный выбор — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
+            <p id="modesLead">Классика, 57 режимов и рандомный выбор — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
           </div>
           <span class="chip" id="modesCurrent">Классика</span>
         </div>
@@ -362,6 +362,7 @@
           <button class="mode-filter" data-filter="popular" type="button">Популярные</button>
           <button class="mode-filter" data-filter="pieces" type="button">Фигуры</button>
           <button class="mode-filter" data-filter="chaos" type="button">Хаос</button>
+          <button class="mode-filter" data-filter="mini" type="button">Мини-игры</button>
         </div>
         <div class="modes-scroll" id="modesScroll">
           <div class="modes-grid" id="modesGrid"></div>
@@ -417,6 +418,7 @@
               <div class="squares" id="squares"></div>
               <div class="pieces" id="pieces"></div>
               <div class="hints" id="hints"></div>
+              <div class="brawl-layer" id="brawlLayer"></div>
               <div class="fog-layer" id="fogLayer"></div>
             </div>
             <div class="promo hidden" id="promo">
@@ -425,6 +427,17 @@
                 <div class="promo-row" id="promoRow"></div>
               </div>
             </div>
+          </div>
+
+          <div class="brawl-panel hidden" id="brawlPanel">
+            <div class="brawl-top">
+              <button class="brawl-shield" id="brawlShield" type="button">🛡 Щит <em id="brawlShieldCount">3</em></button>
+              <div class="elixir-bar-wrap">
+                <div class="elixir-fill" id="brawlElixirFill"></div>
+                <div class="elixir-num" id="brawlElixirNum">5 / 10</div>
+              </div>
+            </div>
+            <div class="brawl-deck" id="brawlDeck"></div>
           </div>
 
           <div class="player-capsule bottom" id="barBottom">
@@ -706,6 +719,6 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261027-21"></script>
+<script src="app.js?v=20261028-1"></script>
 </body>
 </html>

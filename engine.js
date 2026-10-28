@@ -320,6 +320,11 @@ const MODES = [
     W: 8, H: 8, flags: { classic: true, andernach: true },
   },
   {
+    id: 'clashBrawl', n: 58, name: 'Клеш Бравл', icon: '⚔️',
+    desc: 'Пародия на мобилки: 50 HP у короля, фиолетовый эликсир, вызов подкреплений из колоды, щиты и отталкивания!',
+    W: 8, H: 8, flags: { clashBrawl: true, kingFree: true, customDeploy: true },
+  },
+  {
     id: 'infernal', n: 48, name: 'Инфернальный', icon: '🔥',
     desc: 'Всё красное, а на значимых ходах звучат теоремы гамбитов, кипяточка и ферзюшки. Дота головного мозга.',
     W: 8, H: 8, flags: { classic: true, infernal: true },
@@ -410,6 +415,14 @@ function setupBoard(st) {
   if (flags.only) return setupOnlyPiece(st, flags.only);
   if (flags.pawnField) return setupPawnField(st, !!flags.withQueen);
   if (flags.noPawns) return setupNoPawns(st);
+
+  if (flags.clashBrawl) {
+    board[4] = newPiece('k', 'w');
+    board[(H - 1) * W + 4] = newPiece('k', 'b');
+    st.pawnStart = { w: [], b: [] };
+    st.brawl = { hp: { w: 50, b: 50 }, shieldTurns: { w: 0, b: 0 } };
+    return;
+  }
 
   if (flags.losAlamos) {
     const back = 'rnqknr';
@@ -715,6 +728,21 @@ function genPseudo(st, color) {
         const q = board[t];
         if (q && q.c !== color) pushPawnAdvance(out, st, sq, t, ny);
         else if (!q && st.ep === t) out.push({ from: sq, to: t, ep: true, capture: sqAt(st, nx, y) });
+      }
+      if (p.gold) {
+        const by = y - dir;
+        if (by >= 0 && by < H) {
+          const back = sqAt(st, x, by);
+          if (!board[back] && !isBlocked(st, back)) out.push({ from: sq, to: back });
+        }
+        for (const dx of [-1, 1]) {
+          const nx = x + dx;
+          if (!inside(st, nx, by)) continue;
+          const t = sqAt(st, nx, by);
+          if (isBlocked(st, t)) continue;
+          const q = board[t];
+          if (q && q.c !== color) out.push({ from: sq, to: t, capture: t });
+        }
       }
       if (st.flags.pawnBack) {
         const by = y - dir;
@@ -1289,6 +1317,14 @@ function updateStatus(st) {
     return null;
   }
   if (st.flags.captureRace) return null;
+  if (st.flags.clashBrawl) {
+    if (st.brawl && (st.brawl.hp.w <= 0 || st.brawl.hp.b <= 0)) {
+      st.status = 'over';
+      st.result = { winner: st.brawl.hp.w <= 0 ? 'b' : 'w', reason: 'brawl' };
+      return st.result;
+    }
+    return null;
+  }
   if (st.flags.raceKing) {
     const wk = findKing(st, 'w');
     const bk = findKing(st, 'b');
