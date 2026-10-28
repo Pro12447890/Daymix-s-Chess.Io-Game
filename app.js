@@ -2823,8 +2823,11 @@ function strategyAttackData(p, sq) {
         const nx = x + dx * d, ny = y + dy * d;
         if (!inside(st, nx, ny)) break;
         const cell = sqAt(st, nx, ny);
+        const q = st.board[cell];
+        if (q && q.c === p.c) break;
         aim.add(cell);
-        if (enemy(cell)) { targets.add(cell); break; }
+        targets.add(cell);
+        if (q) break;
       }
     }
     return { aim, targets };
@@ -2835,9 +2838,11 @@ function strategyAttackData(p, sq) {
         const nx = x + dx * d, ny = y + dy * d;
         if (!inside(st, nx, ny)) break;
         const cell = sqAt(st, nx, ny);
+        const q = st.board[cell];
+        if (q && q.c === p.c) break;
         aim.add(cell);
-        if (enemy(cell)) { targets.add(cell); break; }
-        if (st.board[cell]) break;
+        targets.add(cell);
+        if (q) break;
       }
     }
     return { aim, targets };
@@ -2862,7 +2867,8 @@ function strategyAttackData(p, sq) {
       if (!inside(st, nx, ny)) break;
       const s = sqAt(st, nx, ny);
       add(s);
-      if (d === max && enemy(s)) targets.add(s);
+      if (d === max && !st.board[s]) targets.add(s);
+      if (enemy(s)) targets.add(s);
       if (st.board[s]) break;
     }
   } else if (p.t === 'n') {
@@ -2871,7 +2877,7 @@ function strategyAttackData(p, sq) {
       if (!inside(st, nx, ny)) continue;
       const s = sqAt(st, nx, ny);
       aim.add(s);
-      if (enemy(s)) targets.add(s);
+      if (!st.board[s] || enemy(s)) targets.add(s);
     }
   } else {
     const dirs = p.t === 'r' ? ROOK_DIRS : p.t === 'b' ? BISHOP_DIRS : QUEEN_DIRS;
@@ -2883,7 +2889,7 @@ function strategyAttackData(p, sq) {
         const s = sqAt(st, nx, ny);
         if (st.board[s] && st.board[s].c === p.c) break;
         add(s);
-        if (enemy(s)) targets.add(s);
+        targets.add(s);
         if (st.board[s]) break;
       }
     }
@@ -3226,8 +3232,8 @@ function strategyAttack(from, to) {
   const st = ui.st;
   const s = st.strategy;
   const p = st.board[from];
-  const target = st.board[to];
-  if (!p || !target) return;
+  const target = st.board[to] || null;
+  if (!p) return;
   const cost = strategyCost(STRAT[p.t].atk, st, from, p.c);
   if (s.gold[p.c] < cost) { toast('Не хватает очков на атаку'); return; }
   s.gold[p.c] -= cost;
@@ -3250,9 +3256,9 @@ function strategyAttack(from, to) {
       const tx = to % st.W, ty = Math.floor(to / st.W);
       if (Math.max(Math.abs(nx - tx), Math.abs(ny - ty)) <= 2) targetsAoe.push(i);
     }
-    const nukeDied = strategyDamage(target, 150);
-    strategyFloat(to, '-150', 'red');
-    if (target.t === 'k') st.capturedKing = target.c;
+    const nukeDied = target ? strategyDamage(target, 150) : false;
+    if (target) strategyFloat(to, '-150', 'red');
+    if (target && target.t === 'k') st.capturedKing = target.c;
     if (nukeDied && st.board[to]) st.board[to] = null;
     for (const i of targetsAoe) {
       const q = st.board[i];
@@ -3262,9 +3268,9 @@ function strategyAttack(from, to) {
     }
     s.rad.push({ sq: to, until: performance.now() + 16000, last: performance.now() });
   } else {
-    const died = strategyDamage(target, dmg);
+    const died = target ? strategyDamage(target, dmg) : false;
     strategyBurst(to, special === 'rocket' ? '#ff9d3b' : '#ffd45e');
-    strategyFloat(to, `-${dmg}`, 'red');
+    if (target) strategyFloat(to, `-${dmg}`, 'red');
 
     if (p.t === 'b') {
       let side = 0;
@@ -3286,8 +3292,8 @@ function strategyAttack(from, to) {
       const recoil = 3 + Math.floor(Math.random() * 3);
       st.strategy.hp[p.id] = Math.max(0, strategyHp(p) - recoil);
     }
-    if (special === 'rocket' && !died) strategyKnockback(to);
-    if (target.t === 'k') st.capturedKing = target.c;
+    if (special === 'rocket' && !died && target) strategyKnockback(to);
+    if (target && target.t === 'k') st.capturedKing = target.c;
     if (died && st.board[to]) st.board[to] = null;
   }
   renderAll(false);
@@ -3357,6 +3363,11 @@ function strategyAfterMove() {
   s.targets = new Set();
   s.aim = new Set();
   strategyCheckMines();
+  const last = ui.lastMove;
+  if (last && last.to != null) {
+    const lastPiece = st.board[last.to];
+    if (lastPiece && lastPiece.c === st.turn) strategySelectAttacker(last.to);
+  }
   renderAll(false);
   if (ui.bot && st.turn === ui.bot.color) setTimeout(strategyBotAttack, 650);
 }
