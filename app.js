@@ -998,7 +998,7 @@ const MODE_SHORT = {
   noQueen7: 'Семёрка', swapRows: 'Пешки', blackFirst: 'Чёрные', inverted: 'Вверх',
   losAlamos: '6×6', berolina: 'Беролина', checkless: 'Без шахов', raceKings: 'Гонки', andernach: 'Андернах',
   pawnBack: 'Назад', kingKnight: 'Король-конь', queenLose: 'Ферзь', weakKnights: 'Кони',
-  castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно', clashBrawl: 'Brawl', royalBattle: 'Битва', zombie: 'Зомби',
+  castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно', clashBrawl: 'Brawl', royalBattle: 'Битва', zombie: 'Зомби', strategy: 'Стратегия',
 };
 
 const MODE_EN = {
@@ -1597,7 +1597,7 @@ const MODE_CATS = {
   popular: ['classic', 'fischer', 'threeChecks', 'kingCapture'],
   pieces: ['jester', 'boy', 'queens', 'pawnField', 'pawnFieldQ', 'knights', 'rooks', 'bishops'],
   chaos: ['explode', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center'],
-  mini: ['zombie', 'royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
+  mini: ['strategy', 'zombie', 'royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
 };
 
 function modesByFilter(filter) {
@@ -1614,7 +1614,7 @@ const MODE_GROUP = {
   explode: 3, fog: 3, race: 3, kingOnly: 3, queenPierce: 3, bishopKing: 3, crossCastle: 3,
   touchMove: 3, openIntent: 3, horde: 3, antichess: 3,
   noQueen7: 1, swapRows: 2, blackFirst: 1, inverted: 2, pawnBack: 2, kingKnight: 1,
-  queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3, clashBrawl: 3, royalBattle: 3, zombie: 3,
+  queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3, clashBrawl: 3, royalBattle: 3, zombie: 3, strategy: 3,
   losAlamos: 2, berolina: 2, checkless: 2, raceKings: 2, andernach: 3,
 };
 const GROUP_TITLES = {
@@ -2085,6 +2085,7 @@ function showScreen(name) {
     if (ui.st && ui.st.flags.infernal) document.documentElement.dataset.infernal = '0';
     if (ui.st && ui.st.flags.royalBattle) document.documentElement.dataset.royal = '0';
     if (ui.st && ui.st.flags.zombie) document.documentElement.dataset.zombie = '0';
+    if (ui.st && ui.st.flags.strategy) document.documentElement.dataset.strategy = '0';
     if (activeGame && ui.bot) hardStopBotGame();
     else if (activeGame && !ui.away) suspendGame();
     document.body.classList.remove('flip-all');
@@ -2094,6 +2095,7 @@ function showScreen(name) {
     if (ui.st && ui.st.flags.infernal) document.documentElement.dataset.infernal = '1';
     if (ui.st && ui.st.flags.royalBattle) document.documentElement.dataset.royal = '1';
     if (ui.st && ui.st.flags.zombie) document.documentElement.dataset.zombie = '1';
+    if (ui.st && ui.st.flags.strategy) document.documentElement.dataset.strategy = '1';
     if (ui.rotated) document.body.classList.add('flip-all');
     if (ui.away) resumeGame();
   }
@@ -2171,7 +2173,7 @@ function layoutBoard() {
   const brawlH = ui.st && ui.st.flags.clashBrawl ? (cinema ? 112 : 150) : 0;
   const barH = (phone
     ? (cinema ? 24 + 24 : 76 + 22 + 38)
-    : 96) + brawlH;   // фиксировано: доска не дёргается при взятии
+    : 96) + brawlH + (ui.strategy ? 220 : 0);   // фиксировано: доска не дёргается при взятии
   const gaps = 8;
   const shell = $('#gameShell');
   const panel = $('#sidePanel');
@@ -2273,6 +2275,13 @@ function renderSquares() {
     if (st.blocked.includes(i)) cls.push('blocked');
     if (ui.brawl && brawlCanDeploy(i, st.turn)) cls.push('brawl-deploy');
     if (ui.zombie && ui.zombie.infect[i]) cls.push('zombie-threat');
+    if (ui.strategy) {
+      const terr = ui.strategy.territory || {};
+      if (terr[i] === 'w') cls.push('strat-w');
+      else if (terr[i] === 'b') cls.push('strat-b');
+      if (ui.strategy.aim && ui.strategy.aim.has(i)) cls.push('strat-aim');
+      if (ui.strategy.targets && ui.strategy.targets.has(i)) cls.push('strat-target');
+    }
     if (ui.royal) {
       const rx = i % st.W;
       const ry = Math.floor(i / st.W);
@@ -2322,6 +2331,15 @@ function renderPieces(animate) {
       ui.pieceNodes.set(p.id, el);
     }
     el.className = `piece ${p.c === 'w' ? 'w' : 'b'} t-${p.t}${p.gold ? ' gold' : ''}${p.special ? ' ' + p.special : ''}`;
+    if (st.flags.strategy) {
+      const hp = strategyHp(p);
+      const max = strategyMaxHp(p);
+      el.dataset.hp = `${hp}${st.strategy.shield[p.id] ? ' 🛡' : ''}`;
+      el.classList.toggle('hp-low', hp <= max * 0.35);
+    } else {
+      delete el.dataset.hp;
+      el.classList.remove('hp-low');
+    }
     const typeKey = p.t + '|' + p.c + '|' + (p.used || 0);
     if (el.dataset.tk !== typeKey) {
       el.innerHTML = pieceSvg(p.t);
@@ -2474,6 +2492,461 @@ function brawlDeck() {
     .sort((a, b) => a.cost - b.cost || a.t.localeCompare(b.t));
 }
 
+
+
+/* ═══════════════════ 12.9. СТРАТЕГИЯ ═══════════════════ */
+
+const STRAT = {
+  p: { hp: 10, move: 5, atk: 10, dmg: 6, range: 2 },
+  b: { hp: 25, move: 7, atk: 15, dmg: 8, range: 3 },
+  n: { hp: 28, move: 10, atk: 15, dmg: 12, range: 2 },
+  r: { hp: 52, move: 16, atk: 24, dmg: 30, range: 5 },
+  q: { hp: 75, move: 35, atk: 57, dmg: 45, range: 3 },
+  k: { hp: 205, move: 35, atk: 120, dmg: 150, range: 1 },
+};
+const STRAT_NAMES = {
+  p: 'Пешка', b: 'Слон', n: 'Конь', r: 'Ладья', q: 'Ферзь', k: 'Король',
+};
+
+function strategyInit(st) {
+  stopStrategy();
+  const factions = {
+    w: Math.random() < 0.5 ? 'WhiteTown' : 'LightTech',
+    b: Math.random() < 0.5 ? 'BlackTown' : 'DarkTech',
+  };
+  st.strategy = {
+    hp: {}, shield: {}, moved: {}, gold: { w: 30, b: 30 }, cap: 50,
+    factions, phase: 'move', hand: [], selected: 1, attacker: null,
+    targets: new Set(), aim: new Set(), x2: false, territory: {},
+  };
+  for (const p of st.board) if (p) st.strategy.hp[p.id] = STRAT[p.t].hp;
+  ui.strategy = st.strategy;
+  document.documentElement.dataset.strategy = '1';
+  $('#strategyHud').classList.remove('hidden');
+  $('#strategyBar').classList.remove('hidden');
+  strategyDrawHand(st.turn);
+  strategyRender();
+}
+
+function stopStrategy() {
+  ui.strategy = null;
+  document.documentElement.dataset.strategy = '0';
+  const hud = $('#strategyHud');
+  const bar = $('#strategyBar');
+  if (hud) hud.classList.add('hidden');
+  if (bar) bar.classList.add('hidden');
+}
+
+function strategyHp(p) {
+  const st = ui.st;
+  if (!st || !st.strategy || !p) return 0;
+  const v = st.strategy.hp[p.id];
+  return v == null ? STRAT[p.t].hp : v;
+}
+
+function strategyMaxHp(p) { return STRAT[p.t] ? STRAT[p.t].hp : 10; }
+function strategyGold(color) { return ui.st && ui.st.strategy ? ui.st.strategy.gold[color] : 0; }
+
+function strategyOnEnemyHalf(st, sq, color) {
+  const y = Math.floor(sq / st.W);
+  return color === 'w' ? y >= Math.ceil(st.H / 2) : y < Math.floor(st.H / 2);
+}
+
+function strategyCost(base, st, sq, color) {
+  return Math.round(base * (strategyOnEnemyHalf(st, sq, color) ? 1.1 : 1));
+}
+
+function strategyAddGold(color, amount) {
+  const s = ui.st && ui.st.strategy;
+  if (!s) return;
+  s.gold[color] = Math.min(s.cap, s.gold[color] + amount);
+}
+
+function strategyIncome(color) {
+  const s = ui.st && ui.st.strategy;
+  if (!s) return;
+  let amount = 5;
+  if (s.x2) { amount *= 2; s.x2 = false; }
+  strategyAddGold(color, amount);
+  toast(`+${amount} в казну`);
+}
+
+function strategyDrawHand(color) {
+  const s = ui.st && ui.st.strategy;
+  if (!s) return;
+  const types = [...new Set(ui.st.board.filter((p) => p && p.c === color).map((p) => p.t))];
+  const hand = [];
+  const addSupport = () => (Math.random() < 0.3 ? 'heal' : (Math.random() < 0.15 && s.gold[color] >= 50 ? 'shield' : null));
+  for (let i = 0; i < 3; i++) {
+    const support = addSupport();
+    if (support) hand.push({ kind: support });
+    else hand.push({ kind: 'piece', type: types[Math.floor(Math.random() * types.length)] || 'p' });
+  }
+  s.hand = hand;
+  s.selected = 1;
+  s.attacker = null;
+  s.targets = new Set();
+  s.aim = new Set();
+}
+
+function strategyRender() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s) return;
+  const fw = $('#stratFactionW');
+  const fb = $('#stratFactionB');
+  if (fw) fw.textContent = s.factions.w;
+  if (fb) fb.textContent = s.factions.b;
+  const gw = $('#stratGoldW');
+  const gb = $('#stratGoldB');
+  if (gw) gw.textContent = `${s.gold.w}/${s.cap}`;
+  if (gb) gb.textContent = `${s.gold.b}/${s.cap}`;
+  const phase = $('#stratPhase');
+  if (phase) phase.textContent = st.turn === 'w' ? (s.phase === 'move' ? 'Ход белых' : 'Атака белых') : (s.phase === 'move' ? 'Ход чёрных' : 'Атака чёрных');
+  strategyRenderCards();
+  strategyRenderTerritory();
+}
+
+function strategyRenderCards() {
+  const box = $('#stratCards');
+  const s = ui.strategy;
+  if (!box || !s) return;
+  box.innerHTML = '';
+  s.hand.forEach((card, i) => {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'strat-card' + (i === s.selected ? ' sel' : '') + (card.kind === 'heal' ? ' heal' : card.kind === 'shield' ? ' shield' : '');
+    if (card.kind === 'piece') {
+      const meta = STRAT[card.type] || STRAT.p;
+      el.innerHTML = `<span class="sc-icon">${pieceSvg(card.type)}</span><span class="sc-name">${STRAT_NAMES[card.type] || card.type}</span><span class="sc-stats">${meta.hp} HP · ход ${meta.move} · атака ${meta.atk}</span>`;
+    } else {
+      el.innerHTML = `<span class="sc-icon">${card.kind === 'heal' ? '💜' : '🛡'}</span><span class="sc-name">${card.kind === 'heal' ? 'Хилл' : 'Щит'}</span><span class="sc-stats">${card.kind === 'heal' ? '15–25 HP · ×1.5' : '+30 HP · 50 очков'}</span>`;
+    }
+    el.addEventListener('click', () => {
+      s.selected = i;
+      strategyRenderCards();
+      const info = $('#stratInfo');
+      if (info) info.textContent = card.kind === 'piece'
+        ? `${STRAT_NAMES[card.type]}: нажми на свою фигуру, чтобы открыть карточку.`
+        : (card.kind === 'heal' ? 'Выбери свою фигуру для лечения.' : 'Выбери свою фигуру для щита.');
+    });
+    box.appendChild(el);
+  });
+}
+
+function strategyShowPieceCard(p) {
+  const s = ui.strategy;
+  if (!s || !p) return;
+  s.hand[s.selected] = { kind: 'piece', type: p.t };
+  strategyRenderCards();
+  const info = $('#stratInfo');
+  if (info) {
+    const meta = STRAT[p.t];
+    info.textContent = `${STRAT_NAMES[p.t]}: ${strategyHp(p)}/${meta.hp} HP · ход ${meta.move} · атака ${meta.atk} · урон ${meta.dmg}.`;
+  }
+}
+
+function strategyTerritory() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s) return {};
+  const map = {};
+  const ownNear = (sq, color, source) => {
+    const x = sq % st.W;
+    const y = Math.floor(sq / st.W);
+    for (let i = 0; i < st.board.length; i++) {
+      if (i === source) continue;
+      const q = st.board[i];
+      if (!q || q.c !== color) continue;
+      if (Math.max(Math.abs(i % st.W - x), Math.abs(Math.floor(i / st.W) - y)) <= 3) return true;
+    }
+    return false;
+  };
+  for (let i = 0; i < st.board.length; i++) {
+    const p = st.board[i];
+    if (!p || p.t === 'k') continue;
+    if (!strategyOnEnemyHalf(st, i, p.c)) continue;
+    const cells = [i];
+    const x = i % st.W;
+    const y = Math.floor(i / st.W);
+    for (const [dx, dy] of ROOK_DIRS) {
+      const nx = x + dx, ny = y + dy;
+      if (inside(st, nx, ny)) cells.push(sqAt(st, nx, ny));
+    }
+    for (const c of cells) {
+      if (ownNear(c, p.c, i)) continue;
+      map[c] = p.c;
+    }
+  }
+  s.territory = map;
+  return map;
+}
+
+function strategyRenderTerritory() {
+  if (!ui.st || !ui.st.strategy) return;
+  strategyTerritory();
+}
+
+function strategyAttackData(p, sq) {
+  const st = ui.st;
+  const aim = new Set();
+  const targets = new Set();
+  const add = (s) => { if (inside(st, s % st.W, Math.floor(s / st.W))) aim.add(s); };
+  const enemy = (s) => { const q = st.board[s]; return q && q.c !== p.c; };
+  const x = sq % st.W;
+  const y = Math.floor(sq / st.W);
+  if (p.t === 'p') {
+    const dir = p.c === 'w' ? 1 : -1;
+    const max = (st.strategy.moved[p.id] ? 2 : 4);
+    for (let d = 1; d <= max; d++) {
+      const nx = x, ny = y + dir * d;
+      if (!inside(st, nx, ny)) break;
+      const s = sqAt(st, nx, ny);
+      add(s);
+      if (d === max && enemy(s)) targets.add(s);
+      if (st.board[s]) break;
+    }
+  } else if (p.t === 'n') {
+    for (const [dx, dy] of [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (!inside(st, nx, ny)) continue;
+      const s = sqAt(st, nx, ny);
+      aim.add(s);
+      if (enemy(s)) targets.add(s);
+    }
+  } else {
+    const dirs = p.t === 'r' ? ROOK_DIRS : p.t === 'b' ? BISHOP_DIRS : QUEEN_DIRS;
+    const range = p.t === 'k' ? 1 : STRAT[p.t].range;
+    for (const [dx, dy] of dirs) {
+      for (let d = 1; d <= range; d++) {
+        const nx = x + dx * d, ny = y + dy * d;
+        if (!inside(st, nx, ny)) break;
+        const s = sqAt(st, nx, ny);
+        if (st.board[s] && st.board[s].c === p.c) break;
+        add(s);
+        if (enemy(s)) targets.add(s);
+        if (st.board[s]) break;
+      }
+    }
+  }
+  return { aim, targets };
+}
+
+function strategySelectAttacker(sq) {
+  const st = ui.st;
+  const s = st.strategy;
+  const p = st.board[sq];
+  if (!p || p.c !== st.turn) return;
+  const data = strategyAttackData(p, sq);
+  s.attacker = sq;
+  s.targets = data.targets;
+  s.aim = data.aim;
+  ui.selected = sq;
+  strategyShowPieceCard(p);
+  renderSquares();
+}
+
+function strategyClick(sq) {
+  const st = ui.st;
+  const s = st.strategy;
+  if (!s || st.status !== 'play' || ui.gameLocked || ui.paused) return;
+  if (ui.bot && st.turn === ui.bot.color) return;
+  const p = st.board[sq];
+
+  if (s.phase === 'attack') {
+    if (p && p.c === st.turn) {
+      strategySelectAttacker(sq);
+      return;
+    }
+    if (s.attacker != null && s.targets.has(sq)) {
+      strategyAttack(s.attacker, sq);
+      return;
+    }
+    s.attacker = null;
+    s.targets = new Set();
+    s.aim = new Set();
+    renderSquares();
+    return;
+  }
+
+  if (s.selected != null && s.hand[s.selected] && (s.hand[s.selected].kind === 'heal' || s.hand[s.selected].kind === 'shield')) {
+    if (p && p.c === st.turn) { strategyUseSupport(s.hand[s.selected].kind, sq); return; }
+  }
+
+  if (ui.selected >= 0) {
+    const candidates = legalMoves(st, st.turn).filter((m) => m.from === ui.selected && m.to === sq);
+    if (candidates.length) {
+      if (st.board[sq] && st.board[sq].c !== st.turn) strategyMelee(ui.selected, sq);
+      else commitMove(candidates[0]);
+      ui.selected = -1;
+      return;
+    }
+  }
+  if (p && p.c === st.turn) {
+    ui.selected = sq;
+    strategyShowPieceCard(p);
+    renderSquares();
+    renderHints();
+  } else {
+    ui.selected = -1;
+    renderSquares();
+  }
+}
+
+function strategyMelee(from, to) {
+  const st = ui.st;
+  const s = st.strategy;
+  const p = st.board[from];
+  const target = st.board[to];
+  if (!p || !target) return;
+  const cost = strategyCost(STRAT[p.t].move, st, from, p.c);
+  if (s.gold[p.c] < cost) { toast('Не хватает очков на ход'); return; }
+  s.gold[p.c] -= cost;
+  s.moved[p.id] = true;
+  const dmg = strategyHp(p);
+  const died = strategyDamage(target, dmg);
+  if (died) {
+    const victimHp = STRAT[target.t].hp;
+    if (target.t === 'k') st.capturedKing = target.c;
+    st.board[to] = p;
+    st.board[from] = null;
+    st.strategy.hp[p.id] = Math.max(1, strategyHp(p) - Math.round(victimHp * 0.5));
+    st.full++;
+    if (target.t === 'k') {
+      renderAll(false);
+      const res = updateStatus(st);
+      if (res) finishGame(res);
+      return;
+    }
+  }
+  renderAll(false);
+  const res = updateStatus(st);
+  if (res) { finishGame(res); return; }
+  strategyAfterMove();
+}
+
+function strategyAttack(from, to) {
+  const st = ui.st;
+  const s = st.strategy;
+  const p = st.board[from];
+  const target = st.board[to];
+  if (!p || !target) return;
+  const cost = strategyCost(STRAT[p.t].atk, st, from, p.c);
+  if (s.gold[p.c] < cost) { toast('Не хватает очков на атаку'); return; }
+  s.gold[p.c] -= cost;
+  s.moved[p.id] = true;
+  let dmg = STRAT[p.t].dmg;
+  if (p.t === 'q') dmg = 35 + Math.floor(Math.random() * 21);
+  if (strategyOnEnemyHalf(st, from, p.c)) dmg = Math.round(dmg * 1.15);
+  const died = strategyDamage(target, dmg);
+  strategyFloat(to, `-${dmg}`, 'red');
+  if (p.t === 'n') {
+    const recoil = 3 + Math.floor(Math.random() * 3);
+    st.strategy.hp[p.id] = Math.max(0, strategyHp(p) - recoil);
+  }
+  if (target.t === 'k') st.capturedKing = target.c;
+  if (died && st.board[to]) st.board[to] = null;
+  renderAll(false);
+  const res = updateStatus(st);
+  if (res) { finishGame(res); return; }
+  strategyEndTurn();
+}
+
+function strategyDamage(piece, dmg) {
+  const st = ui.st;
+  const s = st.strategy;
+  if (!piece) return false;
+  const shield = s.shield[piece.id] || 0;
+  if (shield > 0) {
+    const absorbed = Math.min(shield, dmg);
+    s.shield[piece.id] = shield - absorbed;
+    dmg -= absorbed;
+  }
+  const hp = Math.max(0, strategyHp(piece) - dmg);
+  s.hp[piece.id] = hp;
+  return hp <= 0;
+}
+
+function strategyFloat(sq, text, cls) {
+  if (!ui.st || !ui.sq) return;
+  const layer = $('#brawlLayer');
+  if (!layer) return;
+  const { dx, dy } = disp(ui.st, sq);
+  const el = document.createElement('span');
+  el.className = 'floating-dmg ' + (cls || 'red');
+  el.textContent = text;
+  el.style.left = ((dx + 0.5) * ui.sq) + 'px';
+  el.style.top = ((dy + 0.5) * ui.sq) + 'px';
+  layer.appendChild(el);
+  setTimeout(() => el.remove(), 900);
+}
+
+function strategyUseSupport(kind, sq) {
+  const st = ui.st;
+  const s = st.strategy;
+  const p = st.board[sq];
+  if (!p || p.c !== st.turn) return;
+  if (kind === 'heal') {
+    const heal = 15 + Math.floor(Math.random() * 11);
+    const cost = Math.ceil(heal * 1.5);
+    if (s.gold[p.c] < cost) { toast('Не хватает очков на хилл'); return; }
+    s.gold[p.c] -= cost;
+    const max = strategyMaxHp(p);
+    s.hp[p.id] = Math.min(max, strategyHp(p) + heal);
+    strategyFloat(sq, `+${heal}`, 'green');
+  } else {
+    if (s.gold[p.c] < 50) { toast('Щит стоит 50 очков'); return; }
+    s.gold[p.c] -= 50;
+    s.shield[p.id] = (s.shield[p.id] || 0) + 30;
+    strategyFloat(sq, '🛡+30', 'blue');
+  }
+  s.hand[s.selected] = { kind: 'piece', type: p.t };
+  renderAll(false);
+}
+
+function strategyAfterMove() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s || st.status !== 'play') return;
+  s.phase = 'attack';
+  s.attacker = null;
+  s.targets = new Set();
+  s.aim = new Set();
+  renderAll(false);
+  if (ui.bot && st.turn === ui.bot.color) setTimeout(strategyBotAttack, 650);
+}
+
+function strategyEndTurn() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s) return;
+  s.phase = 'move';
+  s.attacker = null;
+  s.targets = new Set();
+  s.aim = new Set();
+  ui.selected = -1;
+  st.turn = other(st.turn);
+  strategyIncome(st.turn);
+  strategyDrawHand(st.turn);
+  renderAll(false);
+  if (ui.bot && st.turn === ui.bot.color) setTimeout(maybeBotTurn, 500);
+}
+
+function strategyBotAttack() {
+  const st = ui.st;
+  const s = st && st.strategy;
+  if (!s || st.turn !== ui.bot.color || s.phase !== 'attack') return;
+  const options = [];
+  for (let i = 0; i < st.board.length; i++) {
+    const p = st.board[i];
+    if (!p || p.c !== st.turn) continue;
+    const data = strategyAttackData(p, i);
+    for (const t of data.targets) options.push([i, t]);
+  }
+  if (!options.length) { strategyEndTurn(); return; }
+  const [from, to] = options[Math.floor(Math.random() * options.length)];
+  strategyAttack(from, to);
+}
 
 /* ─────────── драфт Clash Brawl: баны, пики, случайные цвета ─────────── */
 
@@ -3388,6 +3861,8 @@ function newGame(opts = {}) {
   else stopRoyal();
   if (mode.flags.zombie) zombieInit(ui.st);
   else stopZombie();
+  if (mode.flags.strategy) strategyInit(ui.st);
+  else stopStrategy();
   ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
   if ((opts.mode || 'local') === 'local' && !opts.bot && !mode.flags.inverted) ui.orientation = 'w';
   ui.mode = opts.mode || 'local';
@@ -3601,6 +4076,7 @@ function renderAll(animate) {
   renderCaptured();
   if (ui.royal) renderRoyalHud();
   if (ui.zombie) renderZombieHud();
+  if (ui.strategy) strategyRender();
   if (ui.screen === 'settings') renderThemePreview();
   if (ui.brawl) { renderBrawlHp(); renderBrawl(); }
 }
@@ -3720,6 +4196,8 @@ function onSquareClick(sq) {
   if (ui.mode === 'online' && st.turn !== myColor()) return;
   if (st.turn !== myColor() && ui.mode !== 'local') return;
 
+  if (st.flags.strategy) { strategyClick(sq); return; }
+
   const legal = legalMoves(st, st.turn);
 
   // «Взялся — ходи»: выбор фигуры с ходами отменить нельзя
@@ -3799,6 +4277,14 @@ function commitMove(m, opts = {}) {
   if (!match) return false;
 
   const mover = st.turn;
+  if (st.flags.strategy && !opts.remote) {
+    if (st.strategy.phase !== 'move') return false;
+    if (match.capture != null) { strategyMelee(match.from, match.to); return true; }
+    const cost = strategyCost(STRAT[st.board[match.from].t].move, st, match.from, mover);
+    if (st.strategy.gold[mover] < cost) { toast('Не хватает очков на ход'); return false; }
+    st.strategy.gold[mover] -= cost;
+    st.strategy.moved[st.board[match.from].id] = true;
+  }
   const now = performance.now();
   let spent = 0;
   if (ui.running && ui.timeMs) {
@@ -3937,6 +4423,10 @@ function commitMove(m, opts = {}) {
     renderMoves();
     if (ui.royal) setTimeout(royalAfterMove, 30);
     if (ui.zombie) setTimeout(zombieAfterMove, 30);
+    if (st.flags.strategy && !opts.remote) {
+      st.turn = mover;
+      setTimeout(strategyAfterMove, 30);
+    }
     saveCurrentGame();
   }
 
@@ -3983,6 +4473,7 @@ function finishGame(res) {
   if (ui.st && ui.st.flags.zombie) showZombieIntro('outro', res);
   stopZombie(false);
   stopRoyal();
+  stopStrategy();
   try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
   ui.running = false;
   clearInterval(ui.timer);
@@ -5154,6 +5645,7 @@ function updateResumeFloat() {
 function leaveGame() {
   stopRoyal();
   stopZombie();
+  stopStrategy();
   document.body.classList.remove('flip-all');
   const boardLeave = $('#board');
   if (boardLeave) boardLeave.classList.remove('board-rotated');
@@ -5394,6 +5886,43 @@ function bindEvents() {
     if (!pop.classList.contains('hidden')) renderProfilePop();
   });
   if ($('#ppClose')) $('#ppClose').addEventListener('click', () => $('#profilePop').classList.add('hidden'));
+  if ($('#stratX2')) $('#stratX2').addEventListener('click', () => {
+    if (!ui.strategy) return;
+    ui.strategy.x2 = true;
+    toast('Следующий доход ×2');
+  });
+  if ($('#stratPlus')) $('#stratPlus').addEventListener('click', () => {
+    if (!ui.strategy) return;
+    const extra = Math.random() < 0.5 ? 2 : 1;
+    strategyAddGold(ui.st.turn, extra);
+    toast('+25% к доходу');
+    strategyRender();
+  });
+  if ($('#stratSkipMove')) $('#stratSkipMove').addEventListener('click', () => {
+    const s = ui.strategy;
+    if (!s || s.phase !== 'move') return;
+    strategyAddGold(ui.st.turn, 10);
+    strategyDrawHand(ui.st.turn);
+    s.phase = 'attack';
+    toast('Ход пропущен: +10 очков и новые карточки');
+    renderAll(false);
+    if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(strategyBotAttack, 600);
+  });
+  if ($('#stratSkipAttack')) $('#stratSkipAttack').addEventListener('click', () => {
+    if (!ui.strategy || ui.strategy.phase !== 'attack') return;
+    strategyEndTurn();
+  });
+  if ($('#stratCap')) $('#stratCap').addEventListener('click', () => {
+    const s = ui.strategy;
+    if (!s) return;
+    if (s.cap >= 150) { toast('Лимит уже 150'); return; }
+    if (s.gold[ui.st.turn] < 20) { toast('Нужно 20 очков'); return; }
+    s.gold[ui.st.turn] -= 20;
+    s.cap = Math.min(150, s.cap + 5);
+    toast(`Лимит казны: ${s.cap}`);
+    strategyRender();
+  });
+
   if ($('#homeAvatarBtn')) $('#homeAvatarBtn').addEventListener('click', () => {
     const pop = $('#profilePop');
     if (!pop) return;
@@ -5659,7 +6188,7 @@ function boot() {
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
-    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink,
+    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink, strategySelectAttacker, strategyAttack, strategyEndTurn, strategyAfterMove,
     captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),

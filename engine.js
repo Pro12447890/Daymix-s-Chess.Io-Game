@@ -325,6 +325,11 @@ const MODES = [
     W: 8, H: 8, flags: { clashBrawl: true, kingFree: true, customDeploy: true },
   },
   {
+    id: 'strategy', n: 61, name: 'Стратегия', icon: '⚔',
+    desc: 'Две страны, казна, HP и карточки. Ход — обычное движение, затем атака по подсвеченным клеткам. Побеждает тот, кто уничтожит короля.',
+    W: 8, H: 8, flags: { classic: true, strategy: true },
+  },
+  {
     id: 'zombie', n: 60, name: 'Зомби-апокалипсис', icon: '🧟',
     desc: 'Белые — медики, чёрные — зелёные зомби. Зомби не едят, а обращают фигуры и заражают соседние клетки за 3 секунды. Съешь чужого короля!',
     W: 8, H: 8, flags: { classic: true, zombie: true },

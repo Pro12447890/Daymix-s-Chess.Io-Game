@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261028-17">
+  <link rel="stylesheet" href="style.css?v=20261028-18">
 </head>
 <body>
 
@@ -344,7 +344,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-17 · Зомби-апокалипсис</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-18 · Стратегия</div>
           </div>
         </div>
       </div>
@@ -431,6 +431,24 @@
                 <div class="promo-row" id="promoRow"></div>
               </div>
             </div>
+          </div>
+
+          <div class="strategy-hud hidden" id="strategyHud">
+            <span class="sh-faction" id="stratFactionW">WhiteTown</span>
+            <b class="sh-gold" id="stratGoldW">30</b>
+            <button class="sh-btn" id="stratX2" type="button">×2 доход</button>
+            <button class="sh-btn" id="stratPlus" type="button">+25%</button>
+            <span class="sh-phase" id="stratPhase">Ход</span>
+            <button class="sh-btn" id="stratSkipMove" type="button">Не ходить</button>
+            <button class="sh-btn" id="stratSkipAttack" type="button">Пропуск атаки</button>
+            <button class="sh-btn" id="stratCap" type="button">+5 лимит (20)</button>
+            <b class="sh-gold" id="stratGoldB">30</b>
+            <span class="sh-faction" id="stratFactionB">BlackTown</span>
+          </div>
+
+          <div class="strategy-bar hidden" id="strategyBar">
+            <div class="strat-cards" id="stratCards"></div>
+            <div class="strat-info" id="stratInfo"></div>
           </div>
 
           <div class="zombie-hud hidden" id="zombieHud">
@@ -754,7 +772,7 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261028-17"></script>
+<script src="app.js?v=20261028-18"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>
