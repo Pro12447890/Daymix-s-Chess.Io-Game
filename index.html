@@ -36,7 +36,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261029-5">
+  <link rel="stylesheet" href="style.css?v=20261029-6">
 </head>
 <body>
 
@@ -370,13 +370,42 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-29-5 · редирект старых ссылок</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-29-6 · Имбовинки</div>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ─────────────────────────── РЕЖИМЫ ─────────────────────────── -->
+
+    <section class="screen" id="screen-imbo">
+      <div class="wide-card card imbo-screen">
+        <div class="imbo-head">
+          <button class="icon-btn" id="imboBack" type="button" title="Назад">←</button>
+          <div><h1 class="imbo-title">Имбовинки</h1><p class="imbo-sub">Шашки, нарды и вышибалы — отдельная песочница.</p></div>
+        </div>
+        <div class="imbo-hub" id="imboHub">
+          <button class="imbo-card" data-imbo="checkers" data-var="ru" type="button"><b>Шашки</b><span>Русские · 8×8 · дамки летают</span><em>Играть</em></button>
+          <button class="imbo-card" data-imbo="checkers" data-var="intl" type="button"><b>Шашки мировые</b><span>Международные · 10×10 · бой назад</span><em>Играть</em></button>
+          <button class="imbo-card" data-imbo="backgammon" type="button"><b>Нарды</b><span>24 пункта · зары · вынос</span><em>Играть</em></button>
+          <button class="imbo-card" data-imbo="dodgeball" data-var="2" type="button"><b>Вышибалы · 2 слоя</b><span>16 на 16 · физика · 10 секунд</span><em>Играть</em></button>
+          <button class="imbo-card" data-imbo="dodgeball" data-var="1" type="button"><b>Вышибалы · 1 слой</b><span>Один ряд · та же физика</span><em>Играть</em></button>
+          <button class="imbo-card" data-imbo="dodgeball" data-var="10" type="button"><b>Вышибалы 10×10</b><span>Большое поле</span><em>Играть</em></button>
+          <button class="imbo-card" data-imbo="dodgeball" data-var="row" type="button"><b>Вышибалы · 1 ряд</b><span>16 в линию · физика</span><em>Играть</em></button>
+          <button class="imbo-card" data-imbo="dodgeball" data-var="rand" type="button"><b>Вышибалы · рандом</b><span>4–12 шашек · равные составы</span><em>Играть</em></button>
+          <button class="imbo-card" data-imbo="corners" type="button"><b>Уголки 3×3</b><span>Переведи все 9 фигур в чужой угол</span><em>Играть</em></button>
+        </div>
+        <div class="imbo-play hidden" id="imboPlay">
+          <div class="imbo-play-head">
+            <b id="imboGameTitle">Игра</b>
+            <span id="imboStatus"></span>
+            <button class="btn btn-sm" id="imboRestart" type="button">↻ Заново</button>
+            <button class="btn btn-sm" id="imboClose" type="button">✕ В меню</button>
+          </div>
+          <div class="imbo-board-wrap" id="imboBoardWrap"></div>
+        </div>
+      </div>
+    </section>
     <section class="screen" id="screen-modes">
       <div class="wide-card card">
         <div class="screen-head">
@@ -393,6 +422,7 @@
           <button class="mode-filter" data-filter="pieces" type="button">Фигуры</button>
           <button class="mode-filter" data-filter="chaos" type="button">Хаос</button>
           <button class="mode-filter" data-filter="mini" type="button">Мини-игры</button>
+          <button class="mode-filter" data-filter="imbo" type="button">Имбовинки</button>
         </div>
         <div class="modes-scroll" id="modesScroll">
           <div class="modes-grid" id="modesGrid"></div>
@@ -820,7 +850,7 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261029-5"></script>
+<script src="app.js?v=20261029-6"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>
