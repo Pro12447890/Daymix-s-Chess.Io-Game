@@ -27,7 +27,16 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261029-4">
+  <script>
+    // старые ссылки с github.io → канонический домен, сохраняя #код комнаты
+    (function () {
+      if (location.hostname === 'pro12447890.github.io') {
+        var target = 'https://chess.daymix.dpdns.org/' + location.search + location.hash;
+        location.replace(target);
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css?v=20261029-5">
 </head>
 <body>
 
@@ -361,7 +370,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-29-4 · домен chess.daymix.dpdns.org</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-29-5 · редирект старых ссылок</div>
           </div>
         </div>
       </div>
@@ -811,7 +820,7 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261029-4"></script>
+<script src="app.js?v=20261029-5"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>

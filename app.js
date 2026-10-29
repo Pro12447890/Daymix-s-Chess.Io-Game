@@ -6622,7 +6622,7 @@ function bindEvents() {
 
   $('#btnCopyCode').addEventListener('click', async () => {
     const code = $('#roomCode').textContent.trim();
-    const shareUrl = `${location.origin}${location.pathname}#${code}`;
+    const shareUrl = `https://chess.daymix.dpdns.org/#${code}`;
     try { await navigator.clipboard.writeText(shareUrl); toast('Ссылка скопирована — отправьте её другу'); }
     catch (error) { toast('Код: ' + code); }
   });
