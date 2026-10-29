@@ -113,14 +113,14 @@
 
 ## Домен chess.daymix.dpns.org
 
-⚠️ Кастомный домен отложен: `dpns.org` делегирован на Afternic (ns1/ns2.afternic.com) и продаётся, поэтому записи в панели DigitalPlat не применяются. Сайт снова работает на github.io. Подготовка была такой:
-- в корне лежит `CNAME` с `chess.daymix.dpns.org`;
+Кастомный домен: `chess.daymix.dpdns.org` (DigitalPlat FreeDNS).
+- в корне лежит `CNAME` с `chess.daymix.dpdns.org`;
 - canonical и og:url указывают на новый адрес;
 - относительные пути ассетов работают и на GitHub Pages, и на своём домене.
 
 DNS: в панели DigitalPlat добавьте запись
 `CNAME  chess  pro12447890.github.io` (TTL 3600).
-Затем GitHub → Settings → Pages → Custom domain: `chess.daymix.dpns.org`,
+Затем GitHub → Settings → Pages → Custom domain: `chess.daymix.dpdns.org`,
 включите Enforce HTTPS. Сертификат обычно выпускается до 24 часов.
 
 ## Мат/пат, история и перетаскивание (v61)
