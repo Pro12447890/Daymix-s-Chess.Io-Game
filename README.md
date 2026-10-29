@@ -110,6 +110,19 @@
 
 
 
+
+## Домен chess.daymix.dpns.org
+
+Сайт подготовлен для кастомного домена:
+- в корне лежит `CNAME` с `chess.daymix.dpns.org`;
+- canonical и og:url указывают на новый адрес;
+- относительные пути ассетов работают и на GitHub Pages, и на своём домене.
+
+DNS: в панели DigitalPlat добавьте запись
+`CNAME  chess  pro12447890.github.io` (TTL 3600).
+Затем GitHub → Settings → Pages → Custom domain: `chess.daymix.dpns.org`,
+включите Enforce HTTPS. Сертификат обычно выпускается до 24 часов.
+
 ## Мат/пат, история и перетаскивание (v61)
 
 - Мат/пат: клетка короля краснеет, модалка результата появляется через 3 секунды
