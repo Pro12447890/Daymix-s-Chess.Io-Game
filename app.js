@@ -1482,9 +1482,11 @@ function renderThemePreview() {
   const st = ui.st || createState('classic', {});
   const W = st.W;
   const H = st.H;
-  const boxW = Math.max(140, box.clientWidth || 300);
+  const slot = $('#themePreviewSlot');
+  const boxW = Math.max(140, box.clientWidth || 320);
+  const boxH = Math.max(180, slot ? slot.clientHeight - 8 : window.innerHeight * 0.3);
   const maxCols = Math.max(4, Math.min(8, Math.floor(boxW / 34)));
-  const maxRows = Math.max(4, Math.min(8, Math.floor((window.innerHeight * 0.3) / 34)));
+  const maxRows = Math.max(4, Math.min(8, Math.floor(boxH / 34)));
   const cw = Math.min(W, maxCols);
   const ch = Math.min(H, maxRows);
   let focus = findKing(st, st.turn);
@@ -2974,6 +2976,7 @@ function showScreen(name) {
   if (name === 'settings') renderSettings();
   if (name === 'home') { renderProfile(); }
   if (name === 'modes') renderModesGrid();
+  if (name === 'settings') requestAnimationFrame(() => renderThemePreview());
   if (name === 'imbo') openImboHub();
   else if (ui.imbo) stopImboGame();
 }

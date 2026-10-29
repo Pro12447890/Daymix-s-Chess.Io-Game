@@ -3923,3 +3923,16 @@ strategy-bar, .strategy-bar {
   width: 100% !important; max-width: 320px; margin: 8px auto 0;
 }
 .tp-board { width: 100%; }
+
+
+/* предпросмотр — в свободной правой части настроек */
+.theme-preview-slot {
+  flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+  min-height: 240px; margin-top: 14px; width: 100%;
+}
+.theme-preview { width: min(380px, 100%) !important; max-width: 380px; margin: 0 auto; }
+.theme-preview-slot .tp-board { width: 100%; }
+@media (max-width: 999px) {
+  .theme-preview-slot { order: 3; min-height: 0; margin-top: 8px; }
+  .theme-preview { width: 100% !important; max-width: 300px; }
+}
