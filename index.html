@@ -27,7 +27,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261028-31">
+  <link rel="stylesheet" href="style.css?v=20261029-1">
 </head>
 <body>
 
@@ -361,7 +361,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-28-31 · фазы и ПАТ</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-29-1 · мат, история, перетаскивание</div>
           </div>
         </div>
       </div>
@@ -461,6 +461,11 @@
               <div class="hints" id="hints"></div>
               <div class="brawl-layer" id="brawlLayer"></div>
               <div class="fog-layer" id="fogLayer"></div>
+            </div>
+            <div class="history-nav" id="historyNav">
+              <button id="histPrev" type="button" title="Предыдущий ход">‹</button>
+              <span id="histPos">0/0</span>
+              <button id="histNext" type="button" title="Следующий ход">›</button>
             </div>
             <div class="promo hidden" id="promo">
               <div class="promo-card">
@@ -806,7 +811,7 @@
 </svg>
 
 <script src="engine.js?v=20261027-6"></script>
-<script src="app.js?v=20261028-31"></script>
+<script src="app.js?v=20261029-1"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>

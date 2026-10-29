@@ -2235,6 +2235,7 @@ function viewState() {
   return {
     ...ui.st,
     board: f.board,
+    lastMove: f.lastMove || null,
     turn: f.turn,
     ep: f.ep,
     castling: f.castling,
@@ -2374,7 +2375,7 @@ function positionSquares() {
 function renderSquares() {
   const st = viewState();
   const sq = ui.sq;
-  const last = ui.lastMove;
+  const last = st.lastMove || ui.lastMove;
   const checkSq = st.check ? findKing(st, st.turn) : -1;
   const centerCellsList = st.flags.centerWin ? centerCells(st) : null;
   for (let i = 0; i < st.board.length; i++) {
@@ -2384,6 +2385,7 @@ function renderSquares() {
     if (last && (i === last.from || i === last.to)) cls.push('last');
     if (i === ui.selected) cls.push('sel');
     if (i === checkSq) cls.push('check');
+    if (ui.endSquare === i) cls.push('king-mated');
     if (st.blocked.includes(i)) cls.push('blocked');
     if (ui.brawl && brawlCanDeploy(i, st.turn)) cls.push('brawl-deploy');
     if (ui.zombie && ui.zombie.infect[i]) cls.push('zombie-threat');
@@ -2584,9 +2586,10 @@ function flagFall(color) {
 
 /* ─────────────────────────── 8. ПАРТИЯ ────────────────────────────────── */
 
-function snap(st) {
+function snap(st, lastMove = null) {
   return {
     board: st.board.slice(),
+    lastMove: lastMove ? { ...lastMove } : null,
     turn: st.turn,
     ep: st.ep,
     castling: { w: { ...st.castling.w }, b: { ...st.castling.b } },
@@ -3898,7 +3901,7 @@ function royalTimeout() {
   st.turn = other(color);
   st.full += 1;
   ui.moves.push({ san: '⏱', from: victim, to: victim, color, captured: true, spent: 5000, at: Date.now() });
-  ui.frames.push(snap(st));
+  ui.frames.push(snap(st, { from: victim, to: victim }));
   ui.viewPly = ui.frames.length - 1;
   toast(`5 секунд вышли: ${lost.t === 'k' ? 'король' : 'фигура'} разбита`);
   const res = updateStatus(st);
@@ -4395,6 +4398,9 @@ function newGame(opts = {}) {
   ui.selected = -1;
   ui.hint = null;
   ui.lastMove = null;
+  clearTimeout(ui.endTimer);
+  ui.endTimer = 0;
+  ui.endSquare = -1;
   ui.chat = [];
   ui.scored = false;
   ui.promo = null;
@@ -4871,7 +4877,7 @@ function commitMove(m, opts = {}) {
       if (!opts.silent) toast(`Клетка ${sqName(st, blockedSq)} заперта`);
     }
   }
-  ui.frames.push(snap(st));
+  ui.frames.push(snap(st, { from: match.from, to: match.to }));
   ui.viewPly = ui.frames.length - 1;
   const captured = !!match.capture || (match.caps && match.caps.length) || match.ep;
   ui.moves.push({
@@ -5018,7 +5024,7 @@ function scoreGame(res, st) {
   return st.full <= 10 ? -5 : -4;
 }
 
-function finishGame(res) {
+function finishGame(res, opts = {}) {
   stopRaceClock();
   if (ui.st && ui.st.flags.zombie) showZombieIntro('outro', res);
   stopZombie(false);
@@ -5029,6 +5035,24 @@ function finishGame(res) {
   clearInterval(ui.timer);
   if (!ui.st) return;
   if (ui.scored) return;
+  if (!opts.delayed && (res.reason === 'mate' || res.reason === 'stalemate')) {
+    if (ui.endTimer) return;
+    const loser = res.winner ? other(res.winner) : ui.st.turn;
+    ui.endSquare = findKing(ui.st, loser);
+    ui.endReason = res.reason;
+    ui.st.status = 'over';
+    ui.st.result = res;
+    renderSquares();
+    const statusEl = $('#gameStatus');
+    if (statusEl) statusEl.textContent = res.reason === 'mate' ? 'МАТ' : 'ПАТ';
+    ui.endTimer = setTimeout(() => {
+      ui.endTimer = 0;
+      ui.endSquare = -1;
+      renderSquares();
+      finishGame(res, { delayed: true });
+    }, 3000);
+    return;
+  }
   ui.scored = true;
 
   const st = ui.st;
@@ -5302,13 +5326,49 @@ function updateNav() {
   $('#navPrev').disabled = ui.viewPly <= 0;
   $('#navNext').disabled = ui.viewPly >= max;
   $('#navEnd').disabled = ui.viewPly >= max;
+  const hn = $('#historyNav');
+  if (hn) hn.classList.toggle('hidden', !ui.st);
+  const hp = $('#histPos');
+  if (hp) hp.textContent = `${ui.viewPly}/${max}`;
+  if ($('#histPrev')) $('#histPrev').disabled = ui.viewPly <= 0;
+  if ($('#histNext')) $('#histNext').disabled = ui.viewPly >= max;
   const info = $('#infoLine');
   if (info) info.textContent = `${ui.moves.length} полуходов · ${ui.st ? ui.st.mode.name : ''}`;
 }
 
 function gotoPly(ply) {
   const max = ui.frames.length - 1;
-  ui.viewPly = Math.max(0, Math.min(max, ply));
+  const target = Math.max(0, Math.min(max, ply));
+  if (ui.mode === 'local' && !ui.bot && ui.st && target < max) {
+    /* В игре на одном телефоне это настоящий откат, а не только просмотр. */
+    const f = ui.frames[target];
+    ui.st.board = f.board.slice();
+    ui.st.turn = f.turn;
+    ui.st.ep = f.ep;
+    ui.st.castling = { w: { ...f.castling.w }, b: { ...f.castling.b } };
+    ui.st.blocked = f.blocked.slice();
+    ui.st.capturedKing = f.capturedKing;
+    ui.st.check = f.check;
+    ui.st.status = 'play';
+    ui.st.result = null;
+    ui.st.full = target;
+    ui.frames = ui.frames.slice(0, target + 1);
+    ui.moves = ui.moves.slice(0, target);
+    ui.viewPly = target;
+    ui.lastMove = f.lastMove || null;
+    ui.scored = false;
+    ui.endSquare = -1;
+    clearTimeout(ui.endTimer);
+    ui.endTimer = 0;
+    ui.selected = -1;
+    renderAll(false);
+    renderMoves();
+    updateNav();
+    renderPgnBox();
+    saveCurrentGame();
+    return;
+  }
+  ui.viewPly = target;
   ui.selected = -1;
   renderAll(false);
   renderMoves();
@@ -6379,6 +6439,9 @@ function updateResumeFloat() {
 }
 
 function leaveGame() {
+  clearTimeout(ui.endTimer);
+  ui.endTimer = 0;
+  ui.endSquare = -1;
   stopRoyal();
   stopZombie();
   stopStrategy();
@@ -6748,6 +6811,8 @@ function bindEvents() {
   $('#gSound').addEventListener('change', (e) => setSound(e.target.checked));
 
   $('#navStart').addEventListener('click', () => gotoPly(0));
+  if ($('#histPrev')) $('#histPrev').addEventListener('click', () => gotoPly(ui.viewPly - 1));
+  if ($('#histNext')) $('#histNext').addEventListener('click', () => gotoPly(ui.viewPly + 1));
   $('#navPrev').addEventListener('click', () => gotoPly(ui.viewPly - 1));
   $('#navNext').addEventListener('click', () => gotoPly(ui.viewPly + 1));
   $('#navEnd').addEventListener('click', () => gotoPly(ui.frames.length - 1));
@@ -6777,7 +6842,11 @@ function bindEvents() {
     newGame({ mode: ui.mode || 'local', modeId: ui.st ? ui.st.modeId : profile.modeId, timeMs: ui.timeMs, splash: true });
   });
   $('#resultMenu').addEventListener('click', leaveGame);
-  $('#resultClose').addEventListener('click', () => $('#result').classList.add('hidden'));
+  $('#resultClose').addEventListener('click', () => {
+    $('#result').classList.add('hidden');
+    ui.endSquare = -1;
+    renderSquares();
+  });
 
   $('#btnResetStats').addEventListener('click', () => {
     if (!window.confirm('Сбросить очки, статистику и историю партий?')) return;
@@ -6876,7 +6945,11 @@ function bindEvents() {
       if (selectedMoves.length && sq !== ui.selected) return;
     }
     if (ui.st.flags.touchMove && ui.selected >= 0 && !legalMoves(ui.st, ui.st.turn).some((m) => m.from === ui.selected)) return;
-    onSquareClick(sq);
+    /* Выделяем фигуру сразу на pointerdown: её можно тащить, не делая
+       предварительный клик. Для touchMove это и есть «одно касание». */
+    ui.selected = sq;
+    renderSquares();
+    renderHints();
     const el = ui.pieceNodes.get(p.id);
     if (!el) return;
     suppressNextClick();
@@ -6950,7 +7023,7 @@ function boot() {
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
-    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink, strategySelectAttacker, strategyAttack, strategyEndTurn, strategyAfterMove, strategySpecial,
+    chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink, strategySelectAttacker, strategyAttack, strategyEndTurn, strategyAfterMove, strategySpecial, strategyRender,
     captureFx, playResultFx,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),

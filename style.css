@@ -3801,3 +3801,45 @@ strategy-bar, .strategy-bar {
 .ch-step.active { color: #fff; animation: chPulse .8s ease-in-out infinite alternate; }
 @keyframes chPulse { from { opacity: .65; } to { opacity: 1; } }
 .strategy-bar .strat-action { margin-bottom: 2px; }
+
+
+/* стрелки просмотра истории */
+.history-nav {
+  position: absolute; left: 50%; bottom: -28px; transform: translateX(-50%);
+  z-index: 25; display: flex; align-items: center; gap: 6px;
+  padding: 2px 6px; border-radius: 999px; background: #0c1526dd;
+  border: 1px solid #46618f; opacity: .82;
+}
+.history-nav button {
+  width: 26px; height: 24px; border-radius: 50%; border: 1px solid #46618f;
+  background: #16233a; color: #dce8ff; font-size: 17px; line-height: 1;
+}
+.history-nav button:disabled { opacity: .35; }
+.history-nav span { min-width: 34px; text-align: center; font-size: 9px; color: #9fb8d8; }
+.history-nav.hidden { display: none; }
+
+
+/* красная клетка короля перед объявлением мата/пата */
+.sq.king-mated {
+  background-image: linear-gradient(#c40000cc, #c40000cc) !important;
+  box-shadow: inset 0 0 0 3px #ff3b30, inset 0 0 30px #ff0000 !important;
+  animation: matedPulse .7s ease-in-out infinite alternate;
+}
+@keyframes matedPulse { from { filter: brightness(.9); } to { filter: brightness(1.35); } }
+.result:not(.hidden) { animation: resultFade .35s ease both; }
+.result:not(.hidden) .result-card { animation: resultSmooth .5s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes resultFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes resultSmooth { from { opacity: 0; transform: translateY(24px) scale(.94); } to { opacity: 1; transform: none; } }
+
+
+/* ПК: пешки и слоны больше не трясут доску, остальным — половина амплитуды */
+@media (min-width: 1000px) {
+  .board.shake-2 { animation-duration: .12s; --amp: 1px; }
+  .board.shake-3 { animation-duration: .18s; --amp: 2px; }
+  .board.shake-4 { animation-duration: .28s; --amp: 3.5px; }
+  .board.shake-5 { animation-duration: .4s; --amp: 5.5px; }
+  html.epic-fx .board.shake-2 { animation-duration: .12s !important; --amp: 1px; }
+  html.epic-fx .board.shake-3 { animation-duration: .18s !important; --amp: 2px; }
+  html.epic-fx .board.shake-4 { animation-duration: .28s !important; --amp: 3.5px; }
+  html.epic-fx .board.shake-5 { animation-duration: .4s !important; --amp: 5.5px; }
+}
