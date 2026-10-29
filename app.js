@@ -1482,23 +1482,37 @@ function renderThemePreview() {
   const st = ui.st || createState('classic', {});
   const W = st.W;
   const H = st.H;
+  const boxW = Math.max(140, box.clientWidth || 300);
+  const maxCols = Math.max(4, Math.min(8, Math.floor(boxW / 34)));
+  const maxRows = Math.max(4, Math.min(8, Math.floor((window.innerHeight * 0.3) / 34)));
+  const cw = Math.min(W, maxCols);
+  const ch = Math.min(H, maxRows);
+  let focus = findKing(st, st.turn);
+  if (focus < 0) focus = st.board.findIndex((p) => p);
+  const fx = focus >= 0 ? focus % W : Math.floor(W / 2);
+  const fy = focus >= 0 ? Math.floor(focus / W) : Math.floor(H / 2);
+  const x0 = Math.max(0, Math.min(W - cw, fx - Math.floor(cw / 2)));
+  const y0 = Math.max(0, Math.min(H - ch, fy - Math.floor(ch / 2)));
   let cells = '';
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const light = (x + y) % 2 === 0;
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const gx = x0 + x, gy = y0 + y;
+      const light = (gx + gy) % 2 === 0;
       cells += `<span class="tp-sq" style="background:${light ? theme.light : theme.dark}"></span>`;
     }
   }
   let pieces = '';
-  for (let i = 0; i < st.board.length; i++) {
-    const p = st.board[i];
-    if (!p) continue;
-    const x = i % W;
-    const y = Math.floor(i / W);
-    pieces += `<span class="tp-piece piece ${p.c === 'w' ? 'w' : 'b'}" style="left:${((x + 0.5) / W) * 100}%;top:${((y + 0.5) / H) * 100}%;width:${100 / W}%;height:${100 / H}%">${pieceSvg(p.t)}</span>`;
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const gx = x0 + x, gy = y0 + y;
+      const p = st.board[gy * W + gx];
+      if (!p) continue;
+      pieces += `<span class="tp-piece piece ${p.c === 'w' ? 'w' : 'b'}" style="left:${((x + 0.5) / cw) * 100}%;top:${((y + 0.5) / ch) * 100}%;width:${100 / cw}%;height:${100 / ch}%">${pieceSvg(p.t)}</span>`;
+    }
   }
-  box.innerHTML = `<div class="tp-board" style="grid-template-columns:repeat(${W},1fr);aspect-ratio:${W}/${H}">${cells}${pieces}</div>
-  <div class="tp-caption">${theme.name} · ${PIECE_SKINS.find((s) => s.id === profile.pieces)?.name || 'Классика'}</div>`;
+  const cropped = cw < W || ch < H;
+  box.innerHTML = `<div class="tp-board" style="grid-template-columns:repeat(${cw},1fr);aspect-ratio:${cw}/${ch}">${cells}${pieces}</div>
+  <div class="tp-caption">${theme.name} · ${PIECE_SKINS.find((s) => s.id === profile.pieces)?.name || 'Классика'} · ${cw}×${ch}${cropped ? ' фрагмент' : ''}</div>`;
 }
 
 function setPieces(id) {
@@ -2491,14 +2505,35 @@ function renderModesGrid(filter) {
       b.classList.toggle('active', label === mode);
     }
   }
-  if (mode === 'all' || mode === 'imbo') {
-    const tile = document.createElement('button');
-    tile.type = 'button';
-    tile.className = 'imbo-tile';
-    tile.innerHTML = '<span class="imbo-tile-icon">🎯</span><span><b>Имбовинки</b><em>Шашки · нарды · вышибалы</em></span><i>→</i>';
-    tile.addEventListener('click', () => showScreen('imbo'));
-    box.appendChild(tile);
-    if (mode === 'imbo') return;
+  if (mode === 'imbo') {
+    const grid = document.createElement('div');
+    grid.className = 'imbo-hub modes-grid';
+    const cards = [
+      ['checkers', 'ru', '⚫', 'Шашки', 'Русские · 8×8 · дамки'],
+      ['checkers', 'intl', '⚫', 'Шашки мировые', 'Международные · 10×10'],
+      ['backgammon', '', '🎲', 'Нарды', '24 пункта · зары · вынос'],
+      ['dodgeball', '2', '🎯', 'Вышибалы · 2 слоя', '16 на 16 · физика'],
+      ['dodgeball', '1', '🎯', 'Вышибалы · 1 слой', 'Один слой'],
+      ['dodgeball', '10', '🎯', 'Вышибалы 10×10', 'Большое поле'],
+      ['dodgeball', 'row', '🎯', 'Вышибалы · 1 ряд', '16 в линию'],
+      ['dodgeball', 'rand', '🎯', 'Вышибалы · рандом', '4–12 шашек'],
+      ['corners', '', '↗', 'Уголки 3×3', 'Перевести угол'],
+    ];
+    for (const [kind, variant, icon, name, desc] of cards) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'imbo-card';
+      b.dataset.imbo = kind;
+      if (variant) b.dataset.var = variant;
+      b.innerHTML = `<b>${name}</b><span>${desc}</span><em>Играть</em>`;
+      b.addEventListener('click', () => {
+        showScreen('imbo');
+        imboStart(kind, variant);
+      });
+      grid.appendChild(b);
+    }
+    box.appendChild(grid);
+    return;
   }
   const appendGrid = (parent, items) => {
     const grid = document.createElement('div');
