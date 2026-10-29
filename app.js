@@ -1760,6 +1760,7 @@ function imboCheckersRender() {
     if (p) {
       const d = document.createElement('span');
       d.className = 'checker ' + p.c + (p.king ? ' king' : '');
+      if (p.king) d.innerHTML = '<span class="checker-crown">♛</span>';
       d.title = (p.c === 'w' ? 'Белые' : 'Чёрные') + ' · ' + VariantEngine.pieceName(g, p);
       sq.appendChild(d);
     }

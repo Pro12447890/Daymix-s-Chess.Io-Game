@@ -3872,11 +3872,59 @@ strategy-bar, .strategy-bar {
 .imbo-sq.sel { box-shadow: inset 0 0 0 3px #ffd700; }
 .imbo-sq .hint { position: absolute; inset: 0; width: 100%; height: 100%; display: grid; place-items: center; }
 .imbo-sq .hint.quiet::before, .imbo-sq .hint.capture::before { position: static; }
-.checker { width: 74%; height: auto; aspect-ratio: 1; border-radius: 50%; box-sizing: border-box; position: relative; display: grid; place-items: center; box-shadow: 0 4px 8px #0007, inset 0 2px 4px #fff5; border: 2px solid var(--skin-be, #222); }
-.checker.w { background: radial-gradient(circle at 35% 30%, #fff, var(--skin-w, #fff) 55%, var(--skin-wd, #ccc)); color: var(--skin-we, #222); border-color: var(--skin-we, #222); }
-.checker.b { background: radial-gradient(circle at 35% 30%, #777, var(--skin-b, #333) 55%, var(--skin-be, #111)); color: var(--skin-be, #eee); border-color: var(--skin-be, #111); }
-.checker.king::after { content: '♛'; font-size: 1.5em; line-height: 1; text-shadow: 0 1px 2px #0008; }
-.checker.king { box-shadow: 0 0 0 3px #ffd70088, 0 4px 10px #0008; }
+.checker {
+  --c1: var(--skin-w, #fff);
+  --c2: var(--skin-wd, #ccc);
+  --c3: var(--skin-we, #222);
+  --rim: color-mix(in srgb, var(--c1) 42%, #000);
+  --mid: color-mix(in srgb, var(--c1) 82%, var(--c2));
+  --cap: color-mix(in srgb, var(--c1) 58%, var(--c2));
+  width: 78%; height: auto; aspect-ratio: 1; border-radius: 50%; box-sizing: border-box;
+  position: relative; display: grid; place-items: center; isolation: isolate;
+  background:
+    linear-gradient(150deg, #ffffff52 0 7%, transparent 34%),
+    conic-gradient(from 210deg, var(--rim), var(--c1) 14%, var(--c2) 24%, var(--c1) 36%, var(--rim) 52%, var(--c1) 68%, var(--c2) 82%, var(--rim));
+  box-shadow:
+    0 6px 10px #000b,
+    0 2px 3px #0009,
+    inset 0 2px 3px #fff6,
+    inset 0 -4px 6px #000b,
+    0 0 0 2px #000c;
+}
+.checker::before,
+.checker::after { content: ''; position: absolute; border-radius: 50%; }
+.checker::before {
+  inset: 10%; z-index: 0;
+  background:
+    linear-gradient(150deg, #ffffff40 0 8%, transparent 36%),
+    conic-gradient(from 200deg, var(--rim), var(--mid) 18%, var(--c2) 34%, var(--mid) 50%, var(--rim) 68%, var(--mid) 84%, var(--rim));
+  box-shadow:
+    inset 0 2px 3px #fff7,
+    inset 0 -3px 6px #000b,
+    0 0 0 2px #000a,
+    0 2px 3px #000a;
+}
+.checker::after {
+  inset: 29%; z-index: 1;
+  background:
+    linear-gradient(150deg, #ffffff42 0 9%, transparent 40%),
+    conic-gradient(from 200deg, var(--cap), var(--mid) 30%, var(--cap) 55%, var(--rim) 78%, var(--cap));
+  box-shadow:
+    inset 0 2px 3px #fff8,
+    inset 0 -4px 6px #000b,
+    0 0 0 2px #000a,
+    0 1px 2px #000a;
+}
+.checker.w { --c1: var(--skin-w, #fff); --c2: var(--skin-wd, #ccc); --c3: var(--skin-we, #222); --rim: color-mix(in srgb, var(--c1) 68%, #000); --mid: color-mix(in srgb, var(--c1) 96%, var(--c2)); --cap: color-mix(in srgb, var(--c1) 88%, var(--c2)); }
+.checker.b { --c1: var(--skin-b, #333); --c2: var(--skin-bd, #5a5652); --c3: var(--skin-be, #111); --rim: color-mix(in srgb, var(--c1) 28%, #000); --mid: var(--c1); --cap: color-mix(in srgb, var(--c1) 62%, #fff); }
+html[data-skin-glow="1"] .checker { filter: drop-shadow(0 0 6px var(--skin-glow)); }
+html[data-skin-shadow="1"] .checker { filter: drop-shadow(0 3px 3px #0008); }
+.checker-crown {
+  position: relative; z-index: 2; pointer-events: none;
+  font-size: 1.32em; line-height: 1; color: #ffd45a;
+  text-shadow: 0 1px 2px #000d, 0 0 5px #0009, 0 1px 0 #fff4;
+}
+.checker.king { box-shadow: 0 0 0 3px #ffd700b8, 0 0 12px #ffd70055, 0 5px 12px #0009, inset 0 2px 3px #fff9, inset 0 -4px 6px #0008; }
 .imbo-dice { display: flex; gap: 10px; margin: 8px 0; }
 .imbo-die { width: 42px; height: 42px; border-radius: 8px; background: #fff; color: #111; display: grid; place-items: center; font-weight: 900; font-size: 22px; box-shadow: 0 3px 8px #0008; }
 .bg-board { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; width: min(760px, 96vw); background: #4a2c18; padding: 8px; border-radius: 12px; }
@@ -3884,9 +3932,9 @@ strategy-bar, .strategy-bar {
 .bg-point.top { justify-content: flex-start; padding-top: 4px; }
 .bg-point.hit { outline: 2px solid #ff6b3b; }
 .bg-point.sel { outline: 2px solid #ffd700; }
-.bg-checker { width: 18px; height: 18px; border-radius: 50%; margin: 1px; border: 1px solid #0008; }
-.bg-checker.w { background: var(--skin-w, #fff); }
-.bg-checker.b { background: var(--skin-b, #333); }
+.bg-checker { width: 19px; height: 19px; border-radius: 50%; margin: 1px; position: relative; box-shadow: 0 2px 3px #0008, inset 0 1px 1px #fff7, inset 0 -2px 3px #0009, 0 0 0 1px #0008; }
+.bg-checker.w { background: radial-gradient(circle at 36% 28%, #fff 0 10%, var(--skin-w, #fff) 42%, var(--skin-wd, #ccc) 78%, var(--skin-we, #999)); }
+.bg-checker.b { background: radial-gradient(circle at 36% 28%, #6a6660 0 10%, var(--skin-b, #333) 45%, var(--skin-bd, #5a5652) 76%, var(--skin-be, #111)); }
 .bg-msg { color: #ffe7c2; font-size: 12px; padding: 4px; }
 @media (max-width: 700px) {
   .imbo-screen { padding: 8px; }
