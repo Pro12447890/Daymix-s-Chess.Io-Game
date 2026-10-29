@@ -3867,8 +3867,9 @@ strategy-bar, .strategy-bar {
 .imbo-sq.light { background: var(--light, #eeefd4); }
 .imbo-sq.dark { background: var(--dark, #759756); }
 .imbo-sq.sel { box-shadow: inset 0 0 0 3px #ffd700; }
-.imbo-sq.target::after { content: ''; width: 22%; height: 22%; border-radius: 50%; background: #ffd700; box-shadow: 0 0 10px #ffd700; position: absolute; }
-.checker { width: 74%; height: 74%; border-radius: 50%; position: relative; display: grid; place-items: center; box-shadow: 0 4px 8px #0007, inset 0 2px 4px #fff5; border: 2px solid var(--skin-be, #222); }
+.imbo-sq .hint { position: absolute; inset: 0; width: 100%; height: 100%; display: grid; place-items: center; }
+.imbo-sq .hint.quiet::before, .imbo-sq .hint.capture::before { position: static; }
+.checker { width: 74%; height: auto; aspect-ratio: 1; border-radius: 50%; box-sizing: border-box; position: relative; display: grid; place-items: center; box-shadow: 0 4px 8px #0007, inset 0 2px 4px #fff5; border: 2px solid var(--skin-be, #222); }
 .checker.w { background: radial-gradient(circle at 35% 30%, #fff, var(--skin-w, #fff) 55%, var(--skin-wd, #ccc)); color: var(--skin-we, #222); border-color: var(--skin-we, #222); }
 .checker.b { background: radial-gradient(circle at 35% 30%, #777, var(--skin-b, #333) 55%, var(--skin-be, #111)); color: var(--skin-be, #eee); border-color: var(--skin-be, #111); }
 .checker.king::after { content: '♛'; font-size: 1.5em; line-height: 1; text-shadow: 0 1px 2px #0008; }
@@ -3910,3 +3911,18 @@ strategy-bar, .strategy-bar {
 /* уголки: подсветка целевых углов */
 .imbo-sq.corner-w { box-shadow: inset 0 0 0 2px #4a86ff88; }
 .imbo-sq.corner-b { box-shadow: inset 0 0 0 2px #c6282888; }
+
+
+/* карточки игр в «Имбовинках» — как полноценные карточки */
+.imbo-card { position: relative; padding-left: 58px; min-height: 82px; justify-content: center; }
+.imbo-card::before {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border-radius: 9px; background: #0d1525; border: 1px solid #405a7d;
+  font-size: 18px;
+}
+.imbo-card[data-imbo="checkers"]::before { content: '⚫'; }
+.imbo-card[data-imbo="backgammon"]::before { content: '🎲'; }
+.imbo-card[data-imbo="dodgeball"]::before { content: '🎯'; }
+.imbo-card[data-imbo="corners"]::before { content: '↗'; color: #8fd3ff; }
+.imbo-card em { margin-top: 2px; }

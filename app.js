@@ -1732,8 +1732,8 @@ function imboCheckersMovesFrom(g, from, captureOnly = false) {
   if (p.king) dirs.push([-1, -1], [-1, 1], [1, -1], [1, 1]);
   else {
     const f = p.c === 'w' ? -1 : 1;
-    dirs.push([f, -1], [f, 1]);
-    if (variant === 'intl') dirs.push([-f, -1], [-f, 1]);
+    dirs.push([-1, f], [1, f]);
+    if (variant === 'intl') dirs.push([-1, -f], [1, -f]);
   }
   const isEnemy = (q) => q && q.c !== p.c;
   const step = (dx, dy) => {
@@ -1772,7 +1772,7 @@ function imboCheckersMovesFrom(g, from, captureOnly = false) {
   }
   const capDirs = p.king ? dirs : (variant === 'intl'
     ? [[-1, -1], [-1, 1], [1, -1], [1, 1]]
-    : [[p.c === 'w' ? -1 : 1, -1], [p.c === 'w' ? -1 : 1, 1]]);
+    : [[-1, p.c === 'w' ? -1 : 1], [1, p.c === 'w' ? -1 : 1]]);
   for (const [dx, dy] of capDirs) {
     const ex = x + dx, ey = y + dy;
     if (ex < 0 || ex >= W || ey < 0 || ey >= H) continue;
@@ -1821,7 +1821,13 @@ function imboCheckersRender() {
     sq.className = 'imbo-sq ' + ((x + y) % 2 === 0 ? 'light' : 'dark');
     sq.dataset.sq = String(i);
     if (i === g.selected) sq.classList.add('sel');
-    if (targets.has(i)) sq.classList.add('target');
+    if (targets.has(i)) {
+      sq.classList.add('target');
+      const m = g.legal.find((x) => x.to === i);
+      const dot = document.createElement('span');
+      dot.className = 'hint ' + (m && m.cap >= 0 ? 'capture' : 'quiet');
+      sq.appendChild(dot);
+    }
     const p = g.board[i];
     if (p) {
       const d = document.createElement('span');
