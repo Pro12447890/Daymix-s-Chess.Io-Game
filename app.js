@@ -1685,6 +1685,7 @@ function rollRandomMode(done) {
 
 
 /* ═══════════════════ 12.10. ИМБОВИНКИ ═══════════════════ */
+/* Правила живут в engine.js (VariantEngine). Здесь только экран и ввод. */
 
 function openImboHub() {
   stopImboGame();
@@ -1696,11 +1697,23 @@ function openImboHub() {
 }
 
 function imboStart(kind, variant) {
-  if (kind === 'checkers') imboCheckersStart(variant || 'ru');
-  else if (kind === 'backgammon') imboBackgammonStart();
-  else if (kind === 'dodgeball') imboDodgeballStart(variant || '2');
-  else if (kind === 'corners') imboCornersStart();
-  else toast('Этот имбовин ещё в разработке');
+  stopImboGame();
+  const opts = kind === 'checkers'
+    ? { variant: variant || 'ru' }
+    : kind === 'dodgeball'
+      ? { variant: variant || '2' }
+      : {};
+  try {
+    ui.imbo = VariantEngine.create(kind, opts);
+  } catch (e) {
+    toast('Эта игра пока недоступна');
+    return;
+  }
+  imboResetView(VariantEngine.title(ui.imbo));
+  if (kind === 'checkers') imboCheckersRender();
+  else if (kind === 'backgammon') imboBgRender();
+  else if (kind === 'dodgeball') { imboDodgeRender(); imboDodgeLoop(); }
+  else if (kind === 'corners') imboCornersRender();
 }
 
 function imboResetView(title) {
@@ -1710,125 +1723,24 @@ function imboResetView(title) {
   if (play) play.classList.remove('hidden');
   const t = $('#imboGameTitle');
   if (t) t.textContent = title;
+  const s = $('#imboStatus');
+  if (s) s.textContent = '';
 }
 
-function imboCheckersStart(variant) {
-  const intl = variant === 'intl';
-  const W = intl ? 10 : 8;
-  const H = W;
-  const rows = intl ? 4 : 3;
-  const board = new Array(W * H).fill(null);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if ((x + y) % 2 !== 1) continue;
-      if (y < rows) board[y * W + x] = { c: 'b', king: false };
-      else if (y >= H - rows) board[y * W + x] = { c: 'w', king: false };
-    }
-  }
-  ui.imbo = {
-    kind: 'checkers', variant: intl ? 'intl' : 'ru', W, H, board,
-    turn: 'w', selected: null, legal: [], over: false, params: [variant],
-  };
-  imboResetView(intl ? 'Международные шашки 10×10' : 'Русские шашки 8×8');
-  imboCheckersRender();
-}
-
-function imboCheckersPieceName(p) {
-  return p.king ? 'дамка' : 'шашка';
-}
-
-function imboCheckersMovesFrom(g, from, captureOnly = false) {
-  const { W, H, board, variant } = g;
-  const p = board[from];
-  if (!p) return [];
-  const x = from % W;
-  const y = Math.floor(from / W);
-  const out = [];
-  const dirs = [];
-  if (p.king) dirs.push([-1, -1], [-1, 1], [1, -1], [1, 1]);
-  else {
-    const f = p.c === 'w' ? -1 : 1;
-    dirs.push([-1, f], [1, f]);
-    if (variant === 'intl') dirs.push([-1, -f], [1, -f]);
-  }
-  const isEnemy = (q) => q && q.c !== p.c;
-  const step = (dx, dy) => {
-    const nx = x + dx, ny = y + dy;
-    return nx >= 0 && nx < W && ny >= 0 && ny < H ? ny * W + nx : -1;
-  };
-  if (p.king) {
-    for (const [dx, dy] of dirs) {
-      let nx = x + dx, ny = y + dy;
-      while (nx >= 0 && nx < W && ny >= 0 && ny < H) {
-        const s = ny * W + nx;
-        if (!board[s]) {
-          if (!captureOnly) out.push({ from, to: s, cap: -1 });
-        } else {
-          if (isEnemy(board[s])) {
-            let lx = nx + dx, ly = ny + dy;
-            while (lx >= 0 && lx < W && ly >= 0 && ly < H) {
-              const l = ly * W + lx;
-              if (board[l]) break;
-              out.push({ from, to: l, cap: s });
-              lx += dx; ly += dy;
-            }
-          }
-          break;
-        }
-        nx += dx; ny += dy;
-      }
-    }
-    return out;
-  }
-  for (const [dx, dy] of dirs) {
-    const nx = x + dx, ny = y + dy;
-    if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
-    const s = ny * W + nx;
-    if (!board[s] && !captureOnly) out.push({ from, to: s, cap: -1 });
-  }
-  const capDirs = p.king ? dirs : (variant === 'intl'
-    ? [[-1, -1], [-1, 1], [1, -1], [1, 1]]
-    : [[-1, p.c === 'w' ? -1 : 1], [1, p.c === 'w' ? -1 : 1]]);
-  for (const [dx, dy] of capDirs) {
-    const ex = x + dx, ey = y + dy;
-    if (ex < 0 || ex >= W || ey < 0 || ey >= H) continue;
-    const es = ey * W + ex;
-    if (!isEnemy(board[es])) continue;
-    const lx = ex + dx, ly = ey + dy;
-    if (lx < 0 || lx >= W || ly < 0 || ly >= H) continue;
-    const ls = ly * W + lx;
-    if (!board[ls]) out.push({ from, to: ls, cap: es });
-  }
-  return out;
-}
-
-function imboCheckersAllMoves(g, color) {
-  const caps = [];
-  const simple = [];
-  for (let i = 0; i < g.board.length; i++) {
-    const p = g.board[i];
-    if (!p || p.c !== color) continue;
-    for (const m of imboCheckersMovesFrom(g, i)) {
-      (m.cap >= 0 ? caps : simple).push(m);
-    }
-  }
-  return caps.length ? caps : simple;
-}
+/* ── шашки ── */
 
 function imboCheckersRender() {
   const g = ui.imbo;
   if (!g || g.kind !== 'checkers') return;
   const wrap = $('#imboBoardWrap');
   if (!wrap) return;
-  const all = imboCheckersAllMoves(g, g.turn);
-  const mustCapture = all.some((m) => m.cap >= 0);
-  const movable = new Set(all.map((m) => m.from));
-  const targets = new Set(g.legal.map((m) => m.to));
+  VariantEngine.status(g);
   wrap.innerHTML = '';
   const board = document.createElement('div');
   board.className = 'imbo-checkers';
   board.style.gridTemplateColumns = `repeat(${g.W}, minmax(0, 1fr))`;
   board.style.width = `min(${g.W * 62}px, 92vw)`;
+  const targets = new Set(g.legal.map((m) => m.to));
   for (let i = 0; i < g.board.length; i++) {
     const x = i % g.W;
     const y = Math.floor(i / g.W);
@@ -1848,7 +1760,7 @@ function imboCheckersRender() {
     if (p) {
       const d = document.createElement('span');
       d.className = 'checker ' + p.c + (p.king ? ' king' : '');
-      d.title = (p.c === 'w' ? 'Белые' : 'Чёрные') + ' · ' + imboCheckersPieceName(p);
+      d.title = (p.c === 'w' ? 'Белые' : 'Чёрные') + ' · ' + VariantEngine.pieceName(g, p);
       sq.appendChild(d);
     }
     sq.addEventListener('click', () => imboCheckersClick(i));
@@ -1856,10 +1768,7 @@ function imboCheckersRender() {
   }
   wrap.appendChild(board);
   const st = $('#imboStatus');
-  if (st) {
-    if (g.over) st.textContent = g.over;
-    else st.textContent = `${g.turn === 'w' ? 'Ход белых' : 'Ход чёрных'}${mustCapture ? ' · взятие обязательно' : ''} · ${g.variant === 'intl' ? 'международные' : 'русские'}`;
-  }
+  if (st) st.textContent = g.text;
 }
 
 function imboCheckersClick(sq) {
@@ -1867,114 +1776,43 @@ function imboCheckersClick(sq) {
   if (!g || g.kind !== 'checkers' || g.over) return;
   const p = g.board[sq];
   if (p && p.c === g.turn) {
-    const all = imboCheckersAllMoves(g, g.turn);
-    const mustCapture = all.some((m) => m.cap >= 0);
-    const moves = all.filter((m) => m.from === sq);
-    if (mustCapture && !moves.some((m) => m.cap >= 0)) {
-      toast('Есть обязательное взятие — выбери другую шашку');
+    if (g.selected != null && g.legal.some((m) => m.cap >= 0) && sq !== g.selected) {
+      toast('Сначала завершите взятие');
       return;
     }
-    if (!moves.length) return;
+    const all = VariantEngine.allMoves(g);
+    const moves = all.filter((m) => m.from === sq);
+    if (!moves.length) {
+      if (all.some((m) => m.cap >= 0)) toast('Есть обязательное взятие — выбери другую шашку');
+      return;
+    }
     g.selected = sq;
     g.legal = moves;
     imboCheckersRender();
     return;
   }
-  const move = g.legal.find((m) => m.to === sq);
-  if (!move) return;
-  const piece = g.board[g.selected];
-  g.board[g.selected] = null;
-  if (move.cap >= 0) g.board[move.cap] = null;
-  g.board[move.to] = piece;
-  if (!piece.king) {
-    const last = piece.c === 'w' ? 0 : g.H - 1;
-    if (Math.floor(move.to / g.W) === last) piece.king = true;
-  }
-  const further = imboCheckersMovesFrom(g, move.to).filter((m) => m.cap >= 0);
-  g.selected = further.length ? move.to : null;
-  g.legal = further;
-  if (further.length) {
+  if (g.selected == null) return;
+  const res = VariantEngine.apply(g, g.selected, sq);
+  if (!res.ok) return;
+  if (res.chain) {
+    g.selected = res.at;
     toast('Продолжайте взятие');
-    imboCheckersRender();
-    return;
+  } else {
+    g.selected = null;
+    g.legal = [];
   }
-  g.turn = other(g.turn);
-  const enemy = g.turn;
-  const enemyPieces = g.board.some((q) => q && q.c === enemy);
-  const enemyMoves = imboCheckersAllMoves(g, enemy);
-  if (!enemyPieces) {
-    g.over = `${enemy === 'w' ? 'Белые' : 'Чёрные'} потеряли все шашки — победа ${g.turn === 'w' ? 'чёрных' : 'белых'}`;
-  } else if (!enemyMoves.length) {
-    g.over = `${enemy === 'w' ? 'Белые' : 'Чёрные'} без ходов — победа ${g.turn === 'w' ? 'чёрных' : 'белых'}`;
-  }
+  VariantEngine.status(g);
   imboCheckersRender();
 }
 
-
 /* ── нарды ── */
-function imboBackgammonStart() {
-  const points = new Array(24).fill(0);
-  points[23] = 2; points[12] = 5; points[7] = 3; points[5] = 5;
-  points[0] = -2; points[11] = -5; points[16] = -3; points[18] = -5;
-  ui.imbo = {
-    kind: 'backgammon', points, bar: { w: 0, b: 0 }, off: { w: 0, b: 0 },
-    turn: 'w', dice: [], selected: null, legal: [], over: false, params: [],
-  };
-  imboResetView('Нарды · 24 пункта');
-  imboBgRoll();
-}
-
-function imboBgRoll() {
-  const g = ui.imbo;
-  if (!g || g.kind !== 'backgammon' || g.over) return;
-  const a = 1 + Math.floor(Math.random() * 6);
-  const b = 1 + Math.floor(Math.random() * 6);
-  g.dice = [a, b];
-  g.moves = a === b ? [a, a, a, a] : [a, b];
-  g.selected = null;
-  g.legal = [];
-  imboBgRender();
-}
-
-function imboBgCount(g, i) { return Math.abs(g.points[i]); }
-
-function imboBgColor(g, i) { return g.points[i] > 0 ? 'w' : g.points[i] < 0 ? 'b' : null; }
-
-function imboBgHome(g, color) {
-  if (color === 'w') { for (let i = 6; i < 24; i++) if (g.points[i] > 0) return false; return true; }
-  for (let i = 0; i < 18; i++) if (g.points[i] < 0) return false;
-  return true;
-}
-
-function imboBgTargets(g, from) {
-  const color = g.turn;
-  const target = [];
-  const dir = color === 'w' ? -1 : 1;
-  for (const die of (g.moves || [])) {
-    if (from === -1) {
-      const to = color === 'w' ? 24 - die : die - 1;
-      if (to >= 0 && to < 24 && (g.points[to] === 0 || imboBgColor(g, to) === color || imboBgCount(g, to) === 1)) target.push({ to, die });
-      continue;
-    }
-    const to = from + dir * die;
-    if (to >= 0 && to < 24) {
-      const v = g.points[to];
-      if (v === 0 || Math.sign(v) === (color === 'w' ? 1 : -1) || Math.abs(v) === 1) target.push({ to, die });
-    } else if (imboBgHome(g, color)) {
-      const exact = color === 'w' ? from - die : from + die;
-      if ((color === 'w' && exact < 0) || (color === 'b' && exact > 23)) target.push({ to: -99, die });
-    }
-  }
-  return target;
-}
 
 function imboBgRender() {
   const g = ui.imbo;
   if (!g || g.kind !== 'backgammon') return;
   const wrap = $('#imboBoardWrap');
   if (!wrap) return;
-  if (g.over) { $('#imboStatus').textContent = g.over; }
-  else $('#imboStatus').textContent = `${g.turn === 'w' ? 'Ход белых' : 'Ход чёрных'} · зары: ${g.dice.length ? g.dice.join(' · ') : '—'} · сбито: ${g.bar.w}/${g.bar.b} · вынесено: ${g.off.w}/${g.off.b}`;
+  VariantEngine.status(g);
   const board = document.createElement('div');
   board.className = 'bg-board';
   const makePoint = (i, top) => {
@@ -1982,8 +1820,8 @@ function imboBgRender() {
     p.type = 'button';
     p.className = 'bg-point' + (top ? ' top' : '');
     p.dataset.point = String(i);
-    const n = imboBgCount(g, i);
-    const color = imboBgColor(g, i);
+    const n = Math.abs(g.points[i]);
+    const color = g.points[i] > 0 ? 'w' : g.points[i] < 0 ? 'b' : null;
     const shown = Math.min(6, n);
     for (let k = 0; k < shown; k++) {
       const c = document.createElement('span');
@@ -1997,122 +1835,96 @@ function imboBgRender() {
     p.addEventListener('click', () => imboBgClick(i));
     return p;
   };
-  const topRow = document.createElement('div');
-  topRow.className = 'bg-row';
-  topRow.style.display = 'contents';
   for (let i = 12; i < 24; i++) board.appendChild(makePoint(i, true));
   for (let i = 11; i >= 0; i--) board.appendChild(makePoint(i, false));
   wrap.innerHTML = '';
   wrap.appendChild(board);
+
   const bar = document.createElement('div');
   bar.className = 'bg-msg';
-  bar.textContent = `Бар: белые ${g.bar.w} · чёрные ${g.bar.b} | Дом: ${imboBgHome(g, g.turn) ? 'можно выносить' : 'сначала соберите все в дом'}`;
+  const homeNote = g.bar[g.turn] > 0
+    ? 'сначала введите с бара'
+    : VariantEngine.canBearOff(g) ? 'можно выносить' : 'сначала соберите все в дом';
+  bar.textContent = `Бар: белые ${g.bar.w} · чёрные ${g.bar.b} | Дом: ${homeNote}`;
+
   if (g.bar[g.turn] > 0) {
     const enter = document.createElement('button');
-    enter.type = 'button'; enter.className = 'btn btn-sm'; enter.textContent = `Ввести с бара (${g.bar[g.turn]})`;
+    enter.type = 'button';
+    enter.className = 'btn btn-sm';
+    enter.textContent = `Ввести с бара (${g.bar[g.turn]})`;
     enter.addEventListener('click', () => {
       g.selected = -1;
-      g.legal = imboBgTargets(g, -1);
+      g.legal = VariantEngine.movesFrom(g, -1);
       imboBgRender();
     });
     bar.appendChild(enter);
   }
-  if (g.legal.some((m) => m.to === -99)) {
+  if (g.legal.some((m) => m.off)) {
     const offBtn = document.createElement('button');
-    offBtn.type = 'button'; offBtn.className = 'btn btn-sm'; offBtn.textContent = 'Вынести шашку';
-    offBtn.addEventListener('click', () => imboBgClick(-99));
+    offBtn.type = 'button';
+    offBtn.className = 'btn btn-sm';
+    offBtn.textContent = 'Вынести шашку';
+    offBtn.addEventListener('click', () => imboBgMove(-99));
     bar.appendChild(offBtn);
   }
+  if (g.canPass) {
+    const pass = document.createElement('button');
+    pass.type = 'button';
+    pass.className = 'btn btn-sm';
+    pass.textContent = 'Передать ход';
+    pass.addEventListener('click', () => {
+      if (VariantEngine.pass(g)) imboBgRender();
+    });
+    bar.appendChild(pass);
+  }
   const roll = document.createElement('button');
-  roll.type = 'button'; roll.className = 'btn btn-sm'; roll.textContent = '🎲 Бросить зары';
+  roll.type = 'button';
+  roll.className = 'btn btn-sm';
+  roll.textContent = '🎲 Бросить зары';
   roll.disabled = g.dice.length > 0 || g.over;
-  roll.addEventListener('click', imboBgRoll);
+  roll.addEventListener('click', () => {
+    if (VariantEngine.roll(g)) imboBgRender();
+  });
   bar.appendChild(roll);
   wrap.appendChild(bar);
+  const st = $('#imboStatus');
+  if (st) st.textContent = g.text;
+}
+
+function imboBgMove(to) {
+  const g = ui.imbo;
+  if (!g || g.kind !== 'backgammon' || g.selected == null) return;
+  const res = VariantEngine.apply(g, g.selected, to);
+  if (res.ok) {
+    g.selected = null;
+    g.legal = [];
+    imboBgRender();
+  }
 }
 
 function imboBgClick(i) {
   const g = ui.imbo;
   if (!g || g.kind !== 'backgammon' || g.over) return;
-  const color = g.turn;
-  const move = g.legal.find((m) => m.to === i);
-  if (move) {
-    if (move.to === -99) {
-      const from = g.selected;
-      if (from === -1) return;
-      g.points[from] -= color === 'w' ? 1 : -1;
-      g.off[color] += 1;
-    } else {
-      let from = g.selected;
-      if (from === -1) g.bar[color] -= 1;
-      else g.points[from] -= color === 'w' ? 1 : -1;
-      if (g.points[move.to] && Math.sign(g.points[move.to]) !== (color === 'w' ? 1 : -1)) {
-        g.points[move.to] = 0;
-        g.bar[other(color)] += 1;
-      }
-      g.points[move.to] += color === 'w' ? 1 : -1;
-    }
-    const idx = g.moves.indexOf(move.die);
-    if (idx >= 0) g.moves.splice(idx, 1);
-    g.selected = null;
-    g.legal = [];
-    if (g.off[color] >= 15) {
-      g.over = `${color === 'w' ? 'Белые' : 'Чёрные'} вынесли все шашки — победа!`;
-    } else if (!g.moves.length) {
-      g.turn = other(color);
-      g.dice = [];
-    }
-    imboBgRender();
+  const target = g.legal.find((m) => m.to === i);
+  if (target) {
+    imboBgMove(i);
     return;
   }
   if (i < 0) return;
-  const v = g.points[i];
-  if (!v || Math.sign(v) !== (color === 'w' ? 1 : -1)) return;
-  if (g.bar[color] > 0) { toast('Сначала введите шашку с бара'); return; }
-  const targets = imboBgTargets(g, i);
+  if (g.points[i] === 0 || Math.sign(g.points[i]) !== (g.turn === 'w' ? 1 : -1)) return;
+  if (g.bar[g.turn] > 0) { toast('Сначала введите шашку с бара'); return; }
+  const targets = VariantEngine.movesFrom(g, i);
   if (!targets.length) return;
   g.selected = i;
   g.legal = targets;
   imboBgRender();
 }
 
+/* ── вышибалы ── */
 
-
-/* ── вышибалы: простая физика на canvas ── */
 function stopImboGame() {
   if (ui.imbo && ui.imbo.raf) cancelAnimationFrame(ui.imbo.raf);
   if (ui.imbo) ui.imbo.raf = 0;
-}
-
-function imboDodgeballStart(variant) {
-  stopImboGame();
-  const big = variant === '10';
-  const W = big ? 760 : 620;
-  const H = big ? 760 : 620;
-  const count = variant === 'rand' ? 4 + Math.floor(Math.random() * 9) : 16;
-  const cols = variant === 'row' ? count : variant === '1' ? Math.min(8, count) : Math.min(4, count);
-  const rows = Math.ceil(count / cols);
-  const r = big ? 15 : 13;
-  const discs = [];
-  const addTeam = (team, top) => {
-    for (let i = 0; i < count; i++) {
-      const c = i % cols;
-      const row = Math.floor(i / cols);
-      const x = W / 2 + (c - (cols - 1) / 2) * (r * 2.6);
-      const y = top ? 70 + row * (r * 2.5) : H - 70 - row * (r * 2.5);
-      discs.push({ x, y, vx: 0, vy: 0, r, m: r * r, team, alive: true });
-    }
-  };
-  addTeam('b', true);
-  addTeam('w', false);
-  ui.imbo = {
-    kind: 'dodgeball', variant, W, H, r, discs, turn: 'w', phase: 'aim',
-    selected: null, drag: null, deadline: performance.now() + 10000,
-    settleUntil: 0, moves: 0, over: '', params: [variant], raf: 0,
-  };
-  imboResetView(variant === '10' ? 'Вышибалы 10×10' : variant === 'row' ? 'Вышибалы · 1 ряд' : variant === 'rand' ? `Вышибалы · ${count} на ${count}` : 'Вышибалы · 2 слоя');
-  imboDodgeRender();
-  imboDodgeLoop();
 }
 
 function imboDodgeRender() {
@@ -2124,7 +1936,8 @@ function imboDodgeRender() {
     wrap.innerHTML = '';
     const c = document.createElement('canvas');
     c.className = 'imbo-canvas';
-    c.width = g.W; c.height = g.H;
+    c.width = g.W;
+    c.height = g.H;
     c.style.width = `min(${g.W}px, 94vw)`;
     c.style.maxHeight = '68vh';
     c.style.touchAction = 'none';
@@ -2137,13 +1950,57 @@ function imboDodgeRender() {
     c.addEventListener('pointerup', imboDodgeUp);
     c.addEventListener('pointercancel', imboDodgeUp);
   }
+  imboDodgeHud();
   imboDodgeDraw();
+}
+
+function imboDodgeHud() {
+  const g = ui.imbo;
+  if (!g || g.kind !== 'dodgeball') return;
+  const wrap = $('#imboBoardWrap');
   const st = $('#imboStatus');
-  if (st) {
-    if (g.over) st.textContent = g.over;
-    else if (g.phase === 'aim') st.textContent = `${g.turn === 'w' ? 'Ход белых' : 'Ход чёрных'} · тяни вниз и отпусти · ${Math.max(0, Math.ceil((g.deadline - performance.now()) / 1000))} с`;
-    else st.textContent = 'Шашки летят… 3 секунды';
+  if (st) st.textContent = g.text;
+  if (!wrap) return;
+  const setup = wrap.querySelector('.imbo-setup');
+  if (g.phase !== 'setup') {
+    if (setup) setup.remove();
+    return;
   }
+  let panel = setup;
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.className = 'imbo-setup';
+    const label = document.createElement('span');
+    label.textContent = 'Шашек в ряду:';
+    panel.appendChild(label);
+    for (const n of [4, 6, 8, 10, 12]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-sm';
+      b.dataset.count = String(n);
+      b.textContent = String(n);
+      b.addEventListener('click', () => {
+        if (VariantEngine.setCount(g, n)) {
+          g.canvas = null;
+          $('#imboGameTitle').textContent = VariantEngine.title(g);
+          imboDodgeRender();
+        }
+      });
+      panel.appendChild(b);
+    }
+    const ready = document.createElement('button');
+    ready.type = 'button';
+    ready.className = 'btn btn-sm';
+    ready.textContent = 'Готов';
+    ready.addEventListener('click', () => {
+      if (VariantEngine.ready(g, Date.now())) imboDodgeRender();
+    });
+    panel.appendChild(ready);
+    wrap.appendChild(panel);
+  }
+  panel.querySelectorAll('[data-count]').forEach((b) => {
+    b.classList.toggle('active', Number(b.dataset.count) === g.count);
+  });
 }
 
 function imboDodgeDraw() {
@@ -2151,7 +2008,8 @@ function imboDodgeDraw() {
   if (!g || !g.canvas) return;
   const c = g.canvas;
   const ctx = c.getContext('2d');
-  const W = g.W, H = g.H;
+  const W = g.W;
+  const H = g.H;
   ctx.clearRect(0, 0, W, H);
   const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.55);
   grad.addColorStop(0, '#ffe14d');
@@ -2160,48 +2018,94 @@ function imboDodgeDraw() {
   grad.addColorStop(1, '#2c1717');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = '#ffffff55'; ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff55';
+  ctx.lineWidth = 2;
   for (let i = 1; i <= 3; i++) {
-    ctx.beginPath(); ctx.arc(W / 2, H / 2, i * W * 0.1, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, i * W * 0.1, 0, Math.PI * 2);
+    ctx.stroke();
   }
-  for (const d of g.discs) {
+  for (let i = 0; i < g.discs.length; i++) {
+    const d = g.discs[i];
     if (!d.alive) continue;
     ctx.beginPath();
     ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
     ctx.fillStyle = d.team === 'w' ? '#f4f4ee' : '#22262b';
     ctx.strokeStyle = d.team === 'w' ? '#777' : '#ddd';
     ctx.lineWidth = 2;
-    ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.arc(d.x - d.r * .28, d.y - d.r * .28, d.r * .22, 0, Math.PI * 2); ctx.fillStyle = '#ffffff88'; ctx.fill();
+    ctx.fill();
+    ctx.stroke();
+    if (g.phase === 'setup' && g.setupSel === i) {
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(d.x - d.r * 0.28, d.y - d.r * 0.28, d.r * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff88';
+    ctx.fill();
   }
   if (g.drag) {
-    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(g.drag.x0, g.drag.y0); ctx.lineTo(g.drag.x1, g.drag.y1); ctx.stroke();
-    const power = Math.min(1, Math.hypot(g.drag.x1 - g.drag.x0, g.drag.y1 - g.drag.y0) / (W * .35));
-    ctx.fillStyle = '#0008'; ctx.fillRect(16, H - 30, W * .4, 14);
-    ctx.fillStyle = '#ffd700'; ctx.fillRect(16, H - 30, W * .4 * power, 14);
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(g.drag.x0, g.drag.y0);
+    ctx.lineTo(g.drag.x1, g.drag.y1);
+    ctx.stroke();
+    const power = Math.min(1, Math.hypot(g.drag.x1 - g.drag.x0, g.drag.y1 - g.drag.y0) / (W * 0.35));
+    ctx.fillStyle = '#0008';
+    ctx.fillRect(16, H - 30, W * 0.4, 14);
+    ctx.fillStyle = '#ffd700';
+    ctx.fillRect(16, H - 30, W * 0.4 * power, 14);
   }
 }
 
 function imboDodgeLocal(e) {
   const g = ui.imbo;
   const rect = g.canvas.getBoundingClientRect();
-  return { x: (e.clientX - rect.left) * g.W / rect.width, y: (e.clientY - rect.top) * g.H / rect.height };
+  return {
+    x: (e.clientX - rect.left) * g.W / rect.width,
+    y: (e.clientY - rect.top) * g.H / rect.height,
+  };
+}
+
+function imboDodgeNearest(p, team) {
+  const g = ui.imbo;
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < g.discs.length; i++) {
+    const d = g.discs[i];
+    if (!d.alive || d.team !== team) continue;
+    const dist = Math.hypot(d.x - p.x, d.y - p.y);
+    if (dist < d.r * 1.8 && dist < bestD) { best = i; bestD = dist; }
+  }
+  return best;
 }
 
 function imboDodgeDown(e) {
   const g = ui.imbo;
-  if (!g || g.kind !== 'dodgeball' || g.over || g.phase !== 'aim') return;
+  if (!g || g.kind !== 'dodgeball' || g.over) return;
   const p = imboDodgeLocal(e);
-  let best = null, bestD = Infinity;
-  for (const d of g.discs) {
-    if (!d.alive || d.team !== g.turn) continue;
-    const dist = Math.hypot(d.x - p.x, d.y - p.y);
-    if (dist < d.r * 1.8 && dist < bestD) { best = d; bestD = dist; }
+  if (g.phase === 'setup') {
+    const i = imboDodgeNearest(p, g.turn);
+    if (i < 0) return;
+    if (g.setupSel == null || g.setupSel === i) {
+      g.setupSel = g.setupSel === i ? null : i;
+    } else {
+      VariantEngine.swap(g, g.setupSel, i);
+      g.setupSel = null;
+    }
+    imboDodgeDraw();
+    return;
   }
-  if (!best) return;
-  g.drag = { piece: best, x0: best.x, y0: best.y, x1: p.x, y1: p.y };
-  g.selected = best;
+  if (g.phase !== 'aim') return;
+  const i = imboDodgeNearest(p, g.turn);
+  if (i < 0) return;
+  const best = g.discs[i];
+  g.drag = { index: i, x0: best.x, y0: best.y, x1: p.x, y1: p.y };
+  g.selected = i;
   imboDodgeDraw();
 }
 
@@ -2209,7 +2113,8 @@ function imboDodgeMove(e) {
   const g = ui.imbo;
   if (!g || !g.drag) return;
   const p = imboDodgeLocal(e);
-  g.drag.x1 = p.x; g.drag.y1 = p.y;
+  g.drag.x1 = p.x;
+  g.drag.y1 = p.y;
   imboDodgeDraw();
 }
 
@@ -2218,144 +2123,41 @@ function imboDodgeUp(e) {
   if (!g || !g.drag) return;
   const d = g.drag;
   g.drag = null;
-  const dx = d.x0 - d.x1;
-  const dy = d.y0 - d.y1;
-  if (Math.hypot(dx, dy) < 12) { imboDodgeDraw(); return; }
-  const mul = 0.22;
-  d.piece.vx = Math.max(-18, Math.min(18, dx * mul));
-  d.piece.vy = Math.max(-18, Math.min(18, dy * mul));
-  g.phase = 'settle';
-  g.settleUntil = performance.now() + 3000;
-  g.moves += 1;
+  if (g.phase !== 'aim') { imboDodgeDraw(); return; }
+  VariantEngine.shoot(g, d.index, d.x0 - d.x1, d.y0 - d.y1, Date.now());
   imboDodgeDraw();
-}
-
-function imboDodgeStep(dt) {
-  const g = ui.imbo;
-  if (!g || g.kind !== 'dodgeball') return;
-  const W = g.W, H = g.H;
-  for (const d of g.discs) {
-    if (!d.alive) continue;
-    d.x += d.vx * dt;
-    d.y += d.vy * dt;
-    d.vx *= 0.988;
-    d.vy *= 0.988;
-    if (d.x < d.r) { d.x = d.r; d.vx = Math.abs(d.vx) * .72; }
-    if (d.x > W - d.r) { d.x = W - d.r; d.vx = -Math.abs(d.vx) * .72; }
-    if (d.x < -d.r || d.x > W + d.r || d.y < -d.r || d.y > H + d.r) d.alive = false;
-    if (d.y < -d.r * 0.5 || d.y > H + d.r * 0.5) d.alive = false;
-  }
-  for (let i = 0; i < g.discs.length; i++) {
-    const a = g.discs[i];
-    if (!a.alive) continue;
-    for (let j = i + 1; j < g.discs.length; j++) {
-      const b = g.discs[j];
-      if (!b.alive) continue;
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const dist = Math.hypot(dx, dy);
-      const min = a.r + b.r;
-      if (dist < .001 || dist >= min) continue;
-      const nx = dx / dist, ny = dy / dist;
-      const overlap = min - dist;
-      const total = a.m + b.m;
-      a.x -= nx * overlap * (b.m / total);
-      a.y -= ny * overlap * (b.m / total);
-      b.x += nx * overlap * (a.m / total);
-      b.y += ny * overlap * (a.m / total);
-      const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
-      if (rel >= 0) continue;
-      const imp = -(1.25) * rel / (1 / a.m + 1 / b.m);
-      a.vx -= imp * nx / a.m; a.vy -= imp * ny / a.m;
-      b.vx += imp * nx / b.m; b.vy += imp * ny / b.m;
-    }
-  }
 }
 
 function imboDodgeLoop() {
   const g = ui.imbo;
   if (!g || g.kind !== 'dodgeball') return;
-  const now = performance.now();
-  imboDodgeStep(0.016);
+  const now = Date.now();
+  VariantEngine.step(g, 0.016, now);
+  VariantEngine.status(g, now);
+  imboDodgeHud();
   imboDodgeDraw();
-  if (g.phase === 'aim' && !g.over) {
-    if (now > g.deadline) {
-      if (g.moves < 4) {
-        g.over = 'Время вышло на первых ходах — партия прервана';
-      } else {
-        g.turn = other(g.turn);
-        g.deadline = now + 10000;
-        g.phase = 'aim';
-      }
-    }
-  } else if (g.phase === 'settle' && now > g.settleUntil) {
-    const w = g.discs.filter((d) => d.alive && d.team === 'w').length;
-    const b = g.discs.filter((d) => d.alive && d.team === 'b').length;
-    if (!w && !b) g.over = 'Все шашки улетели — ПАТ';
-    else if (!w) g.over = 'Белые потеряли все шашки — победа чёрных';
-    else if (!b) g.over = 'Чёрные потеряли все шашки — победа белых';
-    else {
-      g.turn = other(g.turn);
-      g.phase = 'aim';
-      g.deadline = now + 10000;
-    }
-  }
-  imboDodgeRender();
   if (!g.over) g.raf = requestAnimationFrame(imboDodgeLoop);
 }
 
-
-
 /* ── уголки 3×3 ── */
-function imboCornersStart() {
-  const W = 8, H = 8;
-  const board = new Array(W * H).fill(null);
-  for (let y = 5; y < 8; y++) for (let x = 0; x < 3; x++) board[y * W + x] = { c: 'w' };
-  for (let y = 0; y < 3; y++) for (let x = 5; x < 8; x++) board[y * W + x] = { c: 'b' };
-  ui.imbo = { kind: 'corners', W, H, board, turn: 'w', selected: null, legal: [], over: false, params: [] };
-  imboResetView('Уголки 3×3');
-  imboCornersRender();
-}
-
-function imboCornersTarget(color) {
-  if (color === 'w') return { x0: 5, x1: 7, y0: 0, y1: 2 };
-  return { x0: 0, x1: 2, y0: 5, y1: 7 };
-}
-
-function imboCornersMoves(g, from) {
-  const { W, H, board } = g;
-  const p = board[from];
-  if (!p) return [];
-  const x = from % W, y = Math.floor(from / W);
-  const out = [];
-  for (const [dx, dy] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]) {
-    const nx = x + dx, ny = y + dy;
-    if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
-    const s = ny * W + nx;
-    if (!board[s]) out.push({ from, to: s, jump: false });
-    else {
-      const jx = x + dx * 2, jy = y + dy * 2;
-      if (jx < 0 || jx >= W || jy < 0 || jy >= H) continue;
-      const js = jy * W + jx;
-      if (!board[js]) out.push({ from, to: js, jump: true });
-    }
-  }
-  return out;
-}
 
 function imboCornersRender() {
   const g = ui.imbo;
   if (!g || g.kind !== 'corners') return;
   const wrap = $('#imboBoardWrap');
   if (!wrap) return;
+  VariantEngine.status(g);
   wrap.innerHTML = '';
   const board = document.createElement('div');
   board.className = 'imbo-checkers';
   board.style.gridTemplateColumns = `repeat(${g.W}, minmax(0, 1fr))`;
   board.style.width = `min(${g.W * 62}px, 92vw)`;
   const targets = new Set(g.legal.map((m) => m.to));
-  const goalW = imboCornersTarget('w'), goalB = imboCornersTarget('b');
+  const goalW = VariantEngine.cornersTarget('w');
+  const goalB = VariantEngine.cornersTarget('b');
   for (let i = 0; i < g.board.length; i++) {
-    const x = i % g.W, y = Math.floor(i / g.W);
+    const x = i % g.W;
+    const y = Math.floor(i / g.W);
     const sq = document.createElement('button');
     sq.type = 'button';
     sq.className = 'imbo-sq ' + ((x + y) % 2 === 0 ? 'light' : 'dark');
@@ -2375,7 +2177,7 @@ function imboCornersRender() {
   }
   wrap.appendChild(board);
   const st = $('#imboStatus');
-  if (st) st.textContent = g.over ? g.over : `${g.turn === 'w' ? 'Ход белых' : 'Ход чёрных'} · занять чужой угол 3×3`;
+  if (st) st.textContent = g.text;
 }
 
 function imboCornersClick(sq) {
@@ -2383,31 +2185,21 @@ function imboCornersClick(sq) {
   if (!g || g.kind !== 'corners' || g.over) return;
   const p = g.board[sq];
   if (p && p.c === g.turn) {
-    const moves = imboCornersMoves(g, sq);
+    const moves = VariantEngine.movesFrom(g, sq);
     if (!moves.length) return;
     g.selected = sq;
     g.legal = moves;
     imboCornersRender();
     return;
   }
-  const move = g.legal.find((m) => m.to === sq);
-  if (!move) return;
-  const mover = g.turn;
-  g.board[move.to] = g.board[g.selected];
-  g.board[g.selected] = null;
+  if (g.selected == null) return;
+  const res = VariantEngine.apply(g, g.selected, sq);
+  if (!res.ok) return;
   g.selected = null;
   g.legal = [];
-  const target = imboCornersTarget(mover);
-  let win = true;
-  for (let y = target.y0; y <= target.y1; y++) for (let x = target.x0; x <= target.x1; x++) {
-    const q = g.board[y * g.W + x];
-    if (!q || q.c !== mover) win = false;
-  }
-  if (win) g.over = `${mover === 'w' ? 'Белые' : 'Чёрные'} заняли чужой угол — победа!`;
-  else g.turn = other(mover);
+  VariantEngine.status(g);
   imboCornersRender();
 }
-
 
 function startGameWithMode(opts = {}) {
   if (profile.modeId === 'openIntent' && opts.mode !== 'online') {
@@ -7279,8 +7071,15 @@ function bindEvents() {
   if ($('#imboClose')) $('#imboClose').addEventListener('click', openImboHub);
   if ($('#imboRestart')) $('#imboRestart').addEventListener('click', () => {
     if (!ui.imbo) return;
-    const [a, b] = ui.imbo.params || [];
-    imboStart(ui.imbo.kind, b || a);
+    const prev = ui.imbo;
+    const [a, b] = prev.params || [];
+    imboStart(prev.kind, b || a);
+    if (prev.kind === 'dodgeball' && prev.variant === 'row' && prev.count) {
+      VariantEngine.setCount(ui.imbo, prev.count);
+      ui.imbo.canvas = null;
+      imboResetView(VariantEngine.title(ui.imbo));
+      imboDodgeRender();
+    }
   });
   $$('.imbo-card').forEach((b) => b.addEventListener('click', () => imboStart(b.dataset.imbo, b.dataset.var)));
   if ($('#modesBackFloat')) $('#modesBackFloat').addEventListener('click', backFromScreen);
@@ -7802,7 +7601,7 @@ function boot() {
   showScreen('home');
   translateStaticDom();
   window.ChessApp = {
-    engine: { createState, legalMoves, genPseudo, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, attacked, materialOf, visSet, maybeBlock, centerCells, evaluateWhite, bestMove, MODES, modeById },
+    engine: { createState, legalMoves, genPseudo, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, attacked, materialOf, visSet, maybeBlock, centerCells, evaluateWhite, bestMove, MODES, modeById, variants: VariantEngine },
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,

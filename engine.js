@@ -1664,3 +1664,772 @@ function cloneState(st) {
   };
   return copy;
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   РАСШИРЕНИЕ ДВИЖКА: ШАШКИ, НАРДЫ, ВЫШИБАЛЫ, УГОЛКИ
+   Чистые правила без DOM. app.js только рисует и слушает pointer/click.
+   Состояние любой игры — обычный объект, его можно клонировать, сохранять
+   и пересчитывать отдельно от интерфейса.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const VARIANT_ALL_DIRS = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+
+const VARIANT_META = {
+  checkers: { id: 'checkers', name: 'Шашки', icon: '⚫' },
+  backgammon: { id: 'backgammon', name: 'Нарды', icon: '🎲' },
+  dodgeball: { id: 'dodgeball', name: 'Вышибалы', icon: '🎯' },
+  corners: { id: 'corners', name: 'Уголки', icon: '↗' },
+};
+
+const VARIANT_KIND_NAMES = { w: 'белые', b: 'чёрные' };
+const variantColorName = (c) => (c === 'w' ? 'Белые' : 'Чёрные');
+
+/* ────────────────────────────── ШАШКИ ────────────────────────────────── */
+
+function variantCheckersCreate(opts = {}) {
+  const intl = opts.variant === 'intl';
+  const W = intl ? 10 : 8;
+  const H = W;
+  const rows = intl ? 4 : 3;
+  const board = new Array(W * H).fill(null);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if ((x + y) % 2 !== 1) continue;
+      if (y < rows) board[y * W + x] = { c: 'b', king: false };
+      else if (y >= H - rows) board[y * W + x] = { c: 'w', king: false };
+    }
+  }
+  const st = {
+    engine: 'variant', kind: 'checkers', variant: intl ? 'intl' : 'ru',
+    title: intl ? 'Шашки · международные 10×10' : 'Шашки · русские 8×8',
+    W, H, board, turn: 'w', selected: null, legal: [],
+    over: false, winner: null, text: '', ply: 0, idle: 0,
+    params: [intl ? 'intl' : 'ru'],
+  };
+  variantCheckersStatus(st);
+  return st;
+}
+
+function variantCheckersPieceName(p) {
+  return p.king ? 'дамка' : 'шашка';
+}
+
+function variantCheckersCaptureDirs(p, variant) {
+  if (p.king) return VARIANT_ALL_DIRS;
+  // Международные шашки: простая шашка бьёт назад, но ходит только вперёд.
+  if (variant === 'intl') return VARIANT_ALL_DIRS;
+  return p.c === 'w' ? [[-1, -1], [1, -1]] : [[-1, 1], [1, 1]];
+}
+
+function variantCheckersStepDirs(p) {
+  if (p.king) return VARIANT_ALL_DIRS;
+  return p.c === 'w' ? [[-1, -1], [1, -1]] : [[-1, 1], [1, 1]];
+}
+
+function variantCheckersMovesFrom(st, from) {
+  const { W, H, board } = st;
+  const p = board[from];
+  if (!p) return [];
+  const x = from % W;
+  const y = Math.floor(from / W);
+  const out = [];
+  const at = (xx, yy) => (xx >= 0 && xx < W && yy >= 0 && yy < H ? yy * W + xx : -1);
+
+  // Тихий ход.
+  if (p.king) {
+    for (const [dx, dy] of VARIANT_ALL_DIRS) {
+      let nx = x + dx, ny = y + dy;
+      while (at(nx, ny) >= 0 && !board[at(nx, ny)]) {
+        out.push({ from, to: at(nx, ny), cap: -1 });
+        nx += dx; ny += dy;
+      }
+    }
+  } else {
+    for (const [dx, dy] of variantCheckersStepDirs(p)) {
+      const to = at(x + dx, y + dy);
+      if (to >= 0 && !board[to]) out.push({ from, to, cap: -1 });
+    }
+  }
+
+  // Взятие. Дамка летит и бьёт на расстоянии, простая — через соседнюю.
+  for (const [dx, dy] of variantCheckersCaptureDirs(p, st.variant)) {
+    if (p.king) {
+      let cx = x + dx, cy = y + dy;
+      while (at(cx, cy) >= 0 && !board[at(cx, cy)]) { cx += dx; cy += dy; }
+      const cs = at(cx, cy);
+      if (cs < 0 || !board[cs] || board[cs].c === p.c) continue;
+      let lx = cx + dx, ly = cy + dy;
+      while (at(lx, ly) >= 0 && !board[at(lx, ly)]) {
+        out.push({ from, to: at(lx, ly), cap: cs });
+        lx += dx; ly += dy;
+      }
+    } else {
+      const es = at(x + dx, y + dy);
+      if (es < 0 || !board[es] || board[es].c === p.c) continue;
+      const ls = at(x + dx * 2, y + dy * 2);
+      if (ls >= 0 && !board[ls]) out.push({ from, to: ls, cap: es });
+    }
+  }
+  return out;
+}
+
+function variantCheckersAllMoves(st, color = st.turn) {
+  const caps = [];
+  const quiet = [];
+  for (let i = 0; i < st.board.length; i++) {
+    const p = st.board[i];
+    if (!p || p.c !== color) continue;
+    for (const m of variantCheckersMovesFrom(st, i)) {
+      (m.cap >= 0 ? caps : quiet).push(m);
+    }
+  }
+  return caps.length ? caps : quiet;
+}
+
+function variantCheckersApply(st, from, to) {
+  if (st.over) return { ok: false, reason: 'over' };
+  const all = variantCheckersAllMoves(st, st.turn);
+  const move = all.find((m) => m.from === from && m.to === to);
+  if (!move) return { ok: false, reason: 'illegal' };
+  const piece = st.board[from];
+  const wasCapture = move.cap >= 0;
+
+  st.board[from] = null;
+  if (wasCapture) st.board[move.cap] = null;
+  st.board[to] = piece;
+
+  if (!piece.king) {
+    const last = piece.c === 'w' ? 0 : st.H - 1;
+    if (Math.floor(to / st.W) === last) piece.king = true;
+  }
+
+  st.ply += 1;
+  st.idle = wasCapture ? 0 : st.idle + 1;
+  st.selected = to;
+  st.legal = [];
+
+  const further = wasCapture
+    ? variantCheckersMovesFrom(st, to).filter((m) => m.cap >= 0)
+    : [];
+  if (further.length) {
+    st.legal = further;
+    st.text = 'Продолжайте взятие';
+    return { ok: true, chain: true, at: to };
+  }
+
+  st.selected = null;
+  st.turn = other(st.turn);
+  variantCheckersStatus(st);
+  return { ok: true, chain: false };
+}
+
+function variantCheckersStatus(st) {
+  if (st.over) return { over: true, winner: st.winner, text: st.text };
+  const count = (c) => st.board.reduce((n, p) => n + (p && p.c === c ? 1 : 0), 0);
+  const w = count('w');
+  const b = count('b');
+
+  if (!w) {
+    st.over = true; st.winner = 'b';
+    st.text = 'Белые потеряли все шашки — победа чёрных';
+  } else if (!b) {
+    st.over = true; st.winner = 'w';
+    st.text = 'Чёрные потеряли все шашки — победа белых';
+  } else {
+    const moves = variantCheckersAllMoves(st, st.turn);
+    if (!moves.length) {
+      st.over = true;
+      st.winner = other(st.turn);
+      st.text = `${variantColorName(st.turn)} без ходов — победа ${variantColorName(st.winner).toLowerCase()}`;
+    } else if (st.idle >= 30) {
+      st.over = true; st.winner = null;
+      st.text = 'Ничья: 15 ходов подряд без взятия';
+    } else {
+      const mustCapture = moves.some((m) => m.cap >= 0);
+      st.text = `${variantColorName(st.turn)}${mustCapture ? ' · взятие обязательно' : ''} · ${st.variant === 'intl' ? 'международные' : 'русские'}`;
+    }
+  }
+  return { over: st.over, winner: st.winner, text: st.text };
+}
+
+/* ────────────────────────────── НАРДЫ ─────────────────────────────────── */
+
+const BG_HOME = { w: [0, 5], b: [18, 23] };
+const bgSign = (color) => (color === 'w' ? 1 : -1);
+const bgOwn = (v, color) => v !== 0 && Math.sign(v) === bgSign(color);
+const bgEnemy = (v, color) => v !== 0 && Math.sign(v) !== bgSign(color);
+
+function variantBackgammonCreate() {
+  const points = new Array(24).fill(0);
+  points[23] = 2; points[12] = 5; points[7] = 3; points[5] = 5;
+  points[0] = -2; points[11] = -5; points[16] = -3; points[18] = -5;
+  const st = {
+    engine: 'variant', kind: 'backgammon', title: 'Нарды · 24 пункта',
+    W: 24, H: 1, points, bar: { w: 0, b: 0 }, off: { w: 0, b: 0 },
+    turn: 'w', dice: [], moves: [], selected: null, legal: [],
+    canPass: false, over: false, winner: null, text: '', ply: 0, last: null,
+    cube: { value: 1, owner: null }, params: [],
+  };
+  variantBackgammonStatus(st);
+  return st;
+}
+
+function variantBackgammonCount(st, i) { return Math.abs(st.points[i]); }
+function variantBackgammonColor(st, i) {
+  return st.points[i] > 0 ? 'w' : st.points[i] < 0 ? 'b' : null;
+}
+
+function variantBackgammonHome(st, color) {
+  if (st.bar[color] > 0) return false;
+  const [a, b] = BG_HOME[color];
+  for (let i = 0; i < 24; i++) {
+    if (i >= a && i <= b) continue;
+    if (bgOwn(st.points[i], color)) return false;
+  }
+  return true;
+}
+
+function variantBgCanLand(st, color, to) {
+  const v = st.points[to];
+  if (v === 0) return true;
+  if (bgOwn(v, color)) return true;
+  return Math.abs(v) === 1;            // одну чужую шашку можно сбить
+}
+
+function variantBgMoveFor(st, color, from, die) {
+  const to = from + (color === 'w' ? -die : die);
+  if (to >= 0 && to < 24) {
+    return variantBgCanLand(st, color, to) ? { from, to, die, off: false } : null;
+  }
+  if (!variantBackgammonHome(st, color)) return null;
+  const exact = color === 'w' ? from - die === -1 : from + die === 24;
+  if (exact) return { from, to: -99, die, off: true };
+  // Перебор: выбрасывать можно, если дальше к дому нет своих шашек.
+  if (color === 'w' && to < 0) {
+    for (let i = from + 1; i <= 5; i++) if (bgOwn(st.points[i], color)) return null;
+    return { from, to: -99, die, off: true };
+  }
+  if (color === 'b' && to > 23) {
+    for (let i = 18; i < from; i++) if (bgOwn(st.points[i], color)) return null;
+    return { from, to: -99, die, off: true };
+  }
+  return null;
+}
+
+function variantBackgammonLegal(st) {
+  const out = [];
+  if (st.over || !st.moves.length) return out;
+  const color = st.turn;
+  if (st.bar[color] > 0) {
+    for (let i = 0; i < st.moves.length; i++) {
+      const die = st.moves[i];
+      const to = color === 'w' ? 24 - die : die - 1;
+      if (to >= 0 && to < 24 && variantBgCanLand(st, color, to)) {
+        out.push({ from: -1, to, die, off: false, hit: bgEnemy(st.points[to], color) });
+      }
+    }
+    return out;
+  }
+  for (let p = 0; p < 24; p++) {
+    if (!bgOwn(st.points[p], color)) continue;
+    for (let i = 0; i < st.moves.length; i++) {
+      const move = variantBgMoveFor(st, color, p, st.moves[i]);
+      if (move) out.push({ ...move, hit: !move.off && bgEnemy(st.points[move.to], color) });
+    }
+  }
+  return out;
+}
+
+function variantBackgammonTargets(st, from) {
+  return variantBackgammonLegal(st).filter((m) => m.from === from);
+}
+
+function variantBackgammonRoll(st, rng = Math.random) {
+  if (st.over || st.moves.length) return null;
+  const a = 1 + Math.floor(rng() * 6);
+  const b = 1 + Math.floor(rng() * 6);
+  st.dice = [a, b];
+  st.moves = a === b ? [a, a, a, a] : [a, b];
+  st.selected = null;
+  st.legal = [];
+  variantBackgammonStatus(st);
+  return st.dice;
+}
+
+function variantBackgammonFinishTurn(st) {
+  st.turn = other(st.turn);
+  st.dice = [];
+  st.moves = [];
+  st.selected = null;
+  st.legal = [];
+  st.canPass = false;
+}
+
+function variantBackgammonApply(st, from, to) {
+  if (st.over) return { ok: false, reason: 'over' };
+  const legal = variantBackgammonLegal(st);
+  const move = legal.find((m) => m.from === from && (m.off ? (to === -99 || to === 'off') : m.to === to));
+  if (!move) return { ok: false, reason: 'illegal' };
+
+  const color = st.turn;
+  const sign = bgSign(color);
+  if (from === -1) st.bar[color] -= 1;
+  else st.points[from] -= sign;
+
+  let hit = false;
+  if (move.off) {
+    st.off[color] += 1;
+  } else {
+    if (bgEnemy(st.points[move.to], color)) {
+      st.points[move.to] = 0;
+      st.bar[other(color)] += 1;
+      hit = true;
+    }
+    st.points[move.to] += sign;
+  }
+
+  const idx = st.moves.indexOf(move.die);
+  if (idx >= 0) st.moves.splice(idx, 1);
+  st.ply += 1;
+  st.last = { from, to: move.off ? -99 : move.to, color };
+  st.selected = null;
+  st.legal = [];
+
+  if (st.off[color] >= 15) {
+    st.over = true;
+    st.winner = color;
+    st.text = `${variantColorName(color)} вынесли все шашки — победа!`;
+    return { ok: true, hit, off: move.off, ended: true };
+  }
+  if (!st.moves.length) {
+    variantBackgammonFinishTurn(st);
+  } else if (!variantBackgammonLegal(st).length) {
+    variantBackgammonFinishTurn(st);
+  }
+  variantBackgammonStatus(st);
+  return { ok: true, hit, off: move.off, ended: st.over };
+}
+
+function variantBackgammonPass(st) {
+  if (st.over) return false;
+  if (!st.moves.length) return false;
+  if (variantBackgammonLegal(st).length) return false;
+  variantBackgammonFinishTurn(st);
+  variantBackgammonStatus(st);
+  return true;
+}
+
+function variantBackgammonStatus(st) {
+  if (st.over) return { over: true, winner: st.winner, text: st.text };
+  const legal = variantBackgammonLegal(st);
+  st.canPass = st.moves.length > 0 && legal.length === 0;
+  let text = `${variantColorName(st.turn)} · зары: ${st.dice.length ? st.dice.join(' · ') : '—'}`;
+  text += ` · сбито: ${st.bar.w}/${st.bar.b} · вынесено: ${st.off.w}/${st.off.b}`;
+  if (!st.moves.length) text += ' · бросьте зары';
+  else if (st.bar[st.turn] > 0) text += ' · сначала введите шашку с бара';
+  else if (st.canPass) text += ' · нет ходов — передайте';
+  st.text = text;
+  return { over: false, winner: null, text };
+}
+
+/* ──────────────────────────── ВЫШИБАЛЫ ───────────────────────────────── */
+
+function variantDodgeLayout(st, count) {
+  const { W, H, r, variant } = st;
+  const cols = variant === 'row' ? count : variant === '1' ? Math.min(8, count) : Math.min(4, count);
+  const rows = Math.ceil(count / cols);
+  const discs = [];
+  const addTeam = (team, top) => {
+    for (let i = 0; i < count; i++) {
+      const c = i % cols;
+      const row = Math.floor(i / cols);
+      const spacing = variant === 'row'
+        ? Math.min(r * 2.6, (W - 2 * r - 20) / Math.max(1, count - 1))
+        : r * 2.6;
+      const x = variant === 'row'
+        ? r + 10 + c * spacing
+        : W / 2 + (c - (cols - 1) / 2) * r * 2.6;
+      const y = variant === 'row'
+        ? (top ? H * 0.28 : H * 0.72)
+        : (top ? 70 + row * (r * 2.5) : H - 70 - row * (r * 2.5));
+      discs.push({ x, y, vx: 0, vy: 0, r, m: r * r, team, alive: true, slot: i });
+    }
+  };
+  addTeam('b', true);
+  addTeam('w', false);
+  return discs;
+}
+
+function variantDodgeballCreate(opts = {}) {
+  const rng = opts.rng || Math.random;
+  const variant = opts.variant || '2';
+  const big = variant === '10';
+  const W = big ? 760 : 620;
+  const H = big ? 760 : 620;
+  const count = opts.count || (variant === 'rand'
+    ? 4 + Math.floor(rng() * 9)
+    : variant === 'row' ? 12 : 16);
+  const st = {
+    engine: 'variant', kind: 'dodgeball', variant,
+    title: 'Вышибалы', W, H, r: big ? 15 : 13,
+    discs: [], count: Math.min(12, count),
+    turn: 'w', phase: variant === 'row' ? 'setup' : 'aim',
+    selected: null, drag: null, setupSel: null, deadline: Date.now() + 10000,
+    settleUntil: 0, moves: 0, over: false, winner: null, text: '',
+    params: [variant], raf: 0,
+  };
+  st.discs = variantDodgeLayout(st, st.count);
+  variantDodgeballStatus(st);
+  return st;
+}
+
+function variantDodgeballTitle(st) {
+  if (st.variant === '10') return 'Вышибалы 10×10';
+  if (st.variant === 'row') return `Вышибалы · 1 ряд · ${st.count} на ${st.count}`;
+  if (st.variant === 'rand') return `Вышибалы · ${st.count} на ${st.count}`;
+  return st.variant === '1' ? 'Вышибалы · 1 слой' : 'Вышибалы · 2 слоя';
+}
+
+function variantDodgeballSetCount(st, count) {
+  if (st.variant !== 'row' || st.over) return false;
+  st.count = Math.max(4, Math.min(12, count));
+  st.discs = variantDodgeLayout(st, st.count);
+  st.phase = 'setup';
+  st.selected = null;
+  st.drag = null;
+  variantDodgeballStatus(st);
+  return true;
+}
+
+function variantDodgeballSwap(st, a, b) {
+  if (st.phase !== 'setup' || st.over) return false;
+  const da = st.discs[a];
+  const db = st.discs[b];
+  if (!da || !db || !da.alive || !db.alive || da.team !== db.team) return false;
+  const x = da.x, y = da.y;
+  da.x = db.x; da.y = db.y;
+  db.x = x; db.y = y;
+  return true;
+}
+
+function variantDodgeballReady(st, now = Date.now()) {
+  if (st.phase !== 'setup') return false;
+  st.phase = 'aim';
+  st.deadline = now + 10000;
+  st.selected = null;
+  variantDodgeballStatus(st, now);
+  return true;
+}
+
+function variantDodgeballShoot(st, index, dx, dy, now = Date.now()) {
+  const disc = st.discs[index];
+  if (!disc || !disc.alive || disc.team !== st.turn) return false;
+  if (st.phase !== 'aim' || st.over) return false;
+  if (Math.hypot(dx, dy) < 12) return false;
+  disc.vx = Math.max(-18, Math.min(18, dx * 0.22));
+  disc.vy = Math.max(-18, Math.min(18, dy * 0.22));
+  st.phase = 'settle';
+  st.settleUntil = now + 3000;
+  st.moves += 1;
+  st.selected = index;
+  variantDodgeballStatus(st, now);
+  return true;
+}
+
+function variantDodgeballStep(st, dt, now = Date.now()) {
+  if (st.over || st.phase === 'setup') return st;
+  const { W, H } = st;
+
+  for (const d of st.discs) {
+    if (!d.alive) continue;
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    d.vx *= 0.988;
+    d.vy *= 0.988;
+    if (d.x < d.r) { d.x = d.r; d.vx = Math.abs(d.vx) * 0.72; }
+    if (d.x > W - d.r) { d.x = W - d.r; d.vx = -Math.abs(d.vx) * 0.72; }
+    if (d.x < -d.r || d.x > W + d.r || d.y < -d.r || d.y > H + d.r) d.alive = false;
+    if (d.y < -d.r * 0.5 || d.y > H + d.r * 0.5) d.alive = false;
+  }
+
+  for (let i = 0; i < st.discs.length; i++) {
+    const a = st.discs[i];
+    if (!a.alive) continue;
+    for (let j = i + 1; j < st.discs.length; j++) {
+      const b = st.discs[j];
+      if (!b.alive) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      const min = a.r + b.r;
+      if (dist < 0.001 || dist >= min) continue;
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const overlap = min - dist;
+      const total = a.m + b.m;
+      a.x -= nx * overlap * (b.m / total);
+      a.y -= ny * overlap * (b.m / total);
+      b.x += nx * overlap * (a.m / total);
+      b.y += ny * overlap * (a.m / total);
+      const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+      if (rel >= 0) continue;
+      const imp = -(1.25) * rel / (1 / a.m + 1 / b.m);
+      a.vx -= imp * nx / a.m; a.vy -= imp * ny / a.m;
+      b.vx += imp * nx / b.m; b.vy += imp * ny / b.m;
+    }
+  }
+
+  if (st.phase === 'settle' && now >= st.settleUntil) {
+    const w = st.discs.filter((d) => d.alive && d.team === 'w').length;
+    const b = st.discs.filter((d) => d.alive && d.team === 'b').length;
+    if (!w && !b) {
+      st.over = true; st.winner = null;
+      st.text = 'Все шашки улетели — ПАТ';
+    } else if (!w) {
+      st.over = true; st.winner = 'b';
+      st.text = 'Белые потеряли все шашки — победа чёрных';
+    } else if (!b) {
+      st.over = true; st.winner = 'w';
+      st.text = 'Чёрные потеряли все шашки — победа белых';
+    } else {
+      st.turn = other(st.turn);
+      st.phase = 'aim';
+      st.deadline = now + 10000;
+      st.selected = null;
+      variantDodgeballStatus(st, now);
+    }
+  } else if (st.phase === 'aim' && now > st.deadline) {
+    if (st.moves < 4) {
+      st.over = true; st.winner = null;
+      st.text = 'Время вышло на первых ходах — партия прервана';
+    } else {
+      st.turn = other(st.turn);
+      st.deadline = now + 10000;
+      st.selected = null;
+      variantDodgeballStatus(st, now);
+    }
+  }
+  return st;
+}
+
+function variantDodgeballStatus(st, now = Date.now()) {
+  if (st.over) return { over: true, winner: st.winner, text: st.text };
+  if (st.phase === 'setup') {
+    st.text = `Расставьте шашки: нажмите две свои, чтобы поменять местами · ${st.count} на ${st.count}`;
+  } else if (st.phase === 'aim') {
+    st.text = `${variantColorName(st.turn)} · тяни вниз и отпусти · ${Math.max(0, Math.ceil((st.deadline - now) / 1000))} с`;
+  } else {
+    st.text = 'Шашки летят… 3 секунды';
+  }
+  return { over: false, winner: null, text: st.text };
+}
+
+/* ──────────────────────────── УГОЛКИ 3×3 ──────────────────────────────── */
+
+function variantCornersTarget(color) {
+  return color === 'w'
+    ? { x0: 5, x1: 7, y0: 0, y1: 2 }
+    : { x0: 0, x1: 2, y0: 5, y1: 7 };
+}
+
+function variantCornersCreate() {
+  const W = 8, H = 8;
+  const board = new Array(W * H).fill(null);
+  for (let y = 5; y < 8; y++) for (let x = 0; x < 3; x++) board[y * W + x] = { c: 'w' };
+  for (let y = 0; y < 3; y++) for (let x = 5; x < 8; x++) board[y * W + x] = { c: 'b' };
+  const st = {
+    engine: 'variant', kind: 'corners', title: 'Уголки 3×3',
+    W, H, board, turn: 'w', selected: null, legal: [],
+    over: false, winner: null, text: '', ply: 0, params: [],
+  };
+  variantCornersStatus(st);
+  return st;
+}
+
+function variantCornersMoves(st, from) {
+  const { W, H, board } = st;
+  const p = board[from];
+  if (!p) return [];
+  const x = from % W;
+  const y = Math.floor(from / W);
+  const out = [];
+  for (const [dx, dy] of [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]]) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+    const to = ny * W + nx;
+    if (!board[to]) {
+      out.push({ from, to, jump: false });
+      continue;
+    }
+    const jx = x + dx * 2;
+    const jy = y + dy * 2;
+    if (jx < 0 || jx >= W || jy < 0 || jy >= H) continue;
+    const js = jy * W + jx;
+    if (!board[js]) out.push({ from, to: js, jump: true });
+  }
+  return out;
+}
+
+function variantCornersAllMoves(st, color = st.turn) {
+  const out = [];
+  for (let i = 0; i < st.board.length; i++) {
+    const p = st.board[i];
+    if (!p || p.c !== color) continue;
+    out.push(...variantCornersMoves(st, i));
+  }
+  return out;
+}
+
+function variantCornersApply(st, from, to) {
+  if (st.over) return { ok: false, reason: 'over' };
+  const move = variantCornersMoves(st, from).find((m) => m.to === to);
+  if (!move || !st.board[from] || st.board[from].c !== st.turn) return { ok: false, reason: 'illegal' };
+  const mover = st.turn;
+  st.board[to] = st.board[from];
+  st.board[from] = null;
+  st.ply += 1;
+  st.selected = null;
+  st.legal = [];
+
+  const target = variantCornersTarget(mover);
+  let win = true;
+  for (let y = target.y0; y <= target.y1; y++) {
+    for (let x = target.x0; x <= target.x1; x++) {
+      const q = st.board[y * st.W + x];
+      if (!q || q.c !== mover) win = false;
+    }
+  }
+  if (win) {
+    st.over = true;
+    st.winner = mover;
+    st.text = `${variantColorName(mover)} заняли чужой угол — победа!`;
+  } else if (st.ply >= 300) {
+    st.over = true;
+    st.winner = null;
+    st.text = 'Ничья: 300 ходов без победы';
+  } else {
+    st.turn = other(mover);
+    variantCornersStatus(st);
+  }
+  return { ok: true, win: st.over, winner: st.winner };
+}
+
+function variantCornersStatus(st) {
+  if (st.over) return { over: true, winner: st.winner, text: st.text };
+  const moves = variantCornersAllMoves(st, st.turn);
+  if (!moves.length) {
+    st.over = true; st.winner = other(st.turn);
+    st.text = `${variantColorName(st.turn)} без ходов — победа ${variantColorName(st.winner).toLowerCase()}`;
+  } else {
+    st.text = `${variantColorName(st.turn)} · занять чужой угол 3×3`;
+  }
+  return { over: st.over, winner: st.winner, text: st.text };
+}
+
+/* ─────────────────────── ЕДИНЫЙ ИНТЕРФЕЙС ─────────────────────────────── */
+
+const VariantEngine = {
+  meta: VARIANT_META,
+  kinds: Object.keys(VARIANT_META),
+
+  create(kind, opts = {}) {
+    if (kind === 'checkers') return variantCheckersCreate(opts);
+    if (kind === 'backgammon') return variantBackgammonCreate(opts);
+    if (kind === 'dodgeball') return variantDodgeballCreate(opts);
+    if (kind === 'corners') return variantCornersCreate(opts);
+    throw new Error('Неизвестная игра: ' + kind);
+  },
+
+  title(st) {
+    if (!st) return 'Игра';
+    if (st.kind === 'dodgeball') return variantDodgeballTitle(st);
+    return st.title || VARIANT_META[st.kind]?.name || 'Игра';
+  },
+
+  allMoves(st) {
+    if (!st || st.over) return [];
+    if (st.kind === 'checkers') return variantCheckersAllMoves(st, st.turn);
+    if (st.kind === 'backgammon') return variantBackgammonLegal(st);
+    if (st.kind === 'corners') return variantCornersAllMoves(st, st.turn);
+    return [];
+  },
+
+  movesFrom(st, from) {
+    if (!st || st.over) return [];
+    if (st.kind === 'checkers') return variantCheckersMovesFrom(st, from);
+    if (st.kind === 'backgammon') return variantBackgammonTargets(st, from);
+    if (st.kind === 'corners') return variantCornersMoves(st, from);
+    return [];
+  },
+
+  apply(st, from, to) {
+    if (!st) return { ok: false, reason: 'no-state' };
+    if (st.kind === 'checkers') return variantCheckersApply(st, from, to);
+    if (st.kind === 'backgammon') return variantBackgammonApply(st, from, to);
+    if (st.kind === 'corners') return variantCornersApply(st, from, to);
+    return { ok: false, reason: 'kind' };
+  },
+
+  status(st, now = Date.now()) {
+    if (!st) return { over: false, winner: null, text: '' };
+    if (st.kind === 'checkers') return variantCheckersStatus(st);
+    if (st.kind === 'backgammon') return variantBackgammonStatus(st);
+    if (st.kind === 'dodgeball') return variantDodgeballStatus(st, now);
+    if (st.kind === 'corners') return variantCornersStatus(st);
+    return { over: false, winner: null, text: '' };
+  },
+
+  roll(st, rng) {
+    if (st && st.kind === 'backgammon') return variantBackgammonRoll(st, rng);
+    return null;
+  },
+
+  pass(st) {
+    if (st && st.kind === 'backgammon') return variantBackgammonPass(st);
+    return false;
+  },
+
+  step(st, dt, now) {
+    if (st && st.kind === 'dodgeball') return variantDodgeballStep(st, dt, now);
+    return st;
+  },
+
+  shoot(st, index, dx, dy, now) {
+    if (st && st.kind === 'dodgeball') return variantDodgeballShoot(st, index, dx, dy, now);
+    return false;
+  },
+
+  ready(st, now) {
+    if (st && st.kind === 'dodgeball') return variantDodgeballReady(st, now);
+    return false;
+  },
+
+  swap(st, a, b) {
+    if (st && st.kind === 'dodgeball') return variantDodgeballSwap(st, a, b);
+    return false;
+  },
+
+  setCount(st, count) {
+    if (st && st.kind === 'dodgeball') return variantDodgeballSetCount(st, count);
+    return false;
+  },
+
+  pieceName(st, piece) {
+    if (st && st.kind === 'checkers') return variantCheckersPieceName(piece);
+    return '';
+  },
+
+  cornersTarget(color) {
+    return variantCornersTarget(color);
+  },
+
+  canBearOff(st, color = st.turn) {
+    return st && st.kind === 'backgammon' ? variantBackgammonHome(st, color) : false;
+  },
+
+  clone(st) {
+    return JSON.parse(JSON.stringify(st));
+  },
+};
