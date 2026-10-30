@@ -86,7 +86,7 @@ const MODES = [
   },
   {
     id: 'race', n: 9, name: 'Гонка королей', icon: '🏁',
-    desc: 'Короли в нижних углах, пешки слева и справа в два ряда. Побеждает тот, кто первым проведёт короля на верхний ряд.',
+    desc: 'Короли в нижних углах, пешки слева и справа в два ряда. Побеждает тот, кто первым проведёт короля на верхний ряд. Короля нельзя съесть, но шах ему разрешён.',
     W: 8, H: 8, flags: { race: true },
   },
   {
@@ -311,7 +311,7 @@ const MODES = [
   },
   {
     id: 'raceKings', n: 54, name: 'Королевские гонки', icon: '🏁',
-    desc: 'Без пешек и шахов: король должен первым добраться до последней линии.',
+    desc: 'Без пешек: король должен первым добраться до последней линии. Короля нельзя съесть, но шах ему разрешён.',
     W: 8, H: 8, flags: { raceKing: true, kingFree: true },
   },
   {
@@ -331,7 +331,7 @@ const MODES = [
   },
   {
     id: 'zombie', n: 60, name: 'Зомби-апокалипсис', icon: '🧟',
-    desc: 'Белые — медики, чёрные — зелёные зомби. Зомби не едят, а обращают фигуры и заражают соседние клетки за 3 секунды. Съешь чужого короля!',
+    desc: 'Белые — медики, чёрные — зелёные зомби. Зомби не едят белых, а обращают фигуры: не больше двух очагов одновременно и только на ходу белых. Съешь чужого короля!',
     W: 8, H: 8, flags: { classic: true, zombie: true },
   },
   {
@@ -954,6 +954,10 @@ function genPseudo(st, color) {
       continue;
     }
   }
+  if (st.flags.zombie && color === 'b') {
+    // Зомби не едят медиков: им разрешено только ходить и заражать рядом.
+    return out.filter((m) => m.capture == null && !m.ep && !(m.caps && m.caps.length));
+  }
   return out;
 }
 
@@ -1015,6 +1019,8 @@ function addCastling(st, color, out, kingSq) {
 /* ══════════════════════════════ АТАКИ ══════════════════════════════════ */
 
 function attacked(st, sq, by) {
+  // Зомби не едят белых, поэтому и не атакуют их для шаха.
+  if (st.flags.zombie && by === 'b') return false;
   const { board, W, H } = st;
   const tx = fileOf(st, sq);
   const ty = rankOf(st, sq);
@@ -1082,7 +1088,7 @@ function attacked(st, sq, by) {
 }
 
 function inCheck(st, color) {
-  if (st.flags.antichess || st.flags.captureAll || st.flags.captureRace || st.flags.raceKing) return false;
+  if (st.flags.antichess || st.flags.captureAll || st.flags.captureRace) return false;
   const king = findKing(st, color);
   if (king >= 0 && st.flags.radiusCheck) {
     const kx = fileOf(st, king);
@@ -1174,26 +1180,6 @@ function applyMove(st, m) {
     }
     else if ((m.kingStep && st.flags.bishopKing) || p.t === 'j') placed = { ...p, used: p.used + 1 };
     if (placed) board[m.to] = placed;
-  }
-  if (st.flags.zombie && p.c === 'b' && capturedColor === 'w') {
-    const victim = undo.removed.find((r) => r.piece && r.piece.c === 'w' && r.piece.t !== 'k');
-    if (victim) {
-      const x = fileOf(st, m.to);
-      const y = rankOf(st, m.to);
-      const spots = [];
-      for (const [dx, dy] of QUEEN_DIRS) {
-        const nx = x + dx, ny = y + dy;
-        if (!inside(st, nx, ny)) continue;
-        const s = sqAt(st, nx, ny);
-        if (!board[s]) spots.push(s);
-      }
-      if (spots.length) {
-        const target = spots[Math.floor(Math.random() * spots.length)];
-        board[target] = { ...victim.piece, c: 'b', used: 0, zombie: true, special: undefined };
-        st.converted = target;
-        undo.convertedPiece = { sq: target, piece: board[target] };
-      }
-    }
   }
 
   const takenNow = undo.removed.filter((r) => r.piece && r.piece.c !== p.c).length;
@@ -1297,14 +1283,23 @@ function undoMove(st, undo) {
 
 /* ═════════════════════════════ ЛЕГАЛЬНОСТЬ ═════════════════════════════ */
 
+function guardKingCapture(st, moves) {
+  if (!(st.flags.race || st.flags.raceKing)) return moves;
+  return moves.filter((m) => {
+    if (m.capture == null) return true;
+    const victim = st.board[m.capture];
+    return !victim || victim.t !== 'k';
+  });
+}
+
 function legalMoves(st, color = st.turn) {
   let pseudo = genPseudo(st, color);
   if (st.flags.antichess) {
     const caps = pseudo.filter((m) => m.capture != null || m.ep || (m.caps && m.caps.length));
     if (caps.length) pseudo = caps;
-    return pseudo;
+    return guardKingCapture(st, pseudo);
   }
-  if (st.flags.kingFree || st.flags.race) return pseudo;
+  if (st.flags.kingFree || st.flags.race) return guardKingCapture(st, pseudo);
   const out = [];
   for (const m of pseudo) {
     const undo = applyMove(st, m);
@@ -1320,9 +1315,9 @@ function legalMoves(st, color = st.turn) {
       undoMove(st, undo);
       if (!givesCheck) safe.push(m);
     }
-    if (safe.length) return safe;
+    if (safe.length) return guardKingCapture(st, safe);
   }
-  return out;
+  return guardKingCapture(st, out);
 }
 
 /* ══════════════════════════════ СТАТУС ═════════════════════════════════ */

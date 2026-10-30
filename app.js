@@ -5051,8 +5051,10 @@ function zombieNeighbors(st, sq) {
 function zombieScan() {
   if (!ui.zombie || !ui.st || ui.st.status !== 'play') return;
   const st = ui.st;
+  // Заражение идёт только на ходу белых (таймер медиков).
+  if (st.turn !== 'w') { renderZombieHud(); return; }
   const now = performance.now();
-  const next = {};
+  const candidates = [];
   for (let i = 0; i < st.board.length; i++) {
     const p = st.board[i];
     if (!p || p.c !== 'w') continue;
@@ -5062,15 +5064,20 @@ function zombieScan() {
     if (p.special === 'redqueen') delay = 6000;
     if (enemies.some((q) => q.special === 'bluequeen')) delay = Math.min(delay, 1500);
     const old = ui.zombie.infect[i];
-    next[i] = old || { deadline: now + delay };
+    candidates.push({ sq: i, deadline: old ? old.deadline : now + delay });
   }
+  // Не более двух очагов заражения одновременно.
+  candidates.sort((a, b) => a.deadline - b.deadline);
+  const next = {};
+  for (const item of candidates.slice(0, 2)) next[item.sq] = { deadline: item.deadline };
   ui.zombie.infect = next;
   renderZombieHud();
 }
 
 function zombieTick() {
   if (!ui.zombie || !ui.st || ui.st.status !== 'play') return;
-  if (ui.paused || ui.away || ui.gameLocked || ui.screen !== 'game') {
+  // Таймер белых: на ходу чёрных заражение замирает, а не тикает.
+  if (ui.paused || ui.away || ui.gameLocked || ui.screen !== 'game' || ui.st.turn !== 'w') {
     for (const key of Object.keys(ui.zombie.infect)) ui.zombie.infect[key].deadline += 100;
     return;
   }
