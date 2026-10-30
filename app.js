@@ -1252,6 +1252,15 @@ const ui = {
   phase: '',
   replaying: false,
   online: null,
+  imboMode: 'local',
+  imboSide: 'w',
+  imboBot: null,
+  imboHistory: [],
+  imboChat: [],
+  imboBusy: false,
+  imboHistoryOpen: false,
+  imboChatOpen: false,
+  imboResult: null,
   pieceNodes: new Map(),
   squareEls: [],
 };
@@ -1685,35 +1694,128 @@ function rollRandomMode(done) {
 
 
 /* ═══════════════════ 12.10. ИМБОВИНКИ ═══════════════════ */
-/* Правила живут в engine.js (VariantEngine). Здесь только экран и ввод. */
+/* Правила — в engine.js (VariantEngine). Здесь экран, история, чат, бот,
+   онлайн-комната и анимации. */
 
 function openImboHub() {
   stopImboGame();
+  if (ui.online && ui.online.imbo) {
+    netPublish({ t: 'imbo-bye' });
+    leaveOnline(true);
+  }
   const hub = $('#imboHub');
   const play = $('#imboPlay');
   if (hub) hub.classList.remove('hidden');
   if (play) play.classList.add('hidden');
+  const result = $('#imboResult');
+  if (result) result.classList.add('hidden');
   ui.imbo = null;
+  ui.imboMode = 'local';
+  ui.imboResult = null;
+  ui.imboHistory = [];
+  ui.imboChat = [];
+  ui.imboHistoryOpen = false;
+  ui.imboChatOpen = false;
+  imboUpdatePanels();
 }
 
-function imboStart(kind, variant) {
+function imboT(ru, en) {
+  return profile.language === 'en' ? en : ru;
+}
+
+function imboTitle(st) {
+  if (!st) return imboT('Игра', 'Game');
+  if (profile.language !== 'en') return VariantEngine.title(st);
+  if (st.kind === 'checkers') {
+    return st.variant === 'intl' ? 'Checkers · international 10×10' : 'Checkers · Russian 8×8';
+  }
+  if (st.kind === 'backgammon') return 'Backgammon · 24 points';
+  if (st.kind === 'corners') return 'Corners 3×3';
+  if (st.kind === 'dodgeball') {
+    if (st.variant === '10') return 'Dodgeball 10×10';
+    if (st.variant === 'row') return `Dodgeball · 1 row · ${st.count} vs ${st.count}`;
+    if (st.variant === 'rand') return `Dodgeball · ${st.count} vs ${st.count}`;
+    return st.variant === '1' ? 'Dodgeball · 1 layer' : 'Dodgeball · 2 layers';
+  }
+  return VariantEngine.title(st);
+}
+
+/** Английские подписи для русских строк движка: перевод по частям. */
+function imboText(text) {
+  if (!text || profile.language !== 'en') return text;
+  return String(text)
+    .replace(/Продолжайте взятие/g, 'Continue capturing')
+    .replace(/взятие обязательно/g, 'capture is mandatory')
+    .replace(/Белые потеряли все шашки — победа чёрных/g, 'White lost all pieces — Black wins')
+    .replace(/Чёрные потеряли все шашки — победа белых/g, 'Black lost all pieces — White wins')
+    .replace(/Белые без ходов — победа чёрных/g, 'White has no moves — Black wins')
+    .replace(/Чёрные без ходов — победа белых/g, 'Black has no moves — White wins')
+    .replace(/Ничья: 15 ходов подряд без взятия/g, 'Draw: 15 moves without a capture')
+    .replace(/Ничья: 300 ходов без победы/g, 'Draw: 300 moves without a win')
+    .replace(/Белые/g, 'White')
+    .replace(/Чёрные/g, 'Black')
+    .replace(/русские/g, 'Russian')
+    .replace(/международные/g, 'international')
+    .replace(/зары/g, 'dice')
+    .replace(/сбито/g, 'hit')
+    .replace(/вынесено/g, 'borne off')
+    .replace(/бросьте зары/g, 'roll the dice')
+    .replace(/сначала введите шашку с бара/g, 'enter a checker from the bar first')
+    .replace(/нет ходов — передайте/g, 'no moves — pass')
+    .replace(/занять чужой угол 3×3/g, 'occupy the opposite 3×3 corner')
+    .replace(/Шашки летят… 3 секунды/g, 'Pieces are flying… 3 seconds')
+    .replace(/тяни вниз и отпусти/g, 'drag down and release')
+    .replace(/Время вышло на первых ходах — партия прервана/g, 'Time is up — game aborted')
+    .replace(/Все шашки улетели — ПАТ/g, 'All pieces are out — stalemate')
+    .replace(/Расставьте шашки: нажмите две свои, чтобы поменять местами/g, 'Arrange your pieces: tap two of yours to swap them')
+    .replace(/можно выносить/g, 'you can bear off')
+    .replace(/сначала соберите все в дом/g, 'bring all checkers home first')
+    .replace(/сначала введите с бара/g, 'enter from the bar first');
+}
+
+function imboStart(kind, variant, opts = {}) {
   stopImboGame();
-  const opts = kind === 'checkers'
-    ? { variant: variant || 'ru' }
-    : kind === 'dodgeball'
-      ? { variant: variant || '2' }
-      : {};
+  if (ui.online && ui.online.imbo && opts.mode !== 'online') leaveOnline(true);
+  const mode = opts.mode || 'local';
+  let st;
   try {
-    ui.imbo = VariantEngine.create(kind, opts);
-  } catch (e) {
+    st = VariantEngine.create(kind, { variant, count: opts.count });
+  } catch (error) {
     toast('Эта игра пока недоступна');
     return;
   }
-  imboResetView(VariantEngine.title(ui.imbo));
-  if (kind === 'checkers') imboCheckersRender();
-  else if (kind === 'backgammon') imboBgRender();
-  else if (kind === 'dodgeball') { imboDodgeRender(); imboDodgeLoop(); }
-  else if (kind === 'corners') imboCornersRender();
+  ui.imbo = st;
+  ui.imboMode = mode;
+  ui.imboSide = opts.side || 'w';
+  ui.imboHistory = [];
+  ui.imboChat = [];
+  ui.imboBusy = false;
+  ui.imboResult = null;
+  ui.imboBursts = [];
+  ui.imboBot = mode === 'bot'
+    ? { level: opts.level || ($('#imboBotLevel') && $('#imboBotLevel').value) || 'medium', color: 'b' }
+    : null;
+  if (mode === 'online' && st.kind === 'dodgeball' && st.phase === 'setup') {
+    VariantEngine.ready(st, Date.now());
+  }
+  imboResetView(imboTitle(st));
+  imboModeUi();
+  imboRenderAll();
+  if (mode === 'bot') setTimeout(imboMaybeBot, 700);
+}
+
+function imboRestartGame() {
+  const g = ui.imbo;
+  if (!g) return;
+  if (ui.imboMode === 'online') {
+    toast('В онлайне новую партию начинает хозяин комнаты');
+    return;
+  }
+  imboStart(g.kind, (g.params || [])[0], {
+    mode: ui.imboMode,
+    level: ui.imboBot && ui.imboBot.level,
+    count: g.kind === 'dodgeball' ? g.count : undefined,
+  });
 }
 
 function imboResetView(title) {
@@ -1725,6 +1827,295 @@ function imboResetView(title) {
   if (t) t.textContent = title;
   const s = $('#imboStatus');
   if (s) s.textContent = '';
+  const result = $('#imboResult');
+  if (result) result.classList.add('hidden');
+}
+
+function imboModeUi() {
+  $$('#imboModeSeg [data-imbo-mode]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.imboMode === ui.imboMode);
+  });
+  const botWrap = $('#imboBotLevelWrap');
+  if (botWrap) botWrap.classList.toggle('hidden', ui.imboMode !== 'bot');
+  const box = $('#imboOnlineBox');
+  if (box) box.classList.toggle('hidden', ui.imboMode !== 'online');
+  const leave = $('#imboRoomLeave');
+  if (leave) leave.classList.toggle('hidden', !(ui.online && ui.online.imbo));
+  const chatWho = $('#imboChatWho');
+  if (chatWho) chatWho.textContent = ui.online && ui.online.started
+    ? (ui.online.names ? `${ui.online.names.w} / ${ui.online.names.b}` : 'соперник')
+    : '';
+}
+
+function imboSetMode(mode) {
+  if (!ui.imbo) return;
+  if (mode === 'online') {
+    ui.imboMode = 'online';
+    imboModeUi();
+    imboOnlineLine(ui.online && ui.online.imbo
+      ? `Комната ${ui.online.code} · ${ui.online.started ? 'партия идёт' : 'ждём соперника'}`
+      : 'Создайте комнату или введите код соперника.');
+    return;
+  }
+  if (ui.online && ui.online.imbo) leaveOnline(true);
+  if (mode === ui.imboMode && mode !== 'bot') return;
+  const g = ui.imbo;
+  imboStart(g.kind, (g.params || [])[0], {
+    mode,
+    level: ui.imboBot && ui.imboBot.level,
+    count: g.kind === 'dodgeball' ? g.count : undefined,
+  });
+  toast(mode === 'bot' ? 'Новая партия с ботом' : 'Локальная партия');
+}
+
+/* ── общий ход ── */
+
+function imboCanAct() {
+  const g = ui.imbo;
+  if (!g || g.over || ui.imboBusy) return false;
+  if (ui.imboMode === 'online') {
+    return !!(ui.online && ui.online.started && g.turn === ui.imboSide);
+  }
+  if (ui.imboMode === 'bot') return g.turn === 'w';
+  return true;
+}
+
+function imboTurnWarn() {
+  const g = ui.imbo;
+  if (!g) return;
+  if (ui.imboMode === 'online' && (!ui.online || !ui.online.started)) {
+    toast('Сначала создайте комнату или войдите по коду');
+  } else {
+    toast('Сейчас ход соперника');
+  }
+}
+
+function imboGeom(from, to, captures) {
+  const g = ui.imbo;
+  if (!g || (g.kind !== 'checkers' && g.kind !== 'corners')) return null;
+  const rect = (sq) => {
+    const el = document.querySelector(`#imboBoardWrap .imbo-sq[data-sq="${sq}"]`);
+    return el ? el.getBoundingClientRect() : null;
+  };
+  return { from: rect(from), to: rect(to), caps: (captures || []).map(rect) };
+}
+
+function imboPushHistory(res, mover) {
+  const g = ui.imbo;
+  if (!g || !res) return;
+  const text = VariantEngine.notation(g, res);
+  if (!text) return;
+  ui.imboHistory.push({
+    n: ui.imboHistory.length + 1,
+    color: mover,
+    text,
+    capture: !!(res.captures && res.captures.length) || !!res.hit,
+  });
+}
+
+function imboPushText(text, capture = false) {
+  if (!text) return;
+  const g = ui.imbo;
+  ui.imboHistory.push({
+    n: ui.imboHistory.length + 1,
+    color: g ? g.turn : 'w',
+    text,
+    capture,
+  });
+}
+
+function imboApplyMove(from, to, opts = {}) {
+  const g = ui.imbo;
+  if (!g || g.over) return null;
+  if (!opts.bot && !imboCanAct()) { imboTurnWarn(); return null; }
+  const candidates = (g.legal || []).concat(VariantEngine.movesFrom(g, from));
+  const move = candidates.find((m) => m.from === from && m.to === to);
+  const caps = move && move.cap >= 0 ? [move.cap] : [];
+  const geom = imboGeom(from, to, caps);
+  const mover = g.turn;
+  const res = VariantEngine.apply(g, from, to);
+  if (!res.ok) return null;
+  imboPushHistory(res, mover);
+  imboRenderAll();
+  imboAnimate(res, geom);
+  imboSyncState();
+  if (g.over) {
+    imboCheckFinish();
+    ui.imboBusy = false;
+    return res;
+  }
+  if (ui.imboMode === 'bot' && ui.imboBot && g.turn === ui.imboBot.color) {
+    ui.imboBusy = true;
+    setTimeout(() => { ui.imboBusy = false; imboMaybeBot(); }, 380);
+  } else {
+    ui.imboBusy = false;
+  }
+  return res;
+}
+
+function imboMarkSquares(squares) {
+  $$('#imboBoardWrap .last-move').forEach((el) => el.classList.remove('last-move'));
+  for (const sq of squares || []) {
+    if (sq == null || sq < 0) continue;
+    const el = document.querySelector(`#imboBoardWrap .imbo-sq[data-sq="${sq}"]`);
+    if (el) el.classList.add('last-move');
+  }
+}
+
+function imboMarkPoint(point) {
+  $$('#imboBoardWrap .last-move').forEach((el) => el.classList.remove('last-move'));
+  if (point == null || point < 0) return;
+  const el = document.querySelector(`#imboBoardWrap .bg-point[data-point="${point}"]`);
+  if (el) el.classList.add('last-move');
+}
+
+function imboAnimate(res, geom) {
+  const g = ui.imbo;
+  if (!g || !res) return;
+  if (g.kind === 'backgammon') {
+    imboMarkPoint(res.off ? -1 : res.to);
+    if (res.off) {
+      const bar = document.querySelector('#imboBoardWrap .bg-msg');
+      if (bar) bar.classList.add('bg-pulse');
+      setTimeout(() => { if (bar) bar.classList.remove('bg-pulse'); }, 450);
+    }
+    return;
+  }
+  imboMarkSquares([res.from, res.to]);
+  if (!geom || !geom.from) return;
+  const target = document.querySelector(`#imboBoardWrap .imbo-sq[data-sq="${res.to}"]`);
+  if (target) {
+    const checker = target.querySelector('.checker');
+    if (checker) {
+      const nr = target.getBoundingClientRect();
+      checker.style.setProperty('--mx', `${geom.from.left - nr.left}px`);
+      checker.style.setProperty('--my', `${geom.from.top - nr.top}px`);
+      checker.classList.add('arrive');
+      setTimeout(() => {
+        checker.classList.remove('arrive');
+        checker.style.removeProperty('--mx');
+        checker.style.removeProperty('--my');
+      }, 420);
+    }
+  }
+  for (const cap of res.captures || []) {
+    const el = document.querySelector(`#imboBoardWrap .imbo-sq[data-sq="${cap}"]`);
+    if (!el) continue;
+    el.classList.add('captured');
+    setTimeout(() => el.classList.remove('captured'), 520);
+  }
+}
+
+function imboRenderAll() {
+  const g = ui.imbo;
+  if (!g) return;
+  if (g.kind === 'checkers') imboCheckersRender();
+  else if (g.kind === 'backgammon') imboBgRender();
+  else if (g.kind === 'dodgeball') imboDodgeRender();
+  else if (g.kind === 'corners') imboCornersRender();
+  imboUpdateHistory();
+  imboUpdateChat();
+  imboUpdatePanels();
+  imboCheckFinish();
+}
+
+function imboUpdateHistory() {
+  const list = $('#imboMoveList');
+  const count = $('#imboPlyCount');
+  if (count) count.textContent = String(ui.imboHistory.length);
+  if (!list) return;
+  if (!ui.imboHistory.length) {
+    list.innerHTML = `<li class="imbo-empty"><span>${imboT('Пока нет ходов', 'No moves yet')}</span></li>`;
+    return;
+  }
+  list.innerHTML = ui.imboHistory.map((m) => (
+    `<li class="${m.capture ? 'capture' : ''}"><b>${m.color === 'w' ? (profile.language === 'en' ? 'W' : 'Б') : (profile.language === 'en' ? 'B' : 'Ч')}${m.n}</b><span>${escapeHtml(imboText(m.text))}</span></li>`
+  )).join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function imboUpdateChat() {
+  const box = $('#imboChat');
+  const count = $('#imboChatCount');
+  if (count) count.textContent = String(ui.imboChat.length);
+  if (!box) return;
+  if (!ui.imboChat.length) {
+    box.innerHTML = `<div class="chat-empty">${ui.imboMode === 'online' ? imboT('Напишите сопернику', 'Message your opponent') : imboT('Чат доступен в партии по сети', 'Chat is available in online games')}</div>`;
+    return;
+  }
+  box.innerHTML = ui.imboChat.map((m) => (
+    `<div class="chat-msg ${m.me ? 'me' : ''}"><b>${escapeHtml(m.name)}</b><span>${escapeHtml(m.text)}</span></div>`
+  )).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function imboUpdatePanels() {
+  const layout = $('#imboLayout');
+  const side = $('#imboSide');
+  const hist = $('#imboHistoryPanel');
+  const chat = $('#imboChatPanel');
+  const open = ui.imboHistoryOpen || ui.imboChatOpen;
+  if (layout) layout.classList.toggle('has-side', open);
+  if (side) side.classList.toggle('hidden', !open);
+  if (hist) hist.classList.toggle('hidden', !ui.imboHistoryOpen);
+  if (chat) chat.classList.toggle('hidden', !ui.imboChatOpen);
+}
+
+function imboToggleHistory(force) {
+  ui.imboHistoryOpen = force != null ? !!force : !ui.imboHistoryOpen;
+  imboUpdatePanels();
+}
+
+function imboToggleChat(force) {
+  ui.imboChatOpen = force != null ? !!force : !ui.imboChatOpen;
+  imboUpdatePanels();
+  if (ui.imboChatOpen && $('#imboChatInput')) setTimeout(() => $('#imboChatInput').focus(), 60);
+}
+
+function sendImboChat(text) {
+  const clean = String(text || '').trim().slice(0, 200);
+  if (!clean) return;
+  ui.imboChat.push({ name: profile.name, text: clean, me: true });
+  imboUpdateChat();
+  if (ui.imboMode === 'online' && ui.online && ui.online.started) {
+    netPublish({ t: 'imbo-chat', text: clean, name: profile.name });
+  }
+}
+
+function imboCheckFinish() {
+  const g = ui.imbo;
+  if (!g || !g.over || ui.imboResult) return;
+  ui.imboResult = { winner: g.winner, text: g.text };
+  let title;
+  if (!g.winner) title = imboT('Ничья', 'Draw');
+  else if (ui.imboMode === 'local') {
+    title = imboT(
+      `${g.winner === 'w' ? 'Белые' : 'Чёрные'} победили`,
+      `${g.winner === 'w' ? 'White' : 'Black'} wins`,
+    );
+  } else {
+    title = g.winner === ui.imboSide
+      ? imboT('Вы победили', 'You win')
+      : imboT('Победил соперник', 'Your opponent wins');
+  }
+  const t = $('#imboResultTitle');
+  const p = $('#imboResultText');
+  if (t) t.textContent = title;
+  if (p) p.textContent = imboText(g.text) || '';
+  const modal = $('#imboResult');
+  if (modal) modal.classList.remove('hidden');
+  if (ui.imboMode !== 'local' && g.winner && g.winner !== ui.imboSide) sound.lose();
+  else sound.win();
+}
+
+function imboSyncState() {
+  const g = ui.imbo;
+  if (!g || ui.imboMode !== 'online' || !ui.online || !ui.online.imbo || !ui.online.started) return;
+  netPublish({
+    t: 'imbo-state',
+    state: VariantEngine.serialize(g),
+    history: ui.imboHistory,
+  });
 }
 
 /* ── шашки ── */
@@ -1739,7 +2130,7 @@ function imboCheckersRender() {
   const board = document.createElement('div');
   board.className = 'imbo-checkers';
   board.style.gridTemplateColumns = `repeat(${g.W}, minmax(0, 1fr))`;
-  board.style.width = `min(${g.W * 62}px, 92vw)`;
+  board.style.width = `min(${g.W * 62}px, 100%)`;
   const targets = new Set(g.legal.map((m) => m.to));
   for (let i = 0; i < g.board.length; i++) {
     const x = i % g.W;
@@ -1768,13 +2159,16 @@ function imboCheckersRender() {
     board.appendChild(sq);
   }
   wrap.appendChild(board);
+  const last = g.lastMove;
+  if (last) imboMarkSquares([last.from, last.to]);
   const st = $('#imboStatus');
-  if (st) st.textContent = g.text;
+  if (st) st.textContent = imboText(g.text);
 }
 
 function imboCheckersClick(sq) {
   const g = ui.imbo;
   if (!g || g.kind !== 'checkers' || g.over) return;
+  if (!imboCanAct()) { imboTurnWarn(); return; }
   const p = g.board[sq];
   if (p && p.c === g.turn) {
     if (g.selected != null && g.legal.some((m) => m.cap >= 0) && sq !== g.selected) {
@@ -1793,17 +2187,7 @@ function imboCheckersClick(sq) {
     return;
   }
   if (g.selected == null) return;
-  const res = VariantEngine.apply(g, g.selected, sq);
-  if (!res.ok) return;
-  if (res.chain) {
-    g.selected = res.at;
-    toast('Продолжайте взятие');
-  } else {
-    g.selected = null;
-    g.legal = [];
-  }
-  VariantEngine.status(g);
-  imboCheckersRender();
+  imboApplyMove(g.selected, sq);
 }
 
 /* ── нарды ── */
@@ -1854,6 +2238,7 @@ function imboBgRender() {
     enter.className = 'btn btn-sm';
     enter.textContent = `Ввести с бара (${g.bar[g.turn]})`;
     enter.addEventListener('click', () => {
+      if (!imboCanAct()) { imboTurnWarn(); return; }
       g.selected = -1;
       g.legal = VariantEngine.movesFrom(g, -1);
       imboBgRender();
@@ -1865,7 +2250,10 @@ function imboBgRender() {
     offBtn.type = 'button';
     offBtn.className = 'btn btn-sm';
     offBtn.textContent = 'Вынести шашку';
-    offBtn.addEventListener('click', () => imboBgMove(-99));
+    offBtn.addEventListener('click', () => {
+      if (g.selected == null) return;
+      imboApplyMove(g.selected, -99);
+    });
     bar.appendChild(offBtn);
   }
   if (g.canPass) {
@@ -1874,7 +2262,14 @@ function imboBgRender() {
     pass.className = 'btn btn-sm';
     pass.textContent = 'Передать ход';
     pass.addEventListener('click', () => {
-      if (VariantEngine.pass(g)) imboBgRender();
+      if (!imboCanAct()) { imboTurnWarn(); return; }
+      const mover = g.turn;
+      if (VariantEngine.pass(g)) {
+        imboPushText('нет ходов — передача', false);
+        imboRenderAll();
+        imboSyncState();
+        if (ui.imboMode === 'bot' && g.turn === ui.imboBot.color) setTimeout(imboMaybeBot, 350);
+      }
     });
     bar.appendChild(pass);
   }
@@ -1882,33 +2277,31 @@ function imboBgRender() {
   roll.type = 'button';
   roll.className = 'btn btn-sm';
   roll.textContent = '🎲 Бросить зары';
-  roll.disabled = g.dice.length > 0 || g.over;
+  roll.disabled = g.dice.length > 0 || g.over || !imboCanAct();
   roll.addEventListener('click', () => {
-    if (VariantEngine.roll(g)) imboBgRender();
+    if (!imboCanAct()) { imboTurnWarn(); return; }
+    if (VariantEngine.roll(g)) {
+      imboPushText('зары ' + g.dice.join(' · '), false);
+      imboRenderAll();
+      imboSyncState();
+      if (ui.imboMode === 'bot' && g.turn === ui.imboBot.color) setTimeout(imboMaybeBot, 350);
+    }
   });
   bar.appendChild(roll);
   wrap.appendChild(bar);
+  const last = g.lastMove;
+  if (last) imboMarkPoint(last.to);
   const st = $('#imboStatus');
-  if (st) st.textContent = g.text;
-}
-
-function imboBgMove(to) {
-  const g = ui.imbo;
-  if (!g || g.kind !== 'backgammon' || g.selected == null) return;
-  const res = VariantEngine.apply(g, g.selected, to);
-  if (res.ok) {
-    g.selected = null;
-    g.legal = [];
-    imboBgRender();
-  }
+  if (st) st.textContent = imboText(g.text);
 }
 
 function imboBgClick(i) {
   const g = ui.imbo;
   if (!g || g.kind !== 'backgammon' || g.over) return;
+  if (!imboCanAct()) { imboTurnWarn(); return; }
   const target = g.legal.find((m) => m.to === i);
   if (target) {
-    imboBgMove(i);
+    imboApplyMove(g.selected, i);
     return;
   }
   if (i < 0) return;
@@ -1939,7 +2332,7 @@ function imboDodgeRender() {
     c.className = 'imbo-canvas';
     c.width = g.W;
     c.height = g.H;
-    c.style.width = `min(${g.W}px, 94vw)`;
+    c.style.width = `min(${g.W}px, 100%)`;
     c.style.maxHeight = '68vh';
     c.style.touchAction = 'none';
     c.style.borderRadius = '16px';
@@ -1960,7 +2353,7 @@ function imboDodgeHud() {
   if (!g || g.kind !== 'dodgeball') return;
   const wrap = $('#imboBoardWrap');
   const st = $('#imboStatus');
-  if (st) st.textContent = g.text;
+  if (st) st.textContent = imboText(g.text);
   if (!wrap) return;
   const setup = wrap.querySelector('.imbo-setup');
   if (g.phase !== 'setup') {
@@ -1981,9 +2374,11 @@ function imboDodgeHud() {
       b.dataset.count = String(n);
       b.textContent = String(n);
       b.addEventListener('click', () => {
+        if (!imboCanAct()) { imboTurnWarn(); return; }
         if (VariantEngine.setCount(g, n)) {
           g.canvas = null;
-          $('#imboGameTitle').textContent = VariantEngine.title(g);
+          g.setupSel = null;
+          $('#imboGameTitle').textContent = imboTitle(g);
           imboDodgeRender();
         }
       });
@@ -1994,7 +2389,11 @@ function imboDodgeHud() {
     ready.className = 'btn btn-sm';
     ready.textContent = 'Готов';
     ready.addEventListener('click', () => {
-      if (VariantEngine.ready(g, Date.now())) imboDodgeRender();
+      if (VariantEngine.ready(g, Date.now())) {
+        imboRenderAll();
+        imboSyncState();
+        if (ui.imboMode === 'bot' && g.turn === ui.imboBot.color) setTimeout(imboMaybeBot, 500);
+      }
     });
     panel.appendChild(ready);
     wrap.appendChild(panel);
@@ -2048,6 +2447,14 @@ function imboDodgeDraw() {
     ctx.fillStyle = '#ffffff88';
     ctx.fill();
   }
+  for (const b of ui.imboBursts || []) {
+    ctx.globalAlpha = Math.max(0, b.life);
+    ctx.fillStyle = b.team === 'w' ? '#fff3c4' : '#ff9b6a';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r * Math.max(0.2, b.life), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
   if (g.drag) {
     ctx.strokeStyle = '#ffd700';
     ctx.lineWidth = 3;
@@ -2078,7 +2485,7 @@ function imboDodgeNearest(p, team) {
   let bestD = Infinity;
   for (let i = 0; i < g.discs.length; i++) {
     const d = g.discs[i];
-    if (!d.alive || d.team !== team) continue;
+    if (!d.alive || (team && d.team !== team)) continue;
     const dist = Math.hypot(d.x - p.x, d.y - p.y);
     if (dist < d.r * 1.8 && dist < bestD) { best = i; bestD = dist; }
   }
@@ -2090,17 +2497,25 @@ function imboDodgeDown(e) {
   if (!g || g.kind !== 'dodgeball' || g.over) return;
   const p = imboDodgeLocal(e);
   if (g.phase === 'setup') {
-    const i = imboDodgeNearest(p, g.turn);
+    if (g.turn !== 'w' && ui.imboMode !== 'local') return;
+    const i = imboDodgeNearest(p, null);
     if (i < 0) return;
     if (g.setupSel == null || g.setupSel === i) {
       g.setupSel = g.setupSel === i ? null : i;
     } else {
-      VariantEngine.swap(g, g.setupSel, i);
-      g.setupSel = null;
+      const a = g.discs[g.setupSel];
+      const b = g.discs[i];
+      if (a && b && a.team === b.team) {
+        VariantEngine.swap(g, g.setupSel, i);
+        g.setupSel = null;
+      } else {
+        g.setupSel = i;
+      }
     }
     imboDodgeDraw();
     return;
   }
+  if (!imboCanAct()) { imboTurnWarn(); return; }
   if (g.phase !== 'aim') return;
   const i = imboDodgeNearest(p, g.turn);
   if (i < 0) return;
@@ -2124,19 +2539,49 @@ function imboDodgeUp(e) {
   if (!g || !g.drag) return;
   const d = g.drag;
   g.drag = null;
-  if (g.phase !== 'aim') { imboDodgeDraw(); return; }
-  VariantEngine.shoot(g, d.index, d.x0 - d.x1, d.y0 - d.y1, Date.now());
+  if (g.phase !== 'aim' || !imboCanAct()) { imboDodgeDraw(); return; }
+  const before = g.turn;
+  if (VariantEngine.shoot(g, d.index, d.x0 - d.x1, d.y0 - d.y1, Date.now())) {
+    imboPushText(`выстрел ${g.turn === 'w' ? 'белых' : 'чёрных'}`, false);
+    imboUpdateHistory();
+    imboSyncState();
+  }
   imboDodgeDraw();
 }
 
 function imboDodgeLoop() {
   const g = ui.imbo;
   if (!g || g.kind !== 'dodgeball') return;
+  ui.imboBursts = ui.imboBursts || [];
   const now = Date.now();
+  const wasTurn = g.turn;
+  const wasPhase = g.phase;
+  const before = g.discs.map((d) => d.alive);
   VariantEngine.step(g, 0.016, now);
+  if (wasPhase === 'settle' && g.phase === 'aim' && g.turn !== wasTurn) imboSyncState();
+  for (let i = 0; i < g.discs.length; i++) {
+    if (before[i] && !g.discs[i].alive) {
+      const d = g.discs[i];
+      ui.imboBursts.push({ x: d.x, y: d.y, r: d.r, team: d.team, life: 1 });
+      sound.capture();
+      buzz([18, 30, 18]);
+    }
+  }
+  for (const b of ui.imboBursts) {
+    b.x += (Math.random() - 0.5) * 2.4;
+    b.y += (Math.random() - 0.5) * 2.4;
+    b.life -= 0.022;
+  }
+  ui.imboBursts = ui.imboBursts.filter((b) => b.life > 0);
   VariantEngine.status(g, now);
   imboDodgeHud();
   imboDodgeDraw();
+  if (g.over) {
+    imboCheckFinish();
+    imboSyncState();
+  } else if (g.phase === 'aim' && ui.imboMode === 'bot' && g.turn === ui.imboBot.color) {
+    imboMaybeBot();
+  }
   if (!g.over) g.raf = requestAnimationFrame(imboDodgeLoop);
 }
 
@@ -2152,7 +2597,7 @@ function imboCornersRender() {
   const board = document.createElement('div');
   board.className = 'imbo-checkers';
   board.style.gridTemplateColumns = `repeat(${g.W}, minmax(0, 1fr))`;
-  board.style.width = `min(${g.W * 62}px, 92vw)`;
+  board.style.width = `min(${g.W * 62}px, 100%)`;
   const targets = new Set(g.legal.map((m) => m.to));
   const goalW = VariantEngine.cornersTarget('w');
   const goalB = VariantEngine.cornersTarget('b');
@@ -2177,13 +2622,16 @@ function imboCornersRender() {
     board.appendChild(sq);
   }
   wrap.appendChild(board);
+  const last = g.lastMove;
+  if (last) imboMarkSquares([last.from, last.to]);
   const st = $('#imboStatus');
-  if (st) st.textContent = g.text;
+  if (st) st.textContent = imboText(g.text);
 }
 
 function imboCornersClick(sq) {
   const g = ui.imbo;
   if (!g || g.kind !== 'corners' || g.over) return;
+  if (!imboCanAct()) { imboTurnWarn(); return; }
   const p = g.board[sq];
   if (p && p.c === g.turn) {
     const moves = VariantEngine.movesFrom(g, sq);
@@ -2194,13 +2642,284 @@ function imboCornersClick(sq) {
     return;
   }
   if (g.selected == null) return;
-  const res = VariantEngine.apply(g, g.selected, sq);
-  if (!res.ok) return;
-  g.selected = null;
-  g.legal = [];
-  VariantEngine.status(g);
-  imboCornersRender();
+  imboApplyMove(g.selected, sq);
 }
+
+/* ── бот ── */
+
+function imboMaybeBot() {
+  const g = ui.imbo;
+  if (ui.imboMode !== 'bot' || !g || g.over || ui.imboBusy || !ui.imboBot) return;
+  if (g.turn !== ui.imboBot.color) return;
+  if (g.kind === 'dodgeball' && g.phase !== 'aim') return;
+  ui.imboBusy = true;
+  const level = ui.imboBot.level;
+  const delay = level === 'easy' ? 450 : level === 'hard' ? 800 : 600;
+  setTimeout(() => {
+    ui.imboBusy = false;
+    if (ui.imboMode !== 'bot' || !ui.imbo || ui.imbo.over || ui.imbo.turn !== ui.imboBot.color) return;
+    const game = ui.imbo;
+    if (game.kind === 'dodgeball') {
+      const shot = VariantEngine.botShot(game);
+      if (shot) {
+        VariantEngine.shoot(game, shot.index, shot.dx, shot.dy, Date.now());
+        imboPushText(`выстрел ${game.turn === 'w' ? 'белых' : 'чёрных'}`, false);
+        imboUpdateHistory();
+        imboDodgeDraw();
+        imboSyncState();
+      }
+      return;
+    }
+    if (game.kind === 'backgammon' && !game.dice.length) {
+      if (VariantEngine.roll(game)) {
+        imboPushText('зары ' + game.dice.join(' · '), false);
+        imboRenderAll();
+        imboSyncState();
+        setTimeout(imboMaybeBot, 350);
+      }
+      return;
+    }
+    const choice = VariantEngine.botMove(game, level);
+    if (!choice) return;
+    if (choice.type === 'pass') {
+      if (VariantEngine.pass(game)) {
+        imboPushText('нет ходов — передача', false);
+        imboRenderAll();
+        imboSyncState();
+      }
+      return;
+    }
+    if (choice.type === 'roll') {
+      if (VariantEngine.roll(game)) {
+        imboPushText('зары ' + game.dice.join(' · '), false);
+        imboRenderAll();
+        imboSyncState();
+        setTimeout(imboMaybeBot, 350);
+      }
+      return;
+    }
+    if (choice.type === 'move') {
+      imboApplyMove(choice.move.from, choice.move.to, { bot: true });
+    }
+  }, delay);
+}
+
+/* ── онлайн ── */
+
+function imboOnlineLine(text) {
+  let out = text || '';
+  if (profile.language === 'en') {
+    out = out
+      .replace(/^Комната (\d+): подключаемся…$/, 'Room $1: connecting…')
+      .replace(/^Комната (\d+)\. Передайте код сопернику\.$/, 'Room $1. Share the code with your opponent.')
+      .replace(/^Комната (\d+): ждём ответа хозяина…$/, 'Room $1: waiting for the host…')
+      .replace(/^Комната (\d+): (.*?) ждёт\. Подключаемся…$/, 'Room $1: $2 is waiting. Connecting…')
+      .replace(/^Комната (\d+) · вы белые$/, 'Room $1 · you are White')
+      .replace(/^Комната (\d+) · вы чёрные$/, 'Room $1 · you are Black')
+      .replace(/^Комната (\d+) · (.*)$/, 'Room $1 · $2')
+      .replace(/^Комната (\d+):/, 'Room $1:')
+      .replace(/^Комната (\d+)\./, 'Room $1.')
+      .replace('Связь пропала — переподключаемся…', 'Connection lost — reconnecting…')
+      .replace('Не удалось связаться со службой. Проверьте интернет.', 'Could not connect. Check your internet.')
+      .replace('Код состоит из пяти цифр.', 'The code has five digits.')
+      .replace('Комната не отвечает. Проверьте код и интернет.', 'The room is not responding. Check the code and internet.')
+      .replace('Вы вышли из комнаты. Можно играть локально.', 'You left the room. You can keep playing locally.')
+      .replace('Соперник вышел из комнаты', 'Your opponent left the room');
+  }
+  const line = $('#imboOnlineLine');
+  if (line) line.textContent = out;
+}
+
+async function imboOnlineHost() {
+  if (!ui.imbo) return;
+  if (ui.online) leaveOnline(true);
+  const code = randomCode();
+  ui.online = {
+    code, role: 'host', sid: Math.random().toString(36).slice(2, 10),
+    connected: false, imbo: true, started: false,
+    names: { w: profile.name, b: null },
+    avatars: { w: profile.avatar, b: 'k' },
+  };
+  ui.online.relay = new Relay();
+  ui.online.relay.onMessage = (text) => handleNet(text);
+  ui.online.relay.onClose = () => {
+    if (ui.online && ui.online.imbo) imboOnlineLine('Связь пропала — переподключаемся…');
+  };
+  ui.imboMode = 'online';
+  ui.imboSide = 'w';
+  imboModeUi();
+  imboOnlineLine(`Комната ${code}: подключаемся…`);
+  try {
+    await ui.online.relay.connect(code);
+  } catch (error) {
+    imboOnlineLine('Не удалось связаться со службой. Проверьте интернет.');
+    ui.online = null;
+    imboModeUi();
+    return;
+  }
+  ui.online.connected = true;
+  ui.online.announce = setInterval(() => {
+    if (!ui.online || !ui.online.imbo || ui.online.started) return;
+    netPublish({
+      t: 'imbo-room',
+      kind: ui.imbo.kind,
+      variant: (ui.imbo.params || [])[0],
+      name: profile.name,
+      status: 'waiting',
+    });
+  }, 4000);
+  netPublish({
+    t: 'imbo-room',
+    kind: ui.imbo.kind,
+    variant: (ui.imbo.params || [])[0],
+    name: profile.name,
+    status: 'waiting',
+  });
+  imboOnlineLine(`Комната ${code}. Передайте код сопернику.`);
+  toast(imboT('Комната создана: ', 'Room created: ') + code);
+}
+
+async function imboOnlineJoin() {
+  const input = $('#imboRoomCode');
+  const code = input ? input.value.trim() : '';
+  if (!/^\d{5}$/.test(code)) { imboOnlineLine('Код состоит из пяти цифр.'); return; }
+  if (!ui.imbo) return;
+  if (ui.online) leaveOnline(true);
+  ui.online = {
+    code, role: 'guest', sid: Math.random().toString(36).slice(2, 10),
+    connected: false, imbo: true, started: false,
+    names: { w: null, b: profile.name },
+    avatars: { w: 'k', b: profile.avatar },
+  };
+  ui.online.relay = new Relay();
+  ui.online.relay.onMessage = (text) => handleNet(text);
+  ui.online.relay.onClose = () => {
+    if (ui.online && ui.online.imbo) imboOnlineLine('Связь пропала — переподключаемся…');
+  };
+  ui.imboMode = 'online';
+  ui.imboSide = 'b';
+  imboModeUi();
+  imboOnlineLine(`Комната ${code}: подключаемся…`);
+  try {
+    await ui.online.relay.connect(code);
+  } catch (error) {
+    imboOnlineLine('Комната не отвечает. Проверьте код и интернет.');
+    ui.online = null;
+    imboModeUi();
+    return;
+  }
+  ui.online.connected = true;
+  netPublish({ t: 'imbo-join', name: profile.name, kind: ui.imbo.kind, variant: (ui.imbo.params || [])[0] });
+  let tries = 0;
+  ui.online.joinTimer = setInterval(() => {
+    tries += 1;
+    if (!ui.online || ui.online.started || tries > 24) {
+      if (ui.online) clearInterval(ui.online.joinTimer);
+      return;
+    }
+    netPublish({ t: 'imbo-join', name: profile.name, kind: ui.imbo.kind, variant: (ui.imbo.params || [])[0] });
+    if (tries % 5 === 0) imboOnlineLine(`Ждём ответа комнаты ${code}…`);
+  }, 4000);
+  imboOnlineLine(`Комната ${code}: ждём ответа хозяина…`);
+}
+
+function imboOnlineLeave() {
+  if (ui.online && ui.online.imbo) {
+    netPublish({ t: 'imbo-bye' });
+    leaveOnline(true);
+  }
+  ui.imboMode = 'local';
+  imboModeUi();
+  imboOnlineLine('Вы вышли из комнаты. Можно играть локально.');
+}
+
+function handleImboNet(msg) {
+  if (!ui.online || !ui.online.imbo) return;
+  if (msg.t === 'imbo-room' && ui.online.role === 'guest') {
+    if (!ui.online.started) imboOnlineLine(`Комната ${ui.online.code}: ${msg.name || 'соперник'} ждёт. Подключаемся…`);
+    return;
+  }
+  if (msg.t === 'imbo-join' && ui.online.role === 'host') {
+    if (ui.online.started) return;
+    clearInterval(ui.online.announce);
+    ui.online.guestName = String(msg.name || 'Соперник').slice(0, 24);
+    ui.online.started = true;
+    const g = ui.imbo;
+    const kind = g ? g.kind : msg.kind;
+    const variant = g ? (g.params || [])[0] : msg.variant;
+    imboStart(kind, variant, { mode: 'online', side: 'w' });
+    ui.online.names = { w: profile.name, b: ui.online.guestName };
+    ui.imboMode = 'online';
+    ui.imboSide = 'w';
+    ui.imboChat.push({ name: 'Система', text: `${ui.online.guestName} присоединился к партии` });
+    imboModeUi();
+    imboRenderAll();
+    imboOnlineLine(`Комната ${ui.online.code} · вы белые`);
+    netPublish({
+      t: 'imbo-start',
+      state: VariantEngine.serialize(ui.imbo),
+      history: ui.imboHistory,
+      names: ui.online.names,
+      kind: ui.imbo.kind,
+      variant: (ui.imbo.params || [])[0],
+    });
+    toast(imboT('Соперник присоединился', 'Opponent joined'));
+    return;
+  }
+  if (msg.t === 'imbo-start' && ui.online.role === 'guest') {
+    clearInterval(ui.online.joinTimer);
+    ui.online.started = true;
+    ui.online.names = msg.names || { w: 'Хозяин', b: profile.name };
+    const state = VariantEngine.deserialize(msg.state);
+    if (!state) return;
+    stopImboGame();
+    ui.imbo = state;
+    ui.imboMode = 'online';
+    ui.imboSide = 'b';
+    ui.imboBot = null;
+    ui.imboHistory = Array.isArray(msg.history) ? msg.history : [];
+    ui.imboChat = [{ name: 'Система', text: `Вы подключились к комнате ${ui.online.code}` }];
+    ui.imboResult = null;
+    ui.imboBusy = false;
+    ui.imboBursts = [];
+    imboResetView(imboTitle(state));
+    imboModeUi();
+    imboRenderAll();
+    if (state.kind === 'dodgeball') imboDodgeLoop();
+    imboOnlineLine(`Комната ${ui.online.code} · вы чёрные`);
+    toast(imboT('Вы подключились к партии', 'You joined the game'));
+    return;
+  }
+  if (msg.t === 'imbo-state') {
+    if (!ui.online.started) return;
+    const state = VariantEngine.deserialize(msg.state);
+    if (!state) return;
+    const wasDodge = ui.imbo && ui.imbo.kind === 'dodgeball';
+    if (wasDodge) stopImboGame();
+    ui.imbo = state;
+    ui.imboHistory = Array.isArray(msg.history) ? msg.history : ui.imboHistory;
+    ui.imboResult = null;
+    ui.imboBusy = false;
+    ui.imboBursts = [];
+    imboRenderAll();
+    if (state.kind === 'dodgeball') imboDodgeLoop();
+    return;
+  }
+  if (msg.t === 'imbo-chat') {
+    const name = ui.online.names
+      ? ui.online.names[msg.sender === 'host' ? 'w' : 'b'] || 'Соперник'
+      : (msg.name || 'Соперник');
+    ui.imboChat.push({ name, text: String(msg.text || '').slice(0, 200) });
+    imboUpdateChat();
+    return;
+  }
+  if (msg.t === 'imbo-bye') {
+    ui.online.started = false;
+    imboOnlineLine('Соперник вышел из комнаты');
+    toast(imboT('Соперник вышел', 'Opponent left'));
+  }
+}
+
 
 function startGameWithMode(opts = {}) {
   if (profile.modeId === 'openIntent' && opts.mode !== 'online') {
@@ -2544,12 +3263,28 @@ const EN_STATIC = {
   'Язык / Language': 'Language', 'В локальной игре я играю за': 'In local games I play as',
   'белых': 'white', 'чёрных': 'black',
   'Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.': 'Games, points and stats are stored in this browser. History keeps the last 60 games.',
-  'Все': 'All', 'Популярные': 'Popular', 'Хаос': 'Chaos', 'Мини-игры': 'Mini-games',
+  'Все': 'All', 'Популярные': 'Popular', 'Хаос': 'Chaos', 'Мини-игры': 'Mini-games', 'Имбовинки': 'Interesting things',
+  'Локально': 'Local', 'Заново': 'Restart', '↻ Заново': '↻ Restart', '✕ В меню': '✕ To menu',
+  'Написать сопернику…': 'Message your opponent…',
+  'Создать комнату': 'Create room', 'Код из 5 цифр': '5-digit code', 'Войти': 'Join',
+  'Бот': 'Bot', 'Изи': 'Easy', 'Средний': 'Medium', 'Сложный': 'Hard',
+  'Создайте комнату или введите код соперника.': 'Create a room or enter your opponent’s code.',
+  'Шашки': 'Checkers', 'Русские · 8×8 · дамки летают': 'Russian · 8×8 · flying kings',
+  'Шашки мировые': 'International checkers', 'Международные · 10×10 · бой назад': 'International · 10×10 · backwards capture',
+  'Нарды': 'Backgammon', '24 пункта · зары · вынос': '24 points · dice · bearing off',
+  'Вышибалы · 2 слоя': 'Dodgeball · 2 layers', '16 на 16 · физика · 10 секунд': '16 vs 16 · physics · 10 seconds',
+  'Вышибалы · 1 слой': 'Dodgeball · 1 layer', 'Один ряд · та же физика': 'One row · same physics',
+  'Вышибалы 10×10': 'Dodgeball 10×10', 'Большое поле': 'Big board',
+  'Вышибалы · 1 ряд': 'Dodgeball · 1 row', '4–12 в линию · перестановка перед боем': '4–12 in a row · swap before the fight',
+  'Вышибалы · рандом': 'Dodgeball · random', '4–12 шашек · равные составы': '4–12 pieces · equal teams',
+  'Уголки 3×3': 'Corners 3×3', 'Переведи все 9 фигур в чужой угол': 'Move all 9 pieces into the opposite corner',
+  'Шашки, нарды, вышибалы и уголки — расширение шахматного движка, а не отдельная песочница.': 'Checkers, backgammon, dodgeball and corners — an extension of the chess engine, not a separate sandbox.',
   '🎲 Случайно': '🎲 Random', '✨ Эпично': '✨ Epic', '🎲 Случайная доска': '🎲 Random board', 'Фигуры ': 'Pieces ',
   'Очки, счёт партий и последние игры.': 'Points, game count and recent games.',
   'История партий': 'Game history', 'Соперник': 'Opponent', 'чёрные': 'black', 'Вы': 'You',
   'Превращение': 'Promotion', '≡ Ходы': '≡ Moves', '⚑ Сдаться': '⚑ Resign', 'Выйти': 'Leave',
-  'ПАУЗА': 'PAUSED', 'Часы остановлены': 'Clocks stopped', 'Продолжить': 'Resume',
+  'ПАУЗА': 'PAUSED', 'Часы остановлены': 'Clocks stopped', 'Продолжить': 'Continue',
+  '▶ Продолжить партию': '▶ Continue game',
   'Ход белых': 'White to move', 'Ходы': 'Moves', 'Чат': 'Chat', 'Инфо': 'Info',
   'Пока пусто — сделайте первый ход': 'Empty — make the first move',
   'Чат доступен в партии по сети': 'Chat is available in online games',
@@ -6624,6 +7359,10 @@ function handleNet(text) {
     if (ui.online.seen.size > 500) ui.online.seen.delete(ui.online.seen.values().next().value);
   }
   if (msg.sender === ui.online.role) return;
+  if (msg.t && String(msg.t).startsWith('imbo-')) {
+    handleImboNet(msg);
+    return;
+  }
   /* Идентификатор партии не фильтруем: у гостя он свой до старта, а после
      старта совпадает с хозяйским. Комната и так уникальна по коду. */
 
@@ -6681,7 +7420,7 @@ function handleNet(text) {
     ui.chat.push({ name: 'Система', text: `${ui.online.names.b} присоединился к партии` });
     renderChat();
     renderPlayers();
-    toast('Соперник присоединился');
+    toast(imboT('Соперник присоединился', 'Opponent joined'));
     netPublish({
       t: 'start',
       modeId: ui.st.modeId,
@@ -6745,7 +7484,7 @@ function handleNet(text) {
     renderMoves();
     renderPlayers();
     setLobby('');
-    toast('Вы подключились к партии');
+    toast(imboT('Вы подключились к партии', 'You joined the game'));
     showPhase('opening');
     return;
   }
@@ -7070,19 +7809,33 @@ function bindEvents() {
   }));
   if ($('#imboBack')) $('#imboBack').addEventListener('click', () => showScreen('modes'));
   if ($('#imboClose')) $('#imboClose').addEventListener('click', openImboHub);
-  if ($('#imboRestart')) $('#imboRestart').addEventListener('click', () => {
-    if (!ui.imbo) return;
-    const prev = ui.imbo;
-    const [a, b] = prev.params || [];
-    imboStart(prev.kind, b || a);
-    if (prev.kind === 'dodgeball' && prev.variant === 'row' && prev.count) {
-      VariantEngine.setCount(ui.imbo, prev.count);
-      ui.imbo.canvas = null;
-      imboResetView(VariantEngine.title(ui.imbo));
-      imboDodgeRender();
-    }
+  if ($('#imboRestart')) $('#imboRestart').addEventListener('click', imboRestartGame);
+  $$('#imboModeSeg [data-imbo-mode]').forEach((b) => {
+    b.addEventListener('click', () => imboSetMode(b.dataset.imboMode));
   });
-  $$('.imbo-card').forEach((b) => b.addEventListener('click', () => imboStart(b.dataset.imbo, b.dataset.var)));
+  if ($('#imboBotLevel')) $('#imboBotLevel').addEventListener('change', () => {
+    if (ui.imboBot) ui.imboBot.level = $('#imboBotLevel').value;
+  });
+  if ($('#imboHistoryBtn')) $('#imboHistoryBtn').addEventListener('click', () => imboToggleHistory());
+  if ($('#imboHistoryClose')) $('#imboHistoryClose').addEventListener('click', () => imboToggleHistory(false));
+  if ($('#imboChatBtn')) $('#imboChatBtn').addEventListener('click', () => imboToggleChat());
+  if ($('#imboChatClose')) $('#imboChatClose').addEventListener('click', () => imboToggleChat(false));
+  if ($('#imboChatForm')) $('#imboChatForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = $('#imboChatInput');
+    if (!input) return;
+    sendImboChat(input.value);
+    input.value = '';
+  });
+  if ($('#imboRoomCreate')) $('#imboRoomCreate').addEventListener('click', imboOnlineHost);
+  if ($('#imboRoomJoin')) $('#imboRoomJoin').addEventListener('click', imboOnlineJoin);
+  if ($('#imboRoomLeave')) $('#imboRoomLeave').addEventListener('click', imboOnlineLeave);
+  if ($('#imboRoomCode')) $('#imboRoomCode').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); imboOnlineJoin(); }
+  });
+  if ($('#imboResultAgain')) $('#imboResultAgain').addEventListener('click', imboRestartGame);
+  if ($('#imboResultMenu')) $('#imboResultMenu').addEventListener('click', openImboHub);
+  $$('.imbo-card').forEach((b) => b.addEventListener('click', () => imboStart(b.dataset.imbo, b.dataset.var, { mode: 'local' })));
   if ($('#modesBackFloat')) $('#modesBackFloat').addEventListener('click', backFromScreen);
   $('#settingsBack').addEventListener('click', backFromScreen);
   $('#modesBack').addEventListener('click', backFromScreen);

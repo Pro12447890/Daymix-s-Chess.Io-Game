@@ -36,7 +36,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261029-11">
+  <link rel="stylesheet" href="style.css?v=20261030-12">
 </head>
 <body>
 
@@ -369,7 +369,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-29-11 · трёхслойные шашки</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-30-12 · Имбовинки: чат, ходы, бот и онлайн</div>
             <div class="theme-preview-slot" id="themePreviewSlot">
               <div class="theme-preview" id="themePreview"></div>
             </div>
@@ -404,7 +404,60 @@
             <button class="btn btn-sm" id="imboRestart" type="button">↻ Заново</button>
             <button class="btn btn-sm" id="imboClose" type="button">✕ В меню</button>
           </div>
-          <div class="imbo-board-wrap" id="imboBoardWrap"></div>
+          <div class="imbo-modebar">
+            <div class="seg imbo-mode-seg" id="imboModeSeg">
+              <button type="button" data-imbo-mode="local" class="active">Локально</button>
+              <button type="button" data-imbo-mode="bot">С ботом</button>
+              <button type="button" data-imbo-mode="online">Онлайн</button>
+            </div>
+            <label class="imbo-bot-level hidden" id="imboBotLevelWrap">Бот
+              <select id="imboBotLevel">
+                <option value="easy">Изи</option>
+                <option value="medium" selected>Средний</option>
+                <option value="hard">Сложный</option>
+              </select>
+            </label>
+            <button class="btn btn-sm" id="imboHistoryBtn" type="button">Ходы <em id="imboPlyCount">0</em></button>
+            <button class="btn btn-sm" id="imboChatBtn" type="button">Чат <em id="imboChatCount">0</em></button>
+          </div>
+          <div class="imbo-online-box hidden" id="imboOnlineBox">
+            <div class="imbo-online-row">
+              <button class="btn btn-sm btn-primary" id="imboRoomCreate" type="button">Создать комнату</button>
+              <input id="imboRoomCode" inputmode="numeric" maxlength="5" placeholder="Код из 5 цифр" autocomplete="off">
+              <button class="btn btn-sm" id="imboRoomJoin" type="button">Войти</button>
+              <button class="btn btn-sm btn-ghost hidden" id="imboRoomLeave" type="button">Выйти</button>
+            </div>
+            <div class="imbo-online-line" id="imboOnlineLine">Создайте комнату или введите код соперника.</div>
+          </div>
+          <div class="imbo-layout" id="imboLayout">
+            <div class="imbo-main">
+              <div class="imbo-board-wrap" id="imboBoardWrap"></div>
+            </div>
+            <aside class="imbo-side" id="imboSide">
+              <section class="imbo-panel hidden" id="imboHistoryPanel">
+                <div class="imbo-panel-head"><b>Ходы</b><button class="icon-btn" id="imboHistoryClose" type="button">✕</button></div>
+                <ol class="imbo-moves" id="imboMoveList"></ol>
+              </section>
+              <section class="imbo-panel hidden" id="imboChatPanel">
+                <div class="imbo-panel-head"><b>Чат</b><span id="imboChatWho"></span><button class="icon-btn" id="imboChatClose" type="button">✕</button></div>
+                <div class="chat" id="imboChat"></div>
+                <form class="chat-form" id="imboChatForm">
+                  <input id="imboChatInput" placeholder="Написать сопернику…" maxlength="200" autocomplete="off">
+                  <button class="btn-game-green btn-sm" type="submit">→</button>
+                </form>
+              </section>
+            </aside>
+          </div>
+          <div class="imbo-result hidden" id="imboResult">
+            <div class="imbo-result-card">
+              <b id="imboResultTitle">Партия окончена</b>
+              <p id="imboResultText"></p>
+              <div class="imbo-result-actions">
+                <button class="btn btn-sm btn-primary" id="imboResultAgain" type="button">Ещё партию</button>
+                <button class="btn btn-sm" id="imboResultMenu" type="button">В меню</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -851,8 +904,8 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261029-11"></script>
-<script src="app.js?v=20261029-11"></script>
+<script src="engine.js?v=20261030-12"></script>
+<script src="app.js?v=20261030-12"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>
