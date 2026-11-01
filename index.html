@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Daymix's Chess — шахматы в браузере: 61 режим, 45 наборов фигур, бот, онлайн по коду из пяти цифр, статистика и эффекты.">
+  <meta name="description" content="Daymix's Chess — шахматы в браузере: 63 режима, 45 наборов фигур, бот, онлайн по коду из пяти цифр, статистика и эффекты.">
   <link rel="canonical" id="canonicalLink" href="https://chess.daymix.dpdns.org/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Daymix's Chess">
-  <meta property="og:description" content="61 режим шахмат, 45 наборов фигур, бот и игра по сети без регистрации.">
+  <meta property="og:description" content="63 режима шахмат, 45 наборов фигур, бот и игра по сети без регистрации.">
   <meta property="og:url" id="ogUrl" content="https://chess.daymix.dpdns.org/">
   <meta name="twitter:card" content="summary">
   <meta name="theme-color" content="#272520">
@@ -36,7 +36,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261030-13">
+  <link rel="stylesheet" href="style.css?v=20261101-02">
 </head>
 <body>
 
@@ -174,7 +174,6 @@
             <button class="bot-level" data-level="medium" type="button">средний</button>
             <button class="bot-level" data-level="hard" type="button">сложный</button>
             <button class="bot-level" data-level="gm" type="button">гроссмейстер</button>
-            <button class="bot-level" data-level="engine" type="button">движок</button>
           </div>
 
           <div class="fake-bots" id="fakeBots"></div>
@@ -369,7 +368,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-10-30-13 · зомби и гонки</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-11-01-02 · ультрабаланс и анимации</div>
             <div class="theme-preview-slot" id="themePreviewSlot">
               <div class="theme-preview" id="themePreview"></div>
             </div>
@@ -384,7 +383,7 @@
       <div class="wide-card card imbo-screen">
         <div class="imbo-head">
           <button class="icon-btn" id="imboBack" type="button" title="Назад">←</button>
-          <div><h1 class="imbo-title">Имбовинки</h1><p class="imbo-sub">Шашки, нарды, вышибалы и уголки — расширение шахматного движка, а не отдельная песочница.</p></div>
+          <div><h1 class="imbo-title">Имбовинки <span class="beta-tag">Beta</span></h1><p class="imbo-sub">Шашки, нарды, вышибалы и уголки — расширение шахматного движка, а не отдельная песочница.</p></div>
         </div>
         <div class="imbo-hub" id="imboHub">
           <button class="imbo-card" data-imbo="checkers" data-var="ru" type="button"><b>Шашки</b><span>Русские · 8×8 · дамки летают</span><em>Играть</em></button>
@@ -467,17 +466,17 @@
           <button class="btn btn-sm btn-ghost back-btn" id="modesBack" type="button">← Назад</button>
           <div class="screen-head-text">
             <h2>Режимы</h2>
-            <p id="modesLead">Классика, 57 режимов и рандомный выбор — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
+            <p id="modesLead">Классика, 63 режима и рандомный выбор — от трёх шахов и пешечного поля до короля в центре и Пацанчиков 14×10.</p>
           </div>
           <span class="chip" id="modesCurrent">Классика</span>
         </div>
         <div class="modes-filters" id="modesFilters">
-          <button class="mode-filter active" data-filter="all" type="button">Все <em>26</em></button>
+          <button class="mode-filter active" data-filter="all" type="button">Все <em>63</em></button>
           <button class="mode-filter" data-filter="popular" type="button">Популярные</button>
           <button class="mode-filter" data-filter="pieces" type="button">Фигуры</button>
           <button class="mode-filter" data-filter="chaos" type="button">Хаос</button>
           <button class="mode-filter" data-filter="mini" type="button">Мини-игры</button>
-          <button class="mode-filter" data-filter="imbo" type="button">Имбовинки</button>
+          <button class="mode-filter" data-filter="imbo" type="button">Имбовинки <span class="beta-tag">Beta</span></button>
         </div>
         <div class="modes-scroll" id="modesScroll">
           <div class="modes-grid" id="modesGrid"></div>
@@ -787,6 +786,7 @@
   <div class="result-sprites" id="resultSprites"></div>
   <div class="result-card">
     <div class="result-glow"></div>
+    <div class="result-kings hidden" id="resultKings" aria-hidden="true"></div>
     <h2 class="result-title" id="resultTitle">Мат</h2>
     <p class="result-sub" id="resultSub"></p>
     <div class="result-points" id="resultPoints"></div>
@@ -799,6 +799,7 @@
 </div>
 
 <div class="fx-flash" id="fxFlash"></div>
+<div class="menu-fx" id="menuFx" aria-hidden="true"></div>
 
 <!-- рулетка случайного режима -->
 <div class="roulette hidden" id="randomRoulette" aria-hidden="true">
@@ -843,8 +844,8 @@
         <span><b>Гроссмейстер</b><span>глубокий перебор, аккуратные размены и давление</span></span>
       </button>
       <button class="bot-choice" data-level="engine" type="button">
-        <span class="bc-icon">🖥️</span>
-        <span><b>Непростой для движка</b><span>пять полуходов — даже движку придётся попотеть</span></span>
+        <span class="bc-icon">🏆</span>
+        <span><b>Максимальный</b><span>пять полуходов — самый глубокий пересчёт для сильных игроков</span></span>
       </button>
     </div>
     <div class="modal-actions">
@@ -904,8 +905,8 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261030-13"></script>
-<script src="app.js?v=20261030-13"></script>
+<script src="engine.js?v=20261101-02"></script>
+<script src="app.js?v=20261101-02"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>

@@ -3006,6 +3006,7 @@ html.epic-fx .flier { display: block !important; }
 
 /* перетаскивание фигуры */
 .board, #squares { touch-action: none; }
+#board, #board * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; }
 .piece.dragging {
   filter: drop-shadow(0 16px 18px #00000099);
   opacity: 1 !important;
@@ -3904,6 +3905,331 @@ strategy-bar, .strategy-bar {
 }
 .imbo-sq.captured { animation: imboCapturePulse .38s ease-out; }
 .imbo-sq.captured::before { content: ''; position: absolute; inset: 9%; border-radius: 50%; border: 2px solid #ffb36b; animation: imboCaptureRing .42s ease-out forwards; pointer-events: none; }
+
+/* ═══════════════════ QoL-улучшения v73 ═══════════════════ */
+
+/* Бета-метка у Имбовинок */
+.beta-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #c7f77a, #81b64c);
+  color: #1d2b10;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+  vertical-align: middle;
+  box-shadow: 0 1px 0 #4e721f, 0 0 12px #9ee65a55;
+  line-height: 1.35;
+}
+.mode-filter .beta-tag { margin-left: 4px; }
+
+/* Мягкая полоса-вспышка при переходе между меню на ПК */
+.screen.active:not(#screen-game) { position: relative; }
+@media (min-width: 1000px) {
+  .screen.active:not(#screen-game)::after {
+    content: '';
+    position: absolute;
+    inset: -15% -20%;
+    pointer-events: none;
+    z-index: 0;
+    background: linear-gradient(105deg, transparent 42%, #ffffff10 49%, #ffffff03 53%, transparent 60%);
+    transform: translateX(-85%);
+    animation: screenSheen .8s cubic-bezier(.2,.7,.2,1) both;
+  }
+}
+@keyframes screenSheen {
+  from { transform: translateX(-85%); opacity: 0; }
+  30% { opacity: 1; }
+  to { transform: translateX(85%); opacity: 0; }
+}
+.menu-fx { position: fixed; inset: 0; z-index: 104; pointer-events: none; overflow: hidden; }
+.menu-flier {
+  position: absolute;
+  width: var(--ms, 30px);
+  height: var(--ms, 30px);
+  opacity: 0;
+  animation: menuFlier var(--md, 1s) cubic-bezier(.2,.6,.35,1) var(--mde, 0s) both;
+  will-change: transform, opacity;
+}
+.menu-flier { color: #f4efe6; --edge: #141414; --detail: #cdbb9b; --sw: 2.2; }
+.menu-flier .pc-svg { width: 100%; height: 100%; display: block; }
+.menu-flier .pc-svg .body { fill: currentColor; stroke: var(--edge); stroke-width: var(--sw); stroke-linejoin: round; stroke-linecap: round; }
+.menu-flier .pc-svg .detail { fill: var(--detail); stroke: var(--detail); }
+.menu-flier .pc-svg .line { fill: none; stroke: var(--detail); }
+.menu-flier:nth-child(3n) { color: #d7efb7; --detail: #7f9d5a; }
+.menu-flier:nth-child(3n+2) { color: #ffd76a; --detail: #a8791d; }
+@keyframes menuFlier {
+  0% { opacity: 0; transform: translate(0, 0) rotate(0) scale(.35); }
+  18% { opacity: .9; }
+  100% { opacity: 0; transform: translate(var(--mx, 30vw), var(--my, 0)) rotate(var(--mr, 180deg)) scale(1.05); }
+}
+
+/* Граница Clash Brawl первые шесть ходов */
+#board.brawl-locked::after {
+  content: '';
+  position: absolute;
+  left: 1.5%;
+  right: 1.5%;
+  top: calc(50% - 2px);
+  height: 4px;
+  z-index: 5;
+  pointer-events: none;
+  border-radius: 4px;
+  background: repeating-linear-gradient(90deg, #8b5cf6 0 14px, #22d3ee 14px 28px);
+  box-shadow: 0 0 10px #8b5cf6cc, 0 0 24px #22d3ee55;
+  opacity: .8;
+  animation: brawlBorderPulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes brawlBorderPulse { from { opacity: .5; } to { opacity: .95; } }
+
+/* Аннигиляция: кольца по всем выжженным клеткам */
+.annihilate-ring {
+  position: absolute;
+  width: calc(var(--sq, 64px) * .55);
+  height: calc(var(--sq, 64px) * .55);
+  transform: translate(-50%, -50%);
+  border: 3px solid #d9a7ff;
+  border-radius: 50%;
+  box-shadow: 0 0 14px #a855f7cc, inset 0 0 12px #7c3aed99;
+  pointer-events: none;
+  z-index: 8;
+  animation: annihilateRing .72s cubic-bezier(.1,.7,.3,1) both;
+}
+@keyframes annihilateRing {
+  0% { opacity: .95; transform: translate(-50%, -50%) scale(.25); border-width: 5px; }
+  70% { opacity: .8; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.9); border-width: 1px; }
+}
+
+/* Мат: красные волны от короля */
+.mate-wave {
+  position: absolute;
+  width: calc(var(--sq, 64px) * .45);
+  height: calc(var(--sq, 64px) * .45);
+  transform: translate(-50%, -50%);
+  border: 3px solid #ff3b30;
+  border-radius: 50%;
+  box-shadow: 0 0 16px #ff3b30cc, inset 0 0 10px #ff3b3088;
+  pointer-events: none;
+  z-index: 8;
+  animation: mateWave 1.5s cubic-bezier(.1,.7,.3,1) both;
+}
+@keyframes mateWave {
+  0% { opacity: .95; transform: translate(-50%, -50%) scale(.25); border-width: 5px; }
+  65% { opacity: .65; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(3); border-width: 1px; }
+}
+.sq.king-mated { animation: matedPulse .7s ease-in-out infinite alternate, matedRedWave 1.4s ease-out; }
+@keyframes matedRedWave {
+  0% { box-shadow: inset 0 0 0 3px #ff3b30, inset 0 0 30px #ff0000, 0 0 0 0 #ff3b30cc; }
+  100% { box-shadow: inset 0 0 0 3px #ff3b30, inset 0 0 30px #ff0000, 0 0 0 42px #ff3b3000; }
+}
+
+/* Королевские смерти: шесть равновероятных вариантов */
+.king-ghost,
+.king-shard {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: var(--sq, 64px);
+  height: var(--sq, 64px);
+  pointer-events: none;
+  z-index: 9;
+  will-change: transform, opacity;
+}
+.king-ghost .pc-svg,
+.king-shard .pc-svg { width: 100%; height: 100%; display: block; }
+.king-ghost.w, .king-shard.w { color: #fff; --edge: #171717; --detail: #3d3d3d; --sw: 2.2; }
+.king-ghost.b, .king-shard.b { color: #312e2b; --edge: #0c0c0c; --detail: #5a5652; --sw: 2.2; }
+.king-ghost .pc-svg .body, .king-shard .pc-svg .body { fill: currentColor; stroke: var(--edge); stroke-width: var(--sw); }
+.king-ghost .pc-svg .detail, .king-shard .pc-svg .detail { fill: var(--detail); stroke: var(--detail); }
+.king-ghost .pc-svg .line, .king-shard .pc-svg .line { fill: none; stroke: var(--detail); }
+
+.king-ghost.king-fall .pc-svg { animation: kingFall 1.05s cubic-bezier(.4,.05,.9,.6) both; }
+@keyframes kingFall {
+  0% { transform: translate(0, 0) rotate(0) scale(1); opacity: 1; }
+  45% { transform: translate(12%, 16%) rotate(28deg) scale(1.04); opacity: 1; }
+  100% { transform: translate(34%, 32%) rotate(90deg) scale(.84); opacity: .18; }
+}
+.king-ghost.king-tremble .pc-svg { animation: kingTremble 1.6s cubic-bezier(.36,.07,.19,.97) both; }
+@keyframes kingTremble {
+  0%, 100% { transform: translateX(0) rotate(0); opacity: 1; }
+  8% { transform: translateX(-7%) rotate(-2deg); }
+  16% { transform: translateX(7%) rotate(2deg); }
+  24% { transform: translateX(-6%) rotate(-1.5deg); }
+  32% { transform: translateX(6%) rotate(1.5deg); }
+  40% { transform: translateX(-5%) rotate(-1deg); }
+  48% { transform: translateX(5%) rotate(1deg); }
+  56% { transform: translateX(-4%) rotate(-.8deg); }
+  64% { transform: translateX(4%) rotate(.8deg); }
+  72% { transform: translateX(-3%) rotate(-.5deg); }
+  84% { transform: translateX(2%) rotate(.3deg); opacity: .8; }
+}
+.king-ghost.king-explode .pc-svg { animation: kingExplode .5s ease-out both; }
+@keyframes kingExplode {
+  0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+  35% { transform: scale(1.35); opacity: 1; filter: brightness(2.2) saturate(2); }
+  100% { transform: scale(.2); opacity: 0; filter: brightness(3); }
+}
+.king-tear-drop {
+  position: absolute;
+  right: -2%;
+  top: 38%;
+  font-size: calc(var(--sq, 64px) * .34);
+  line-height: 1;
+  opacity: 0;
+  animation: kingTearDrop 1.1s ease-in .2s both;
+  filter: drop-shadow(0 0 5px #7dd3fc);
+}
+@keyframes kingTearDrop {
+  0% { opacity: 0; transform: translateY(-4px) scale(.4); }
+  30% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(30px) scale(.8); }
+}
+.king-ghost.king-tear .pc-svg { animation: kingTear 1.5s ease-in both; }
+@keyframes kingTear {
+  0% { transform: scale(1); filter: none; opacity: 1; }
+  35% { transform: scale(.96); filter: grayscale(.8) brightness(.7); }
+  70% { transform: translateY(3%) scale(.94); filter: grayscale(1) sepia(1) hue-rotate(160deg) saturate(2) brightness(.65); }
+  100% { transform: translateY(16%) scale(.86); filter: grayscale(1) sepia(1) hue-rotate(160deg) saturate(2.4) brightness(.4); opacity: .15; }
+}
+.king-anger {
+  position: absolute;
+  right: -10%;
+  top: -10%;
+  font-size: calc(var(--sq, 64px) * .42);
+  line-height: 1;
+  opacity: 0;
+  animation: kingAnger .9s ease-out both;
+  filter: drop-shadow(0 0 8px #ff2d2d);
+}
+@keyframes kingAnger {
+  0% { opacity: 0; transform: scale(.3) rotate(-20deg); }
+  25% { opacity: 1; transform: scale(1.25) rotate(8deg); }
+  40% { transform: scale(1) rotate(-4deg); }
+  70% { opacity: 1; transform: scale(1.05) rotate(2deg); }
+  100% { opacity: 0; transform: scale(.7) rotate(-10deg); }
+}
+.king-ghost.king-rage .pc-svg { animation: kingRage .9s ease-in-out both; }
+@keyframes kingRage {
+  0%, 100% { transform: translateY(0) scale(1); filter: none; opacity: 1; }
+  20% { transform: translateX(-5%) rotate(-2deg); filter: sepia(1) saturate(4) hue-rotate(-35deg) brightness(1.15); }
+  40% { transform: translateX(5%) rotate(2deg); filter: sepia(1) saturate(5) hue-rotate(-35deg) brightness(1.2); }
+  60% { transform: translateY(-12%) scale(1.08); filter: sepia(1) saturate(5) hue-rotate(-35deg) brightness(1.25); }
+  100% { transform: translateY(0) scale(1); filter: sepia(1) saturate(4) hue-rotate(-35deg) brightness(1.1); opacity: .2; }
+}
+.king-shard .pc-svg { animation: kingShardFly 1.15s cubic-bezier(.2,.6,.35,1) both; }
+.king-shard[data-shard="0"] .pc-svg { clip-path: polygon(0 0, 52% 0, 45% 34%, 58% 45%, 43% 56%, 50% 100%, 0 100%); }
+.king-shard[data-shard="1"] .pc-svg { clip-path: polygon(52% 0, 100% 0, 100% 38%, 63% 45%, 54% 30%); }
+.king-shard[data-shard="2"] .pc-svg { clip-path: polygon(100% 38%, 100% 100%, 60% 100%, 55% 62%, 72% 52%); }
+.king-shard[data-shard="3"] .pc-svg { clip-path: polygon(45% 60%, 58% 48%, 78% 58%, 70% 100%, 42% 100%); }
+.king-shard[data-shard="4"] .pc-svg { clip-path: polygon(20% 45%, 48% 38%, 55% 55%, 42% 78%, 12% 68%); }
+@keyframes kingShardFly {
+  0% { transform: translate(0, 0) rotate(0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--tx, 40px), var(--ty, 30px)) rotate(var(--rot, 180deg)) scale(.7); opacity: 0; }
+}
+#board.king-rage { animation: boardQuake .7s ease; --amp: 8px; }
+#board.king-rage .pieces .piece {
+  animation: pieceRageFall 1.15s cubic-bezier(.3,.05,.8,.4) var(--fd, 0s) both;
+}
+@keyframes pieceRageFall {
+  0% { transform: translate(var(--px, 0), var(--py, 0)) rotate(0) scale(1); opacity: 1; }
+  20% { transform: translate(calc(var(--px, 0) + 3px), calc(var(--py, 0) - 10px)) rotate(-4deg); }
+  100% { transform: translate(calc(var(--px, 0) + var(--fx, 120px)), calc(var(--py, 0) + 74vh)) rotate(var(--fr, 360deg)) scale(.75); opacity: 0; }
+}
+
+/* Итоговые короли: пат и мат */
+.result-kings {
+  position: relative;
+  width: 100%;
+  height: 106px;
+  margin: 0 auto 2px;
+}
+.result-kings .rk-slot { position: absolute; width: 64px; height: 64px; }
+.result-kings .rk-king { position: absolute; inset: 0; display: block; }
+.result-kings .rk-king .pc-svg { width: 100%; height: 100%; display: block; }
+.result-kings .rk-king .pc-svg .body { fill: currentColor; stroke: var(--edge); stroke-width: var(--sw, 2.2); stroke-linejoin: round; stroke-linecap: round; }
+.result-kings .rk-king .pc-svg .detail { fill: var(--detail); stroke: var(--detail); stroke-width: calc(var(--sw, 2.2) * .5); }
+.result-kings .rk-king .pc-svg .line { fill: none; stroke: var(--detail); stroke-width: calc(var(--sw, 2.2) * .8); stroke-linecap: round; stroke-linejoin: round; }
+.result-kings .rk-king.w { color: #fff; --edge: #1a1a1a; --detail: #404040; --sw: 2.2; }
+.result-kings .rk-king.b { color: #312e2b; --edge: #0d0d0d; --detail: #5a5652; --sw: 2.2; }
+.result-kings .rk-king.grayed { filter: grayscale(1) brightness(.72); opacity: .88; }
+.result-kings .rk-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 72px;
+  height: 17px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  filter: blur(4px);
+  opacity: .85;
+  z-index: 0;
+}
+.result-kings .rk-shadow.lime { background: #9dff3a; box-shadow: 0 0 22px #8dff00, 0 0 40px #8dff0066; }
+.result-kings .rk-shadow.red { background: #ff3b30; box-shadow: 0 0 22px #ff2d2d, 0 0 40px #ff2d2d66; }
+.result-kings .rk-shadow.gray { background: #c9ced6; box-shadow: 0 0 18px #b9c0c8aa; opacity: .55; }
+.result-kings .rk-winner {
+  left: 16%;
+  top: 0;
+  animation: resultKingWinner .72s cubic-bezier(.2,.9,.25,1.3) both;
+}
+.result-kings .rk-loser {
+  right: 14%;
+  top: 28px;
+  transform: rotate(90deg);
+  animation: resultKingLoser .85s cubic-bezier(.2,.9,.25,1.3) .08s both;
+}
+/* Тень лежащего короля остаётся горизонтальной и уходит под него,
+   а не вращается вместе с фигурой. */
+.result-kings .rk-loser .rk-shadow {
+  left: 100%;
+  top: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+.result-kings .rk-winner .rk-king { animation: kingWinnerGlow 1.6s ease-in-out infinite alternate; }
+.result-kings .rk-loser .rk-king { animation: kingLoserSettle .85s ease-out both; }
+.result-kings.draw .rk-draw-left { left: 23%; top: 16px; animation: resultKingWinner .6s cubic-bezier(.2,.9,.25,1.3) both; }
+.result-kings.draw .rk-draw-right { right: 23%; top: 16px; animation: resultKingWinner .6s cubic-bezier(.2,.9,.25,1.3) .12s both; }
+.result-kings.draw .rk-king { filter: grayscale(1) brightness(.76); opacity: .9; }
+.result-kings.draw .rk-shadow { bottom: -2px; }
+@keyframes resultKingWinner {
+  0% { opacity: 0; transform: translate(-22px, -18px) scale(.6) rotate(-10deg); }
+  70% { opacity: 1; transform: translate(2px, 2px) scale(1.05) rotate(1deg); }
+  100% { opacity: 1; transform: translate(0, 0) scale(1) rotate(0); }
+}
+@keyframes resultKingLoser {
+  0% { opacity: 0; transform: translate(30px, -10px) rotate(160deg) scale(.65); }
+  100% { opacity: 1; transform: translate(0, 0) rotate(90deg) scale(1); }
+}
+@keyframes kingWinnerGlow {
+  from { filter: drop-shadow(0 0 0 #9dff3a00); }
+  to { filter: drop-shadow(0 0 10px #9dff3aaa); }
+}
+@keyframes kingLoserSettle {
+  0% { filter: grayscale(.5) brightness(.9); }
+  100% { filter: grayscale(1) brightness(.72); }
+}
+@media (max-width: 520px) {
+  .result-kings { height: 88px; }
+  .result-kings .rk-slot { width: 50px; height: 50px; }
+  .result-kings .rk-shadow { width: 56px; height: 13px; }
+  .result-kings .rk-winner { left: 12%; }
+  .result-kings .rk-loser { right: 10%; top: 22px; }
+}
+html.calm .menu-flier, html.calm .king-ghost, html.calm .king-shard,
+html.calm .mate-wave, html.calm .annihilate-ring { display: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .menu-flier, .king-ghost, .king-shard, .mate-wave, .annihilate-ring { display: none !important; }
+  .result-kings .rk-winner, .result-kings .rk-loser, .result-kings .rk-king,
+  .result-kings.draw .rk-draw-left, .result-kings.draw .rk-draw-right { animation: none !important; }
+}
 @keyframes imboCapturePulse { 0% { filter: brightness(1.6); } 100% { filter: none; } }
 @keyframes imboCaptureRing { from { transform: scale(.4); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
 .imbo-sq.last-move { box-shadow: inset 0 0 0 3px #ffd70077; }

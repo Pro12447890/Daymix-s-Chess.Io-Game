@@ -133,9 +133,11 @@ function updateSoundIcon() {
 
 /* ─────────────────────────── БОТ ────────────────────────────────────── */
 
-const BOT_LABELS = { easy: 'Изи', medium: 'средний', hard: 'сложный', gm: 'Гроссмейстер', engine: 'Непростой для движка' };
+const BOT_LABELS = { easy: 'Лёгкий', medium: 'Средний', hard: 'Сложный', gm: 'Гроссмейстер', engine: 'Максимальный' };
+const BOT_LABELS_EN = { easy: 'Easy', medium: 'Medium', hard: 'Hard', gm: 'Grandmaster', engine: 'Maximum' };
 const BOT_DELAY = { easy: 420, medium: 600, hard: 780, gm: 900, engine: 1100 };
 const BOT_DEPTH = { medium: 2, hard: 4, gm: 4, engine: 5 };
+const botLabel = (level) => (profile && profile.language === 'en' ? BOT_LABELS_EN : BOT_LABELS)[level] || BOT_LABELS.medium;
 const BOT_POINTS = {
   easy: { win: 1, loss: 0, draw: 0 },
   medium: { win: 4, loss: -3, draw: 0 },
@@ -191,9 +193,22 @@ function closeBotModal() {
 
 function startBotGame(level) {
   if (!BOT_LABELS[level]) level = 'medium';
+  const ultra = profile.modeId === 'ultraBalance';
+  if (ultra) level = 'gm';
   closeBotModal();
   ui.online = null;
   sound.click();
+  if (ultra) {
+    newGame({
+      mode: 'local',
+      modeId: 'ultraBalance',
+      timeMs: profile.timeMs,
+      splash: true,
+      orientation: 'w',
+      bot: { level: 'gm', color: 'b' },
+    });
+    return;
+  }
   startGameWithMode({
     mode: 'local',
     timeMs: profile.timeMs,
@@ -224,7 +239,8 @@ function chooseBotMove(st, level) {
 function maybeBotTurn() {
   if (ui.paused || ui.away) return;
   if (ui.brawl && ui.brawl.draft) return;
-  if (!ui.bot || !ui.st || ui.st.status !== 'play' || ui.mode !== 'local') return;
+  const coopHost = ui.mode === 'online' && ui.online && ui.online.coop && ui.role === 'host';
+  if (!ui.bot || !ui.st || ui.st.status !== 'play' || (ui.mode !== 'local' && !coopHost)) return;
   if (ui.st.turn !== ui.bot.color || ui.bot.busy) return;
   ui.bot.busy = true;
   ui.botThinking = true;
@@ -234,6 +250,7 @@ function maybeBotTurn() {
     ui.bot.busy = false;
     ui.botThinking = false;
     if (ui.paused || ui.away || !ui.st || ui.st.status !== 'play' || !ui.bot || ui.st.turn !== ui.bot.color) { renderStatus(); return; }
+    if (ui.st.flags.clashBrawl && brawlBotTryDeploy()) { renderStatus(); return; }
     const move = chooseBotMove(ui.st, level);
     if (move) commitMove(move, { bot: true });
     renderStatus();
@@ -259,7 +276,7 @@ function buildGameJson() {
     startedAt: ui.startedAt ? new Date(ui.startedAt).toISOString() : null,
     endedAt: st.status === 'over' ? new Date().toISOString() : null,
     result: st.result || null,
-    bot: ui.bot ? { level: ui.bot.level } : null,
+    bot: ui.bot ? { level: ui.bot.level, color: ui.bot.color, name: ui.bot.name, fake: !!ui.bot.fake } : null,
     moves: ui.moves.map((m, i) => ({
       n: i + 1,
       side: m.color,
@@ -573,12 +590,21 @@ function resumeSavedGame() {
   const data = loadCurrentGame();
   if (!data) { toast('Сохранённой партии нет'); return; }
   if (!importGameText(JSON.stringify(data))) return;
+  const savedBot = data.bot && data.bot.level ? data.bot : null;
   ui.imported = false;
   ui.mode = 'local';
-  ui.bot = null;
+  ui.bot = savedBot
+    ? {
+      level: savedBot.level,
+      color: savedBot.color || (profile.side === 'w' ? 'b' : 'w'),
+      name: savedBot.name || ('Бот · ' + botLabel(savedBot.level)),
+      fake: !!savedBot.fake,
+    }
+    : null;
   ui.timeMs = data.timeMs || 0;
-  if (data.clocks) ui.clocks = { w: data.clocks.w, b: data.clocks.b };
+  ui.clocks = { w: data.clocks ? data.clocks.w : ui.timeMs, b: data.clocks ? data.clocks.b : ui.timeMs };
   if (data.orientation) ui.orientation = data.orientation;
+  else if (savedBot) ui.orientation = savedBot.color === 'b' ? 'w' : 'b';
   ui.st.status = 'play';
   ui.st.result = null;
   ui.scored = false;
@@ -594,11 +620,13 @@ function resumeSavedGame() {
   if (shell) shell.classList.remove('gray-1', 'gray-2', 'gray-3', 'flip-all');
   renderAll(false);
   renderPlayers();
+  renderMeta();
   renderMoves();
   updateNav();
   showScreen('game');
-  if (ui.moves.length) toast('Партия восстановлена');
+  if (ui.moves.length) toast(savedBot ? `Партия восстановлена — играете с ботом «${ui.bot.name}»` : 'Партия восстановлена');
   scheduleFirstMoveTimer();
+  if (ui.bot && ui.st.status === 'play' && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 650);
 }
 
 function pickRaceMs(base) {
@@ -790,6 +818,30 @@ function explosionFx(st, center) {
   setTimeout(() => boom.remove(), 900);
 }
 
+function annihilationFx(st, squares) {
+  if (!st || !squares || !squares.length) return;
+  const board = $('#board');
+  if (board) {
+    for (let i = 1; i <= 5; i++) board.classList.remove('shake-' + i);
+    void board.offsetWidth;
+    board.classList.add('shake-3');
+    setTimeout(() => board.classList.remove('shake-3'), 480);
+  }
+  const layer = $('#hints');
+  if (!layer) return;
+  const unique = [...new Set(squares)].filter((s) => s >= 0);
+  unique.forEach((sq, index) => {
+    const { dx, dy } = disp(st, sq);
+    const ring = document.createElement('span');
+    ring.className = 'annihilate-ring';
+    ring.style.left = ((dx + .5) * ui.sq) + 'px';
+    ring.style.top = ((dy + .5) * ui.sq) + 'px';
+    ring.style.animationDelay = (index * 0.035).toFixed(3) + 's';
+    layer.appendChild(ring);
+    setTimeout(() => ring.remove(), 800);
+  });
+}
+
 function softBurst(st, sq) {
   const layer = $('#hints');
   if (!layer || !st) return;
@@ -812,12 +864,98 @@ function softBurst(st, sq) {
   setTimeout(() => box.remove(), 520);
 }
 
+function kingDeathFx(item) {
+  if (profile.calm || !ui.st || !item) return;
+  const st = ui.st;
+  const layer = $('#hints');
+  if (!layer) return;
+  const sq = ui.sq;
+  const { dx, dy } = disp(st, item.square);
+  const kinds = ['fall', 'tremble', 'explode', 'shatter', 'tear', 'rage'];
+  const kind = kinds[Math.floor(Math.random() * kinds.length)];
+  const x = dx * sq;
+  const y = dy * sq;
+  const makeGhost = () => {
+    const el = document.createElement('div');
+    el.className = `king-ghost king-${kind} ${item.color === 'w' ? 'w' : 'b'}`;
+    el.style.width = sq + 'px';
+    el.style.height = sq + 'px';
+    el.style.transform = `translate(${x}px, ${y}px)`;
+    el.innerHTML = pieceSvg('k');
+    if (kind === 'tear') {
+      const tear = document.createElement('i');
+      tear.className = 'king-tear-drop';
+      tear.textContent = '💧';
+      el.appendChild(tear);
+    }
+    if (kind === 'rage') {
+      const anger = document.createElement('i');
+      anger.className = 'king-anger';
+      anger.textContent = '💢';
+      el.appendChild(anger);
+    }
+    layer.appendChild(el);
+    return el;
+  };
+
+  if (kind === 'shatter') {
+    for (let i = 0; i < 5; i++) {
+      const shard = document.createElement('div');
+      shard.className = `king-shard ${item.color === 'w' ? 'w' : 'b'}`;
+      shard.dataset.shard = String(i);
+      shard.style.width = sq + 'px';
+      shard.style.height = sq + 'px';
+      shard.style.transform = `translate(${x}px, ${y}px)`;
+      shard.style.setProperty('--tx', `${(Math.random() < 0.5 ? -1 : 1) * (0.45 + Math.random() * 0.9) * sq}px`);
+      shard.style.setProperty('--ty', `${(Math.random() < 0.5 ? -1 : 1) * (0.35 + Math.random() * 0.8) * sq}px`);
+      shard.style.setProperty('--rot', `${Math.round(-180 + Math.random() * 360)}deg`);
+      shard.innerHTML = pieceSvg('k');
+      layer.appendChild(shard);
+      setTimeout(() => shard.remove(), 1500);
+    }
+  } else {
+    const ghost = makeGhost();
+    if (kind === 'explode') {
+      explosionFx(st, item.square);
+      ghost.classList.add('king-explode');
+    }
+    setTimeout(() => ghost.remove(), kind === 'tremble' ? 1900 : 1600);
+  }
+
+  if (kind === 'rage') {
+    const board = $('#board');
+    for (let i = 0; i < st.board.length; i++) {
+      const p = st.board[i];
+      if (!p) continue;
+      const node = ui.pieceNodes.get(p.id);
+      if (!node) continue;
+      const pos = disp(st, i);
+      node.style.setProperty('--px', `${pos.dx * sq}px`);
+      node.style.setProperty('--py', `${pos.dy * sq}px`);
+      node.style.setProperty('--fx', `${Math.round((Math.random() - 0.5) * sq * 2.6)}px`);
+      node.style.setProperty('--fr', `${Math.round(-540 + Math.random() * 1080)}deg`);
+      node.style.setProperty('--fd', `${(Math.random() * 0.18).toFixed(2)}s`);
+    }
+    if (board) board.classList.add('king-rage');
+    setTimeout(() => {
+      if (board) board.classList.remove('king-rage');
+      renderBoard(false);
+    }, 1800);
+  }
+}
+
 function captureFx(list) {
   if (profile.calm) return;
   if (!list || !list.length || !ui.st) return;
   const st = ui.st;
   const sq = ui.sq;
   const layer = $('#hints');
+  const kingItem = list.find((x) => x.type === 'k');
+  if (kingItem) {
+    kingDeathFx(kingItem);
+    list = list.filter((x) => x.type !== 'k');
+    if (!list.length) return;
+  }
   let topTier = 0;
   for (const item of list) {
     const tier = CAP_TIER[item.type] || 0;
@@ -876,6 +1014,56 @@ function captureFx(list) {
       captureFx.flashTimer = setTimeout(() => { flash.className = 'fx-flash'; }, topTier === 4 ? 1100 : 600);
     }
   }
+}
+
+function mateKingWaves(sq) {
+  if (profile.calm || sq < 0 || !ui.st) return;
+  const layer = $('#hints');
+  if (!layer) return;
+  const { dx, dy } = disp(ui.st, sq);
+  const cx = (dx + .5) * ui.sq;
+  const cy = (dy + .5) * ui.sq;
+  for (let i = 0; i < 5; i++) {
+    const wave = document.createElement('span');
+    wave.className = 'mate-wave';
+    wave.style.left = cx + 'px';
+    wave.style.top = cy + 'px';
+    wave.style.animationDelay = (i * 0.16).toFixed(2) + 's';
+    layer.appendChild(wave);
+    setTimeout(() => wave.remove(), 1800);
+  }
+}
+
+function renderResultKings(res) {
+  const box = $('#resultKings');
+  if (!box) return;
+  box.innerHTML = '';
+  const mate = res && res.reason === 'mate' && res.winner;
+  const stale = res && res.reason === 'stalemate';
+  if (!mate && !stale) {
+    box.classList.add('hidden');
+    return;
+  }
+  box.classList.remove('hidden');
+  if (stale) {
+    box.className = 'result-kings draw';
+    box.innerHTML = `
+      <div class="rk-slot rk-draw-left"><span class="rk-shadow gray"></span><span class="rk-king w grayed">${pieceSvg('k')}</span></div>
+      <div class="rk-slot rk-draw-right"><span class="rk-shadow gray"></span><span class="rk-king b grayed">${pieceSvg('k')}</span></div>`;
+    return;
+  }
+  const winner = res.winner;
+  const loser = other(winner);
+  box.className = 'result-kings mate ' + (winner === 'w' ? 'winner-white' : 'winner-black');
+  box.innerHTML = `
+    <div class="rk-slot rk-winner">
+      <span class="rk-shadow lime"></span>
+      <span class="rk-king ${winner}">${pieceSvg('k')}</span>
+    </div>
+    <div class="rk-slot rk-loser">
+      <span class="rk-shadow red"></span>
+      <span class="rk-king ${loser} grayed">${pieceSvg('k')}</span>
+    </div>`;
 }
 
 function playResultFx(kind) {
@@ -1027,6 +1215,7 @@ const MODE_SHORT = {
   losAlamos: '6×6', berolina: 'Беролина', checkless: 'Без шахов', raceKings: 'Гонки', andernach: 'Андернах',
   pawnBack: 'Назад', kingKnight: 'Король-конь', queenLose: 'Ферзь', weakKnights: 'Кони',
   castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно', clashBrawl: 'Brawl', royalBattle: 'Битва', zombie: 'Зомби', strategy: 'Стратегия',
+  annihilation: 'Аннигиляция', ultraBalance: 'Ультрабаланс',
 };
 
 const MODE_EN = {
@@ -1084,9 +1273,11 @@ const MODE_EN = {
   losAlamos: ['Los Alamos', "A 6×6 board without bishops — fast chess invented at Los Alamos."],
   berolina: ['Berolina', "Pawns move diagonally forward and capture straight ahead."],
   checkless: ['Checkless', "Giving check is illegal. Only quiet moves, defences and captures."],
-  raceKings: ['Racing kings', "No pawns and no checks: race your king to the far rank."],
+  raceKings: ['Racing kings', "No pawns: race your king to the far rank. Checks are allowed, but the king cannot be captured."],
   andernach: ['Andernach', "A capturing piece changes colour. Every capture is a small betrayal."],
   clashBrawl: ['Clash Brawl', "A mobile-game parody: 50 HP kings, purple elixir, a 4-card deck, shields and knockback."],
+  annihilation: ['Annihilation', "Every capture erases both pieces and all four orthogonal neighbours around both squares. Kings survive."],
+  ultraBalance: ['Ultrabalance', "You play White against a grandmaster bot. Black has no rooks and pushed flank pawns; you get two extra wing pawns. Online, a friend can take your moves after the bot."],
   infernal: ['Infernal', "Everything is red, and big moves trigger gambit theorems and meme lines."],
 };
 
@@ -2922,6 +3113,15 @@ function handleImboNet(msg) {
 
 
 function startGameWithMode(opts = {}) {
+  if (profile.modeId === 'ultraBalance' && opts.mode !== 'online') {
+    newGame({
+      ...opts,
+      modeId: 'ultraBalance',
+      orientation: 'w',
+      bot: { level: 'gm', color: 'b' },
+    });
+    return;
+  }
   if (profile.modeId === 'openIntent' && opts.mode !== 'online') {
     toast('Режим «Открытые намерения» работает только в онлайн-игре с живым соперником!');
     showScreen('online');
@@ -2941,8 +3141,8 @@ function startGameWithMode(opts = {}) {
 const MODE_CATS = {
   popular: ['classic', 'fischer', 'threeChecks', 'kingCapture'],
   pieces: ['jester', 'boy', 'queens', 'pawnField', 'pawnFieldQ', 'knights', 'rooks', 'bishops'],
-  chaos: ['explode', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center'],
-  mini: ['strategy', 'zombie', 'royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
+  chaos: ['explode', 'annihilation', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center'],
+  mini: ['strategy', 'ultraBalance', 'zombie', 'royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
   imbo: [],
 };
 
@@ -2962,6 +3162,7 @@ const MODE_GROUP = {
   noQueen7: 1, swapRows: 2, blackFirst: 1, inverted: 2, pawnBack: 2, kingKnight: 1,
   queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3, clashBrawl: 3, royalBattle: 3, zombie: 3, strategy: 3,
   losAlamos: 2, berolina: 2, checkless: 2, raceKings: 2, andernach: 3,
+  annihilation: 3, ultraBalance: 3,
 };
 const GROUP_TITLES = {
   1: 'Классика и лёгкие изменения',
@@ -3223,7 +3424,12 @@ function updateOnlineModeLine() {
   const el = $('#onlineModeLine');
   if (!el) return;
   const m = modeById(profile.modeId);
-  el.innerHTML = `${profile.language === 'en' ? 'Mode' : 'Режим'}: <b>${escapeHtml(modeName(m))}</b> · ${m.W}×${m.H} · ${escapeHtml(profile.timeLabel || (profile.language === 'en' ? 'no limit' : 'без ограничений'))}`;
+  const coop = m.id === 'ultraBalance'
+    ? ` · ${profile.language === 'en'
+      ? 'you + friend White vs grandmaster bot; friend moves after the bot'
+      : 'вы и друг играете белыми против бота-гроссмейстера; друг ходит после бота'}`
+    : '';
+  el.innerHTML = `${profile.language === 'en' ? 'Mode' : 'Режим'}: <b>${escapeHtml(modeName(m))}</b> · ${m.W}×${m.H} · ${escapeHtml(profile.timeLabel || (profile.language === 'en' ? 'no limit' : 'без ограничений'))}${coop}`;
 }
 
 const SKIP_WELCOME = location.search.includes('skipwelcome=1') || (!!navigator.webdriver && !location.search.includes('welcome=1'));
@@ -3235,7 +3441,8 @@ const EN_STATIC = {
   'Выберите режим и время — остальное уже настроено.': 'Pick a mode and time — the rest is ready.',
   'Сменить': 'Change', 'Контроль времени': 'Time control', 'Твой цвет:': 'Your color:',
   'Белые': 'White', 'Чёрные': 'Black', 'Играть здесь': 'Play here', 'С ботом:': 'Vs bot:',
-  'лёгкий': 'easy', 'средний': 'medium', 'сложный': 'hard', 'гроссмейстер': 'grandmaster', 'движок': 'engine',
+  'лёгкий': 'easy', 'средний': 'medium', 'сложный': 'hard', 'гроссмейстер': 'grandmaster', 'движок': 'maximum',
+  'Максимальный': 'Maximum', 'Лёгкий': 'Easy', 'Средний': 'Medium', 'Сложный': 'Hard', 'Гроссмейстер': 'Grandmaster',
   'Или сыграйте с:': 'Or play with:', 'Мини-профиль': 'Mini profile', 'Доски': 'Boards',
   'Фигуры': 'Pieces', 'Мои итоги': 'My stats', '▶ Продолжить партию': '▶ Resume game',
   '⚙ Настройки': '⚙ Settings', '← Назад': '← Back',
@@ -3466,7 +3673,36 @@ function refreshActiveGame() {
   toast('Активной партии нет');
 }
 
+function menuIntroFx(name) {
+  if (name === 'game' || profile.calm) return;
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) return;
+  const box = $('#menuFx');
+  if (!box) return;
+  box.innerHTML = '';
+  const count = window.innerWidth < 700 ? 4 : 9;
+  const types = ['n', 'q', 'r', 'b', 'p', 'k'];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('span');
+    el.className = 'menu-flier';
+    const fromLeft = i % 2 === 0;
+    el.style.left = fromLeft ? '-4vw' : '104vw';
+    el.style.top = (8 + Math.random() * 78) + 'vh';
+    el.style.setProperty('--mx', (fromLeft ? 1 : -1) * (28 + Math.random() * 42) + 'vw');
+    el.style.setProperty('--my', (-12 + Math.random() * 24).toFixed(1) + 'vh');
+    el.style.setProperty('--mr', Math.round(-220 + Math.random() * 440) + 'deg');
+    el.style.setProperty('--ms', Math.round(22 + Math.random() * 36) + 'px');
+    el.style.setProperty('--md', (0.7 + Math.random() * 0.5).toFixed(2) + 's');
+    el.style.setProperty('--mde', (Math.random() * 0.18).toFixed(2) + 's');
+    el.innerHTML = pieceSvg(types[i % types.length]);
+    box.appendChild(el);
+  }
+  clearTimeout(menuIntroFx.timer);
+  menuIntroFx.timer = setTimeout(() => { box.innerHTML = ''; }, 1800);
+}
+
 function showScreen(name) {
+  const changed = ui.screen !== name;
   if (name === 'game') stopConnectHud();
   if (name !== 'game') { closeDrawer(); closePanel(); }
   const wasGame = ui.screen === 'game';
@@ -3507,6 +3743,7 @@ function showScreen(name) {
   if (name === 'settings') requestAnimationFrame(() => renderThemePreview());
   if (name === 'imbo') openImboHub();
   else if (ui.imbo) stopImboGame();
+  if (changed && name !== 'game') menuIntroFx(name);
 }
 
 let toastTimer = 0;
@@ -3527,8 +3764,21 @@ function escapeHtml(s) {
 /* ──────────────────────────── 6. ДОСКА ────────────────────────────────── */
 
 function myColor() {
-  if (ui.mode === 'online') return ui.role === 'host' ? 'w' : 'b';
+  if (ui.mode === 'online') {
+    if (ui.online && ui.online.coop) return 'w';
+    return ui.role === 'host' ? 'w' : 'b';
+  }
+  if (ui.st && ui.st.flags.ultraBalance) return 'w';
+  if (ui.bot && ui.bot.color) return other(ui.bot.color);
   return profile.side;
+}
+
+/** В онлайн-кооперативе друг ходит белыми только после хода бота. */
+function onlineCoachMayMove() {
+  if (ui.mode !== 'online' || !ui.online || !ui.online.coop) return true;
+  if (ui.online.role === 'host') return true;
+  const last = ui.moves[ui.moves.length - 1];
+  return !!last && last.color === 'b';
 }
 
 function viewState() {
@@ -3555,6 +3805,28 @@ function disp(st, i) {
   return ui.orientation === 'w'
     ? { dx: x, dy: st.H - 1 - y }
     : { dx: st.W - 1 - x, dy: y };
+}
+
+/** Клетка под точкой экрана: считаем по геометрии доски, а не по DOM.
+ *  Так хитбокс не зависит от того, попал ли палец на SVG фигуры или на щель. */
+function squareAtPoint(st, clientX, clientY) {
+  const board = $('#board');
+  if (!board || !st) return -1;
+  const r = board.getBoundingClientRect();
+  if (!r.width || !r.height) return -1;
+  const relX = clientX - r.left;
+  const relY = clientY - r.top;
+  const pad = 8;
+  if (relX < -pad || relY < -pad || relX > r.width + pad || relY > r.height + pad) return -1;
+  let dx = Math.max(0, Math.min(st.W - 1, Math.floor((relX / r.width) * st.W)));
+  let dy = Math.max(0, Math.min(st.H - 1, Math.floor((relY / r.height) * st.H)));
+  if (ui.rotated || ui.tableRotated) {
+    dx = st.W - 1 - dx;
+    dy = st.H - 1 - dy;
+  }
+  const x = ui.orientation === 'w' ? dx : st.W - 1 - dx;
+  const y = ui.orientation === 'w' ? st.H - 1 - dy : dy;
+  return y * st.W + x;
 }
 
 function layoutBoard() {
@@ -3814,7 +4086,10 @@ function renderHints() {
 function renderBoard(animate) {
   if (!ui.st) return;
   const boardEl = document.getElementById('board');
-  if (boardEl) boardEl.classList.toggle('fog-on', !!ui.st.flags.fog);
+  if (boardEl) {
+    boardEl.classList.toggle('fog-on', !!ui.st.flags.fog);
+    boardEl.classList.toggle('brawl-locked', !!ui.st.flags.clashBrawl && ui.st.full <= 6);
+  }
   layoutBoard();
   positionSquares();
   renderSquares();
@@ -5233,11 +5508,30 @@ function royalShrink() {
   const st = ui.st;
   const z = ui.royal;
   if (!st || !z) return;
-  const side = Math.floor((st.seed + z.plies * 7) % 4);
-  if (side === 0 && z.x1 - z.x0 > 2) z.x0 += 1;
-  else if (side === 1 && z.x1 - z.x0 > 2) z.x1 -= 1;
-  else if (side === 2 && z.y1 - z.y0 > 2) z.y0 += 1;
-  else if (z.y1 - z.y0 > 2) z.y1 -= 1;
+  const kings = ['w', 'b'].map((c) => findKing(st, c)).filter((i) => i >= 0);
+  const insideZone = (i, x0, y0, x1, y1) => {
+    const x = fileOf(st, i), y = rankOf(st, i);
+    return x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  };
+  const options = [];
+  if (z.x1 - z.x0 > 2) options.push(0, 1);
+  if (z.y1 - z.y0 > 2) options.push(2, 3);
+  if (!options.length) return;
+  // Не сжимаем сторону, которая сразу выкинула бы живого короля за границу.
+  const safe = options.filter((side) => {
+    const box = { x0: z.x0, y0: z.y0, x1: z.x1, y1: z.y1 };
+    if (side === 0) box.x0 += 1;
+    else if (side === 1) box.x1 -= 1;
+    else if (side === 2) box.y0 += 1;
+    else box.y1 -= 1;
+    return kings.every((k) => insideZone(k, box.x0, box.y0, box.x1, box.y1));
+  });
+  const pool = safe.length ? safe : options;
+  const side = pool[Math.floor((st.seed + z.plies * 7) % pool.length)];
+  if (side === 0) z.x0 += 1;
+  else if (side === 1) z.x1 -= 1;
+  else if (side === 2) z.y0 += 1;
+  else z.y1 -= 1;
   const broken = [];
   for (let i = 0; i < st.board.length; i++) {
     const p = st.board[i];
@@ -5325,7 +5619,7 @@ function brawlCanDeploy(sq, color) {
   if (!st || !st.flags.clashBrawl || !ui.brawl || ui.brawl.selected === null) return false;
   if (st.board[sq]) return false;
   const y = Math.floor(sq / st.W);
-  const early = (st.full || 0) < 6;
+  const early = (st.full || 0) <= 6;
   if (early) return color === 'w' ? y < 2 : y >= st.H - 2;
   return color === 'w' ? y < 4 : y >= 4;
 }
@@ -5507,14 +5801,10 @@ function brawlCardDragEnd(e) {
   const d = ui.brawl.drag;
   ui.brawl.drag = null;
   if (!d.active) return;
-  const under = document.elementFromPoint(e.clientX, e.clientY);
-  const sqEl = under && under.closest ? under.closest('.sq') : null;
-  if (sqEl) {
-    const to = Number(sqEl.dataset.sq);
-    if (brawlCanDeploy(to, brawlColor())) {
-      brawlDeploy(to);
-      return;
-    }
+  const to = squareAtPoint(ui.st, e.clientX, e.clientY);
+  if (to >= 0 && brawlCanDeploy(to, brawlColor())) {
+    brawlDeploy(to);
+    return;
   }
 }
 
@@ -5538,6 +5828,35 @@ function brawlShieldAction() {
 function brawlTurnStart(color) {
   if (!ui.brawl) return;
   if (ui.brawl.shieldTurns[color] > 0) ui.brawl.shieldTurns[color] -= 1;
+}
+
+function brawlBotTryDeploy() {
+  const st = ui.st;
+  if (!st || !ui.brawl || !ui.bot) return false;
+  if (ui.mode !== 'local' || st.status !== 'play' || st.turn !== ui.bot.color) return false;
+  // В 45% ходов бот сам выбирает карту и клетку высадки, а не просто двигает фигуру.
+  if (Math.random() >= 0.45) return false;
+  const color = st.turn;
+  const elixir = ui.brawl.elixir[color] || 0;
+  const cards = ui.brawl.decks[color] || [];
+  const ready = cards.map((card, index) => ({ card, index })).filter((x) => x.card.cost <= elixir);
+  if (!ready.length) return false;
+  const spell = ready[Math.floor(Math.random() * ready.length)];
+  ui.brawl.selected = spell.index;
+  const cells = [];
+  for (let i = 0; i < st.board.length; i++) {
+    if (!st.board[i] && brawlCanDeploy(i, color)) cells.push(i);
+  }
+  if (!cells.length) { ui.brawl.selected = null; return false; }
+  // Ближе к центру высадка полезнее, но оставляем немного случайности.
+  const mid = (st.W - 1) / 2;
+  cells.sort((a, b) => Math.abs((a % st.W) - mid) - Math.abs((b % st.W) - mid));
+  const pool = cells.slice(0, Math.max(1, Math.ceil(cells.length / 2)));
+  const target = pool[Math.floor(Math.random() * pool.length)];
+  const done = brawlDeploy(target);
+  if (!done) ui.brawl.selected = null;
+  if (done) brawlFloat(target, 'БОТ', 'purple');
+  return done;
 }
 
 function brawlDeploy(sq) {
@@ -5668,6 +5987,10 @@ function brawlCaptureFx(st, capInfo, match, mover) {
 function newGame(opts = {}) {
   const pickedMode = modeById(opts.modeId || profile.modeId);
   const mode = pickedMode.flags.randomPick ? randomRealMode() : pickedMode;
+  if (mode.flags.ultraBalance && ((opts.mode || 'local') !== 'online' || opts.bot)) {
+    opts.bot = { ...(opts.bot || {}), level: 'gm', color: 'b' };
+    opts.orientation = 'w';
+  }
   if (mode.id === 'openIntent' && (opts.mode || 'local') !== 'online') {
     toast('Режим «Открытые намерения» работает только в онлайн-игре с живым соперником!');
     showScreen('online');
@@ -5732,6 +6055,7 @@ function newGame(opts = {}) {
   else stopStrategy();
   ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
   if ((opts.mode || 'local') === 'local' && !opts.bot && !mode.flags.inverted) ui.orientation = 'w';
+  if (mode.flags.ultraBalance) ui.orientation = 'w';
   ui.mode = opts.mode || 'local';
   if (ui.mode === 'local' && !opts.bot && profile.flip && window.innerWidth < 1000) {
     if (profile.flipAll) ui.rotated = ui.st.turn !== ui.orientation;
@@ -5741,7 +6065,7 @@ function newGame(opts = {}) {
   ui.role = opts.role || null;
   ui.spectator = !!opts.spectator;
   ui.bot = opts.bot
-    ? { ...opts.bot, name: opts.bot.fake ? (opts.bot.name || 'Игрок') : ('Бот · ' + (BOT_LABELS[opts.bot.level] || 'средний')) }
+    ? { ...opts.bot, name: opts.bot.fake ? (opts.bot.name || 'Игрок') : ('Бот · ' + botLabel(opts.bot.level)) }
     : null;
   ui.paused = false;
   ui.movedId = null;
@@ -5755,7 +6079,9 @@ function newGame(opts = {}) {
   ui.botThinking = false;
   ui.imported = false;
   ui.startedAt = Date.now();
-  const mySide = ui.mode === 'online' ? (ui.role === 'host' ? 'w' : 'b') : profile.side;
+  const mySide = ui.mode === 'online'
+    ? ((ui.online && ui.online.coop) ? 'w' : (ui.role === 'host' ? 'w' : 'b'))
+    : (mode.flags.ultraBalance ? 'w' : profile.side);
   const oppName = ui.bot ? ui.bot.name : 'Соперник';
   ui.names = {
     w: { name: mySide === 'w' ? profile.name : oppName, avatar: mySide === 'w' ? profile.avatar : 'k' },
@@ -5831,6 +6157,10 @@ function renderMeta() {
   if (ui.bot && ui.bot.fake) bits.push('Возможно, не совсем игрок');
   if (st.flags.jester) bits.push('Шуты: 5 ходов');
   if (st.flags.boy) bits.push('Пацанчики берут две');
+  if (st.flags.annihilate) bits.push('аннигиляция: крест вокруг обоих полей');
+  if (st.flags.ultraBalance) bits.push('ультрабаланс: бот-гроссмейстер');
+  if (st.flags.clashBrawl) bits.push(st.full <= 6 ? 'граница закрыта: 6 ходов' : 'граница открыта');
+  if (ui.online && ui.online.coop) bits.push(ui.online.role === 'host' ? 'друг ходит после бота' : 'ваш ход после бота');
   if (st.flags.kingFree) bits.push('короля можно съесть');
   if (st.flags.kingOnlyLose) bits.push('один король — поражение');
   $('#gameMeta').innerHTML = `<b>${escapeHtml(st.mode.name)}</b><br>${escapeHtml(bits.join(' · '))}`;
@@ -5939,6 +6269,7 @@ function renderAll(animate) {
   updateClockEls();
   updateEval();
   renderStatus();
+  renderMeta();
   updateNav();
   renderCaptured();
   if (ui.royal) renderRoyalHud();
@@ -6059,6 +6390,7 @@ function onSquareClick(sq) {
   if (ui.imported) { toast('Импортированная партия — только просмотр'); return; }
   if (ui.bot && ui.st.turn === ui.bot.color) return;
   if (ui.viewPly !== ui.frames.length - 1) return;
+  if (!onlineCoachMayMove()) { toast('Друг ходит белыми после хода бота'); return; }
   const st = ui.st;
   if (ui.mode === 'online' && st.turn !== myColor()) return;
   if (st.turn !== myColor() && ui.mode !== 'local') return;
@@ -6178,8 +6510,9 @@ function commitMove(m, opts = {}) {
     return true;
   }
   const evalBefore = evaluateWhite(st);
-  applyMove(st, match);
+  const undo = applyMove(st, match);
   const explodedNow = !!st.exploded;
+  const annihilatedNow = !!st.annihilated;
   if (st.flags.blocks) {
     const blockedSq = maybeBlock(st);
     if (blockedSq >= 0) {
@@ -6271,9 +6604,13 @@ function commitMove(m, opts = {}) {
     renderAll(flippedNow ? false : !opts.noAnim);
     if (flippedNow) renderPlayers();
     if (st.flags.explode && explodedNow) explosionFx(st, match.to);
+    if (st.flags.annihilate && annihilatedNow) {
+      annihilationFx(st, [match.from, match.to, ...undo.removed.map((r) => r.sq)]);
+    }
     if (capInfo.length) {
       captureFx(capInfo);
-      if (!profile.epicFx && captured && window.innerWidth < 1000 && !capInfo.some((c) => c.type === 'q')) {
+      /* Частицы телефонной версии теперь работают и на ПК, независимо от «Эпично». */
+      if (!profile.calm && !capInfo.some((c) => c.type === 'q')) {
         softBurst(st, match.to);
       }
       if (profile.epicFx && !capInfo.some((c) => c.type === 'q')) {
@@ -6302,7 +6639,9 @@ function commitMove(m, opts = {}) {
   }
 
   if (res) {
-    renderAll(false);
+    // Для обычного хода доска уже перерисована выше. Повторный renderAll
+    // стирал бы только что запущенные анимации взятия/короля.
+    if (opts.silent || opts.remote) renderAll(false);
     finishGame(res);
   } else if (!opts.silent) {
     maybePhase();
@@ -6346,22 +6685,24 @@ function finishGame(res, opts = {}) {
   clearInterval(ui.timer);
   if (!ui.st) return;
   if (ui.scored) return;
-  if (!opts.delayed && (res.reason === 'mate' || res.reason === 'stalemate')) {
+  if (!opts.delayed && (res.reason === 'mate' || res.reason === 'stalemate' || res.reason === 'king')) {
     if (ui.endTimer) return;
     const loser = res.winner ? other(res.winner) : ui.st.turn;
-    ui.endSquare = findKing(ui.st, loser);
+    ui.endSquare = res.reason === 'king' ? -1 : findKing(ui.st, loser);
     ui.endReason = res.reason;
     ui.st.status = 'over';
     ui.st.result = res;
     renderSquares();
+    if (res.reason === 'mate') mateKingWaves(ui.endSquare);
     const statusEl = $('#gameStatus');
-    if (statusEl) statusEl.textContent = res.reason === 'mate' ? 'МАТ' : 'ПАТ';
+    if (statusEl) statusEl.textContent = res.reason === 'mate' ? 'МАТ' : res.reason === 'stalemate' ? 'ПАТ' : 'КОРОЛЬ СНЯТ';
+    const pause = res.reason === 'king' ? (profile.calm ? 600 : 1900) : 3000;
     ui.endTimer = setTimeout(() => {
       ui.endTimer = 0;
       ui.endSquare = -1;
       renderSquares();
       finishGame(res, { delayed: true });
-    }, 3000);
+    }, pause);
     return;
   }
   ui.scored = true;
@@ -6432,6 +6773,7 @@ function finishGame(res, opts = {}) {
   ['#resultAgain', '#resultMenu', '#resultClose'].forEach((id) => $(id).classList.remove('hidden'));
   if (ui.spectator) $('#resultAgain').classList.add('hidden');
   $('#result').classList.remove('hidden');
+  renderResultKings(res);
   if (res.reason !== 'abort') playResultFx(!res.winner ? 'draw' : res.winner === side ? 'win' : 'lose');
   renderStatsIfOpen();
 }
@@ -7024,6 +7366,7 @@ function switchOnlineTab(tab) {
   if (friend) friend.classList.toggle('hidden', tab !== 'friend');
   if (internet) internet.classList.toggle('hidden', tab !== 'internet');
   if (tab === 'internet') { ensureLobby(); renderLobby(); }
+  menuIntroFx('online');
 }
 
 
@@ -7416,18 +7759,28 @@ function handleNet(text) {
     ui.online.sid = ui.online.sid || Math.random().toString(36).slice(2, 10);
     ui.online.waiting = false;
     clearInterval(ui.online.announce);
+    const ultra = (ui.online.modeId || profile.modeId) === 'ultraBalance';
+    ui.online.coop = ultra;
     setLobby('');
     $('#roomRow').classList.add('hidden');
     if (!ui.st) {
       newGame({
-        mode: 'online', role: 'host', modeId: profile.modeId,
+        mode: 'online', role: 'host', modeId: ultra ? 'ultraBalance' : profile.modeId,
         timeMs: profile.timeMs, orientation: 'w', splash: true,
+        bot: ultra ? { level: 'gm', color: 'b' } : null,
       });
     }
-    ui.chat.push({ name: 'Система', text: `${ui.online.names.b} присоединился к партии` });
+    ui.chat.push({
+      name: 'Система',
+      text: ultra
+        ? `${msg.name || 'Друг'} присоединился как союзник — он ходит белыми после бота`
+        : `${ui.online.names.b} присоединился к партии`,
+    });
     renderChat();
     renderPlayers();
-    toast(imboT('Соперник присоединился', 'Opponent joined'));
+    toast(ultra
+      ? 'Друг присоединился — он сможет ходить после бота'
+      : imboT('Соперник присоединился', 'Opponent joined'));
     netPublish({
       t: 'start',
       modeId: ui.st.modeId,
@@ -7439,6 +7792,9 @@ function handleNet(text) {
       moves: ui.moves.map((m) => ({ from: m.from, to: m.to })),
       cw: ui.clocks.w, cb: ui.clocks.b,
       name: profile.name, avatar: profile.avatar,
+      coop: !!ui.online.coop,
+      bot: ui.online.coop ? { level: 'gm', color: 'b' } : null,
+      names: ui.names,
     });
     return;
   }
@@ -7478,10 +7834,17 @@ function handleNet(text) {
     clearInterval(ui.online.joinTimer);
     ui.online.started = true;
     ui.online.sid = msg.sid || ui.online.sid;
-    ui.online.names = { w: msg.name || 'Соперник', b: profile.name };
+    ui.online.coop = !!msg.coop;
+    ui.online.names = msg.names || { w: msg.name || 'Соперник', b: profile.name };
     ui.online.avatars = { w: msg.avatar || 'k', b: profile.avatar };
     ui.replaying = true;
-    newGame({ mode: 'online', role: 'guest', modeId: msg.modeId, square: !!msg.square, timeMs: msg.timeMs, raceMs: msg.raceMs, seed: msg.seed, orientation: 'b', splash: false });
+    newGame({
+      mode: 'online', role: 'guest', modeId: msg.modeId, square: !!msg.square,
+      timeMs: msg.timeMs, raceMs: msg.raceMs, seed: msg.seed,
+      orientation: msg.coop ? 'w' : 'b', splash: false,
+      bot: msg.coop ? (msg.bot || { level: 'gm', color: 'b' }) : null,
+    });
+    if (msg.names) ui.names = msg.names;
     for (const mv of (msg.moves || [])) commitMove(mv, { remote: true, silent: true });
     ui.replaying = false;
     if (msg.cw != null) ui.clocks = { w: msg.cw, b: msg.cb };
@@ -7490,8 +7853,11 @@ function handleNet(text) {
     renderAll(false);
     renderMoves();
     renderPlayers();
+    renderMeta();
     setLobby('');
-    toast(imboT('Вы подключились к партии', 'You joined the game'));
+    toast(ui.online.coop
+      ? 'Вы подключились: ходите белыми после хода бота'
+      : imboT('Вы подключились к партии', 'You joined the game'));
     showPhase('opening');
     return;
   }
@@ -7508,7 +7874,8 @@ function handleNet(text) {
   }
 
   if (msg.t === 'chat') {
-    ui.chat.push({ name: ui.online.names?.[msg.sender === 'host' ? 'w' : 'b'] || 'Соперник', text: String(msg.text || '').slice(0, 200) });
+    const side = ui.online.coop ? 'w' : (msg.sender === 'host' ? 'w' : 'b');
+    ui.chat.push({ name: ui.online.names?.[side] || 'Соперник', text: String(msg.text || '').slice(0, 200) });
     renderChat();
     return;
   }
@@ -7544,6 +7911,9 @@ function handleNet(text) {
       moves: ui.moves.map((m) => ({ from: m.from, to: m.to })),
       cw: ui.clocks.w, cb: ui.clocks.b,
       name: profile.name, avatar: profile.avatar,
+      coop: !!ui.online.coop,
+      bot: ui.online.coop ? { level: 'gm', color: 'b' } : null,
+      names: ui.names,
     });
   }
 }
@@ -8244,8 +8614,12 @@ function bindEvents() {
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (!d.active && Math.hypot(dx, dy) < 6) return;
+    /* На тач-экране фигура «берётся в руку» только после 0,2 с удержания.
+       Быстрый свайп/отпускание до этого срока не превращается в перетаскивание. */
+    if (!d.active && d.touch && performance.now() < d.readyAt) return;
     if (!d.active) {
       d.active = true;
+      suppressNextClick();
       d.el.classList.add('dragging');
       const piecesLayer = $('#pieces');
       if (piecesLayer) piecesLayer.classList.add('raise');
@@ -8255,15 +8629,14 @@ function bindEvents() {
     d.el.style.transform = `translate(${d.baseX + dx}px, ${d.baseY + dy}px) scale(1.12) rotate(${tilt}deg)`;
     d.el.style.zIndex = '9999';
     clearDragHover();
-    const under = document.elementFromPoint(e.clientX, e.clientY);
-    const sqEl = under && under.closest ? under.closest('.sq') : null;
     d.target = null;
-    if (sqEl) {
-      const to = Number(sqEl.dataset.sq);
+    const to = squareAtPoint(ui.st, e.clientX, e.clientY);
+    if (to >= 0) {
       const legal = legalMoves(ui.st, ui.st.turn);
       if (legal.some((m) => m.from === d.from && m.to === to)) {
         d.target = to;
-        sqEl.classList.add('drag-over');
+        const sqEl = ui.squareEls[to];
+        if (sqEl) sqEl.classList.add('drag-over');
       }
     }
   };
@@ -8279,6 +8652,7 @@ function bindEvents() {
     if (!sqEl || !ui.st || ui.st.status !== 'play' || ui.gameLocked || ui.paused || ui.imported) return;
     if (ui.viewPly !== ui.frames.length - 1) return;
     if (ui.bot && ui.st.turn === ui.bot.color) return;
+    if (!onlineCoachMayMove()) return;
     if (ui.mode === 'online' && ui.st.turn !== myColor()) return;
     if (ui.mode !== 'local' && ui.st.turn !== myColor()) return;
     const sq = Number(sqEl.dataset.sq);
@@ -8296,9 +8670,13 @@ function bindEvents() {
     renderHints();
     const el = ui.pieceNodes.get(p.id);
     if (!el) return;
-    suppressNextClick();
     const { dx, dy } = disp(ui.st, sq);
-    dragState = { from: sq, x: e.clientX, y: e.clientY, active: false, el, baseX: dx * ui.sq, baseY: dy * ui.sq, target: null };
+    const touch = e.pointerType === 'touch' || e.pointerType === 'pen';
+    dragState = {
+      from: sq, x: e.clientX, y: e.clientY, active: false, el,
+      baseX: dx * ui.sq, baseY: dy * ui.sq, target: null,
+      touch, readyAt: performance.now() + (touch ? 200 : 0),
+    };
     window.addEventListener('pointermove', onDragMove);
     window.addEventListener('pointerup', finishDrag);
     window.addEventListener('pointercancel', finishDrag);
@@ -8364,11 +8742,12 @@ function boot() {
   window.ChessApp = {
     engine: { createState, legalMoves, genPseudo, applyMove, undoMove, moveToSan, updateStatus, perft, toFen: null, findKing, sqName, positionKey, inCheck, attacked, materialOf, visSet, maybeBlock, centerCells, evaluateWhite, bestMove, MODES, modeById, variants: VariantEngine },
     ui, profile,
-    newGame, commitMove, gotoPly, showScreen, myColor, scoreGame,
+    newGame, commitMove, gotoPly, showScreen, myColor, scoreGame, finishGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
+    brawlBotTryDeploy, brawlDeploy, brawlCanDeploy, onlineCoachMayMove,
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
     chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink, strategySelectAttacker, strategyAttack, strategyEndTurn, strategyAfterMove, strategySpecial, strategyRender,
-    captureFx, playResultFx,
+    captureFx, playResultFx, renderResultKings, mateKingWaves,
     PIECE_SKINS, applySkin, setPieces,
     openSkinModal: () => openSkinModal(),
     setProfile: (patch) => { Object.assign(profile, patch); renderProfile(); renderThemeRows(); renderPieceRows(); renderPreview(); saveProfile(true); },

@@ -75,6 +75,11 @@ const MODES = [
     W: 8, H: 8, flags: { classic: true, explode: true },
   },
   {
+    id: 'annihilation', n: 62, name: 'Аннигиляция', icon: '☢️',
+    desc: 'Каждое взятие стирает обе фигуры и все четыре соседние клетки по кресту — и у места удара, и у места, откуда пришла фигура. Короли не исчезают.',
+    W: 8, H: 8, flags: { classic: true, annihilate: true },
+  },
+  {
     id: 'queenPierce', n: 7, name: 'Ферзь-шашки', icon: '♛✳',
     desc: 'Шах объявляется и ферзю. Ферзь сметает все фигуры соперника на своей линии — сквозь свои и чужие.',
     W: 8, H: 8, flags: { queenPierce: true, queenCheck: true },
@@ -325,6 +330,11 @@ const MODES = [
     W: 8, H: 8, flags: { clashBrawl: true, kingFree: true, customDeploy: true },
   },
   {
+    id: 'ultraBalance', n: 63, name: 'Ультрабаланс', icon: '⚖️',
+    desc: 'Вы играете белыми против бота-гроссмейстера. У чёрных нет ладей, их крайние пешки выдвинуты вперёд, а у вас две дополнительные пешки на флангах. В онлайне друг может подхватывать ваши ходы после бота.',
+    W: 8, H: 8, flags: { classic: true, ultraBalance: true },
+  },
+  {
     id: 'strategy', n: 61, name: 'Стратегия', icon: '⚔',
     desc: 'Две страны, казна, HP и карточки. Ход — обычное движение, затем атака по подсвеченным клеткам. Побеждает тот, кто уничтожит короля.',
     W: 8, H: 8, flags: { classic: true, strategy: true },
@@ -430,6 +440,7 @@ function setupBoard(st) {
   if (flags.only) return setupOnlyPiece(st, flags.only);
   if (flags.pawnField) return setupPawnField(st, !!flags.withQueen);
   if (flags.noPawns) return setupNoPawns(st);
+  if (flags.ultraBalance) return setupUltraBalance(st);
 
   if (flags.clashBrawl) {
     board[3] = newPiece('q', 'w');
@@ -565,6 +576,31 @@ function setupRace(st) {
   for (const x of [W - 2, W - 1]) for (const y of [3, 4]) board[y * W + x] = newPiece('p', 'b');
   st.pawnStart = { w: [3, 4], b: [3, 4] };
   st.castling = { w: { k: null, q: null }, b: { k: null, q: null } };
+}
+
+/* ── «Ультрабаланс»: белые получают фланговые пешки, чёрные — без ладей ── */
+function setupUltraBalance(st) {
+  const { W, H, board } = st;
+  const whiteBack = 'rnbqkbnr';
+  const blackBack = 'nnbqkbnn';       // ладей нет, по два коня на флангах
+  for (let x = 0; x < W; x++) {
+    board[x] = newPiece(whiteBack[x] || 'p', 'w');
+    board[(H - 1) * W + x] = newPiece(blackBack[x] || 'n', 'b');
+  }
+  for (let x = 0; x < W; x++) {
+    board[1 * W + x] = newPiece('p', 'w');
+    board[(H - 2) * W + x] = newPiece('p', 'b');
+  }
+  // Две дополнительные белые пешки слева и справа.
+  board[2 * W] = newPiece('p', 'w');
+  board[2 * W + W - 1] = newPiece('p', 'w');
+  // Крайние чёрные пешки выдвинуты к центру — «прижаты к концу».
+  board[(H - 2) * W] = null;
+  board[(H - 2) * W + W - 1] = null;
+  board[(H - 4) * W] = newPiece('p', 'b');
+  board[(H - 4) * W + W - 1] = newPiece('p', 'b');
+  st.pawnStart = { w: [1], b: [H - 2] }; // выдвинутые пешки уже не могут идти на две
+  initCastling(st);
 }
 
 /* ── режимы «только одна фигура»: ферзи, слоны, кони, ладьи ────────────── */
@@ -954,6 +990,11 @@ function genPseudo(st, color) {
       continue;
     }
   }
+  if (st.flags.clashBrawl && st.full <= 6) {
+    // Первые шесть ходов граница непробиваема: через неё нельзя ни пройти, ни атаковать.
+    const mid = Math.ceil(st.H / 2);
+    return out.filter((m) => (color === 'w' ? rankOf(st, m.to) < mid : rankOf(st, m.to) >= mid));
+  }
   if (st.flags.zombie && color === 'b') {
     // Зомби не едят медиков: им разрешено только ходить и заражать рядом.
     return out.filter((m) => m.capture == null && !m.ep && !(m.caps && m.caps.length));
@@ -1130,6 +1171,9 @@ function applyMove(st, m) {
     capturedKing: st.capturedKing,
     converted: st.converted,
     exploded: st.exploded,
+    annihilated: st.annihilated,
+    capsBefore: null,
+    selfRemoved: null,
   };
   st.converted = -1;
   const remove = (sq) => {
@@ -1204,6 +1248,34 @@ function applyMove(st, m) {
     }
   }
 
+  /* Аннигиляция: гибнут оба участника взятия и крест вокруг обоих полей. */
+  let annihilated = false;
+  if (st.flags.annihilate && (capturedColor || (m.caps && m.caps.length))) {
+    annihilated = true;
+    const cells = new Set();
+    for (const center of [m.from, m.to]) {
+      const x = fileOf(st, center);
+      const y = rankOf(st, center);
+      cells.add(center);
+      for (const [dx, dy] of ROOK_DIRS) {
+        const nx = x + dx, ny = y + dy;
+        if (inside(st, nx, ny)) cells.add(sqAt(st, nx, ny));
+      }
+    }
+    for (const s of cells) {
+      const q = board[s];
+      if (!q || q.t === 'k') continue;           // короли переживают аннигиляцию
+      if (s === m.to && q.c === p.c) {
+        // Своя фигура, которая только что вошла на поле удара, исчезает отдельно:
+        // её нельзя класть в undo.removed, иначе undo вернёт две копии.
+        undo.selfRemoved = q;
+        board[s] = null;
+      } else {
+        remove(s);
+      }
+    }
+  }
+
   /* Перебежчик: с шансом 20% съеденная фигура переходит на сторону победителя. */
   if (st.flags.convert20 && undo.removed.length && Math.random() < 0.2) {
     const victim = undo.removed[undo.removed.length - 1].piece;
@@ -1254,6 +1326,7 @@ function applyMove(st, m) {
   if (st.turn === 'b') st.full++;
   st.turn = other(st.turn);
   st.exploded = exploded;
+  st.annihilated = annihilated;
   return undo;
 }
 
@@ -1263,6 +1336,7 @@ function undoMove(st, undo) {
   if (undo.convertedPiece) board[undo.convertedPiece.sq] = null;   // убрать перебежчика
   st.converted = undo.converted;
   st.exploded = undo.exploded;
+  st.annihilated = undo.annihilated;
   board[undo.to] = null;                                   // убрать фигуру с места приземления
   if (undo.swapPiece) board[undo.to] = undo.swapPiece;     // вернуть обменянную фигуру
   if (undo.rook) board[undo.rook.to] = null;               // убрать ладью с нового места
