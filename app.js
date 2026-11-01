@@ -1432,6 +1432,8 @@ const ui = {
   tableRotated: false,
   themesExpanded: false,
   suppressClick: false,
+  hintKey: '',
+  hintAt: 0,
   away: false,
   confirmAction: null,
   sameStreak: 0,
@@ -4144,13 +4146,30 @@ function renderPieces(animate) {
   }
 }
 
+/* Одинаковые кружки не пересобираются чаще 0,2 с: иначе клик по уже
+   выбранной фигуре заново запускает анимацию их появления. */
+const HINT_REDRAW_MS = 200;
+
 function renderHints() {
   const st = viewState();
   const layer = $('#hints');
-  layer.innerHTML = '';
-  if (!ui.st || ui.viewPly !== ui.frames.length - 1) return;
-  if (ui.selected < 0) return;
+  if (!layer) return;
+  if (!ui.st || ui.viewPly !== ui.frames.length - 1 || ui.selected < 0) {
+    if (layer.childNodes.length || ui.hintKey) layer.innerHTML = '';
+    ui.hintKey = '';
+    ui.hintAt = 0;
+    return;
+  }
   const moves = legalMoves(ui.st, ui.st.turn).filter((m) => m.from === ui.selected);
+  const marks = moves.map((m) => {
+    const capture = m.capture != null || m.ep || (m.caps && m.caps.length);
+    return m.to + (capture ? 'x' : '');
+  }).join(',');
+  const key = [ui.selected, ui.st.turn, ui.st.full, ui.viewPly, ui.sq,
+    ui.orientation, ui.rotated ? 1 : 0, ui.tableRotated ? 1 : 0, marks].join('|');
+  const now = performance.now();
+  if (key === ui.hintKey && now - ui.hintAt < HINT_REDRAW_MS) return;
+  layer.innerHTML = '';
   const sq = ui.sq;
   moves.forEach((m, index) => {
     const { dx, dy } = disp(st, m.to);
@@ -4163,6 +4182,8 @@ function renderHints() {
     dot.style.transform = `translate(${dx * sq}px, ${dy * sq}px)`;
     layer.appendChild(dot);
   });
+  ui.hintKey = key;
+  ui.hintAt = now;
 }
 
 function renderBoard(animate) {
@@ -6526,6 +6547,11 @@ function onSquareClick(sq) {
   if (st.flags.strategy) { strategyClick(sq); return; }
 
   const legal = legalMoves(st, st.turn);
+  const p = st.board[sq];
+
+  /* Повторный клик по уже выбранной фигуре ничего не меняет: не перерисовываем
+     доску и кружки, иначе анимация подсказок начинается заново. */
+  if (p && p.c === st.turn && ui.selected === sq) return;
 
   // «Взялся — ходи»: выбор фигуры с ходами отменить нельзя
   if (st.flags.touchMove && ui.selected >= 0) {
@@ -6556,7 +6582,6 @@ function onSquareClick(sq) {
       return;
     }
   }
-  const p = st.board[sq];
   const prevSelected = ui.selected;
   if (p && p.c === st.turn) {
     ui.selected = sq;
