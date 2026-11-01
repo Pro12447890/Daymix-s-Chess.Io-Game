@@ -172,12 +172,12 @@ function startFakeGame(name) {
   const level = levels[Math.floor(Math.random() * levels.length)];
   ui.online = null;
   sound.click();
-  newGame({
+  startGameWithMode({
     mode: 'local',
     modeId,
     timeMs: profile.timeMs,
     splash: true,
-    bot: { level, color: other(profile.side), fake: true, name },
+    bot: { level, fake: true, name },
   });
 }
 
@@ -204,6 +204,7 @@ function startBotGame(level) {
       modeId: 'ultraBalance',
       timeMs: profile.timeMs,
       splash: true,
+      side: 'w',
       orientation: 'w',
       bot: { level: 'gm', color: 'b' },
     });
@@ -213,7 +214,7 @@ function startBotGame(level) {
     mode: 'local',
     timeMs: profile.timeMs,
     splash: true,
-    bot: { level, color: other(profile.side) },
+    bot: { level },
   });
 }
 
@@ -354,6 +355,7 @@ function importGameText(raw) {
   const mode = modeById(data.mode && data.mode.id);
   ui.online = null;
   ui.bot = null;
+  ui.playerSide = profile.side === 'b' ? 'b' : 'w';
   ui.imported = true;
   ui.scored = true;
   ui.timeMs = Number(data.time && data.time.ms) || 0;
@@ -603,8 +605,9 @@ function resumeSavedGame() {
     : null;
   ui.timeMs = data.timeMs || 0;
   ui.clocks = { w: data.clocks ? data.clocks.w : ui.timeMs, b: data.clocks ? data.clocks.b : ui.timeMs };
+  ui.playerSide = savedBot ? other(savedBot.color) : (profile.side === 'b' ? 'b' : 'w');
   if (data.orientation) ui.orientation = data.orientation;
-  else if (savedBot) ui.orientation = savedBot.color === 'b' ? 'w' : 'b';
+  else ui.orientation = ui.playerSide;
   ui.st.status = 'play';
   ui.st.result = null;
   ui.scored = false;
@@ -1400,6 +1403,7 @@ const skinById = (id) => PIECE_SKINS.find((s) => s.id === String(id)) || PIECE_S
 
 const ui = {
   screen: 'home',
+  lastSheenAt: 0,
   mode: null,            // 'local' | 'online'
   role: null,            // 'host' | 'guest'
   st: null,
@@ -1407,6 +1411,7 @@ const ui = {
   moves: [],
   viewPly: 0,
   selected: -1,
+  playerSide: 'w',
   orientation: 'w',
   sq: 64,
   clocks: { w: 0, b: 0 },
@@ -3112,29 +3117,88 @@ function handleImboNet(msg) {
 }
 
 
+function randomSide() {
+  return Math.random() < 0.5 ? 'w' : 'b';
+}
+
+/** Жеребьёвка цвета: показывается до стартовой анимации доски. */
+function showSideRoulette(side, done, opts = {}) {
+  const overlay = $('#sideRoulette');
+  if (!overlay || opts.immediate) { done(side); return; }
+  const chosen = side === 'b' ? 'b' : 'w';
+  const white = $('#srWhite');
+  const black = $('#srBlack');
+  if (white && !white.innerHTML) white.innerHTML = pieceSvg('k');
+  if (black && !black.innerHTML) black.innerHTML = pieceSvg('k');
+  const kicker = overlay.querySelector('.sr-kicker');
+  const result = $('#srResult');
+  const sub = $('#srSub');
+  const card = overlay.querySelector('.sr-card');
+  if (kicker) kicker.textContent = profile.language === 'en' ? 'DRAWING COLOURS' : 'ЖЕРЕБЬЁВКА';
+  if (result) result.textContent = profile.language === 'en' ? 'Drawing colours…' : 'Определяем цвет…';
+  if (sub) sub.textContent = profile.language === 'en' ? 'fate decides for you' : 'судьба решает за вас';
+  overlay.classList.remove('hidden');
+  overlay.removeAttribute('data-side');
+  if (card) { card.classList.remove('sr-show'); void card.offsetWidth; card.classList.add('sr-show'); }
+  sound.click();
+  clearTimeout(showSideRoulette.timer);
+  clearTimeout(showSideRoulette.doneTimer);
+  showSideRoulette.timer = setTimeout(() => {
+    overlay.dataset.side = chosen;
+    if (result) {
+      result.textContent = profile.language === 'en'
+        ? `You are ${chosen === 'w' ? 'White' : 'Black'}`
+        : `Вы за ${chosen === 'w' ? 'белых' : 'чёрных'}`;
+    }
+    if (sub) sub.textContent = profile.language === 'en' ? 'the board is ready' : 'доска уже ждёт';
+    sound.check();
+    showSideRoulette.doneTimer = setTimeout(() => {
+      overlay.classList.add('hidden');
+      done(chosen);
+    }, 900);
+  }, 1100);
+}
+
+function normalizeBot(bot, side) {
+  if (!bot) return null;
+  return { ...bot, color: bot.color || other(side) };
+}
+
 function startGameWithMode(opts = {}) {
-  if (profile.modeId === 'ultraBalance' && opts.mode !== 'online') {
+  const pickedId = opts.modeId || profile.modeId;
+  if (pickedId === 'ultraBalance' && opts.mode !== 'online') {
     newGame({
       ...opts,
       modeId: 'ultraBalance',
+      side: 'w',
       orientation: 'w',
       bot: { level: 'gm', color: 'b' },
     });
     return;
   }
-  if (profile.modeId === 'openIntent' && opts.mode !== 'online') {
+  if (pickedId === 'openIntent' && opts.mode !== 'online') {
     toast('Режим «Открытые намерения» работает только в онлайн-игре с живым соперником!');
     showScreen('online');
     return;
   }
-  if (profile.modeId !== 'random') {
-    newGame({ ...opts, modeId: profile.modeId });
+  const pref = opts.side || profile.side;
+  if (pref === 'random' && !opts.sideResolved) {
+    const chosen = randomSide();
+    showSideRoulette(chosen, (side) => {
+      startGameWithMode({ ...opts, side, sideResolved: true });
+    });
+    return;
+  }
+  const side = pref === 'b' ? 'b' : 'w';
+  const resolved = { ...opts, side, bot: normalizeBot(opts.bot, side) };
+  if (pickedId !== 'random') {
+    newGame({ ...resolved, modeId: pickedId });
     return;
   }
   closeBotModal();
   rollRandomMode((modeId) => {
     renderModeCard();
-    newGame({ ...opts, modeId });
+    newGame({ ...resolved, modeId });
   });
 }
 
@@ -3701,6 +3765,20 @@ function menuIntroFx(name) {
   menuIntroFx.timer = setTimeout(() => { box.innerHTML = ''; }, 1800);
 }
 
+/** Слабый отблеск перехода — не чаще одного раза в 15 секунд. */
+function markScreenSheen() {
+  const active = document.querySelector('.screen.active');
+  if (!active) return;
+  active.classList.remove('screen-sheen');
+  const now = Date.now();
+  if (now - ui.lastSheenAt < 15000) return;
+  ui.lastSheenAt = now;
+  void active.offsetWidth;
+  active.classList.add('screen-sheen');
+  clearTimeout(markScreenSheen.timer);
+  markScreenSheen.timer = setTimeout(() => active.classList.remove('screen-sheen'), 760);
+}
+
 function showScreen(name) {
   const changed = ui.screen !== name;
   if (name === 'game') stopConnectHud();
@@ -3743,7 +3821,10 @@ function showScreen(name) {
   if (name === 'settings') requestAnimationFrame(() => renderThemePreview());
   if (name === 'imbo') openImboHub();
   else if (ui.imbo) stopImboGame();
-  if (changed && name !== 'game') menuIntroFx(name);
+  if (changed && name !== 'game') {
+    menuIntroFx(name);
+    markScreenSheen();
+  }
 }
 
 let toastTimer = 0;
@@ -3766,11 +3847,12 @@ function escapeHtml(s) {
 function myColor() {
   if (ui.mode === 'online') {
     if (ui.online && ui.online.coop) return 'w';
-    return ui.role === 'host' ? 'w' : 'b';
+    return ui.playerSide || (ui.role === 'host' ? 'w' : 'b');
   }
   if (ui.st && ui.st.flags.ultraBalance) return 'w';
+  if (ui.playerSide) return ui.playerSide;
   if (ui.bot && ui.bot.color) return other(ui.bot.color);
-  return profile.side;
+  return profile.side === 'b' ? 'b' : 'w';
 }
 
 /** В онлайн-кооперативе друг ходит белыми только после хода бота. */
@@ -5213,7 +5295,43 @@ function draftBotTurn() {
     return true;
   });
   if (!valid.length) return;
-  brawlDraftCard(valid[Math.floor(Math.random() * valid.length)].id);
+  if (d.step === 'ban') {
+    brawlDraftCard(valid[Math.floor(Math.random() * valid.length)].id);
+    return;
+  }
+  // Бот собирает колоду сам: сначала дешёвая пешка, затем сильные карты.
+  const score = (card) => {
+    const picks = d.picks[color];
+    const pawns = picks.filter((t) => t === 'p').length;
+    const heavy = picks.filter((t) => t === 'n' || t === 'r' || t === 'q').length;
+    let value = Math.random() * 2;
+    if (card.t === 'p' && pawns < 2) value += 3;
+    if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && heavy < 2) value += 2.5;
+    if (card.t === 'q' && heavy < 2) value += 1.5;
+    return value;
+  };
+  const ranked = valid.map((card) => ({ card, score: score(card) }))
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.card);
+  const top = ranked.slice(0, Math.min(2, ranked.length));
+  brawlDraftCard(top[Math.floor(Math.random() * top.length)].id);
+}
+
+/** Бот выбирает карту для высадки по эликсиру и ситуации на доске. */
+function brawlBotPickCard(color, elixir) {
+  const cards = ui.brawl && ui.brawl.decks[color] || [];
+  const ready = cards.map((card, index) => ({ card, index })).filter((x) => x.card.cost <= elixir);
+  if (!ready.length) return -1;
+  const scored = ready.map((x) => {
+    let score = (BRAWL_POINTS[x.card.t] || 1) + x.card.cost * 0.35 + Math.random() * 2.2;
+    if (x.card.t === 'q' && elixir >= 6) score += 7;
+    if (x.card.t === 'r' && elixir >= 4) score += 3.5;
+    if (x.card.t === 'p' && elixir < 4) score += 2.5;
+    return { ...x, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, Math.min(2, scored.length));
+  return top[Math.floor(Math.random() * top.length)].index;
 }
 
 function finishBrawlDraft() {
@@ -5838,11 +5956,9 @@ function brawlBotTryDeploy() {
   if (Math.random() >= 0.45) return false;
   const color = st.turn;
   const elixir = ui.brawl.elixir[color] || 0;
-  const cards = ui.brawl.decks[color] || [];
-  const ready = cards.map((card, index) => ({ card, index })).filter((x) => x.card.cost <= elixir);
-  if (!ready.length) return false;
-  const spell = ready[Math.floor(Math.random() * ready.length)];
-  ui.brawl.selected = spell.index;
+  const cardIndex = brawlBotPickCard(color, elixir);
+  if (cardIndex < 0) return false;
+  ui.brawl.selected = cardIndex;
   const cells = [];
   for (let i = 0; i < st.board.length; i++) {
     if (!st.board[i] && brawlCanDeploy(i, color)) cells.push(i);
@@ -5989,8 +6105,18 @@ function newGame(opts = {}) {
   const mode = pickedMode.flags.randomPick ? randomRealMode() : pickedMode;
   if (mode.flags.ultraBalance && ((opts.mode || 'local') !== 'online' || opts.bot)) {
     opts.bot = { ...(opts.bot || {}), level: 'gm', color: 'b' };
+    opts.side = 'w';
     opts.orientation = 'w';
   }
+  const requestedSide = opts.side
+    || (opts.bot && opts.bot.color ? other(opts.bot.color) : null)
+    || profile.side;
+  let playerSide = requestedSide === 'random' ? randomSide() : requestedSide;
+  if (mode.flags.ultraBalance) playerSide = 'w';
+  if (opts.spectator) playerSide = 'w';
+  // одна точка истины: за кого играет этот клиент
+  opts.side = playerSide;
+  if (opts.bot) opts.bot = { ...opts.bot, color: opts.bot.color || other(playerSide) };
   if (mode.id === 'openIntent' && (opts.mode || 'local') !== 'online') {
     toast('Режим «Открытые намерения» работает только в онлайн-игре с живым соперником!');
     showScreen('online');
@@ -6053,8 +6179,9 @@ function newGame(opts = {}) {
   else stopZombie();
   if (mode.flags.strategy) strategyInit(ui.st);
   else stopStrategy();
-  ui.orientation = opts.bot ? profile.side : (opts.orientation || (profile.side === 'b' && !opts.orientation ? 'b' : 'w'));
-  if ((opts.mode || 'local') === 'local' && !opts.bot && !mode.flags.inverted) ui.orientation = 'w';
+  ui.playerSide = playerSide;
+  ui.orientation = opts.orientation || playerSide;
+  if (mode.flags.inverted && (opts.mode || 'local') === 'local') ui.orientation = 'b';
   if (mode.flags.ultraBalance) ui.orientation = 'w';
   ui.mode = opts.mode || 'local';
   if (ui.mode === 'local' && !opts.bot && profile.flip && window.innerWidth < 1000) {
@@ -6079,9 +6206,7 @@ function newGame(opts = {}) {
   ui.botThinking = false;
   ui.imported = false;
   ui.startedAt = Date.now();
-  const mySide = ui.mode === 'online'
-    ? ((ui.online && ui.online.coop) ? 'w' : (ui.role === 'host' ? 'w' : 'b'))
-    : (mode.flags.ultraBalance ? 'w' : profile.side);
+  const mySide = ui.spectator ? 'w' : (ui.playerSide || (mode.flags.ultraBalance ? 'w' : profile.side));
   const oppName = ui.bot ? ui.bot.name : 'Соперник';
   ui.names = {
     w: { name: mySide === 'w' ? profile.name : oppName, avatar: mySide === 'w' ? profile.avatar : 'k' },
@@ -6171,16 +6296,19 @@ function renderPlayers() {  const st = ui.st;
   const me = myColor();
   const bottomColor = barOrientation() === 'w' ? 'w' : 'b';
   const topColor = other(bottomColor);
-  const mySide = ui.mode === 'online' ? (ui.role === 'host' ? 'w' : 'b') : me;
+  const mySide = ui.playerSide || (ui.mode === 'online' ? (ui.role === 'host' ? 'w' : 'b') : me);
 
   const nameFor = (color) => {
     if (color === mySide) return profile.name;
-    if (ui.mode === 'online' && ui.online && ui.online.names) return ui.online.names[other(mySide)] || 'Соперник';
+    if (ui.mode === 'online' && ui.online && ui.online.names) {
+      const n = ui.online.names[color];
+      return (n && n.name) || (typeof n === 'string' ? n : '') || 'Соперник';
+    }
     return (ui.names && ui.names[color] && ui.names[color].name) || 'Соперник';
   };
   const avatarFor = (color) => {
     if (color === mySide) return profile.avatar;
-    if (ui.mode === 'online' && ui.online && ui.online.avatars) return ui.online.avatars[other(mySide)] || 'k';
+    if (ui.mode === 'online' && ui.online && ui.online.avatars) return ui.online.avatars[color] || 'k';
     return (ui.names && ui.names[color] && ui.names[color].avatar) || 'k';
   };
 
@@ -7493,7 +7621,7 @@ async function startP2PSource(url, code) {
     ui.online.connected = true;
     updateLinkDots();
     if (ui.online.role === 'guest' && !ui.online.started) {
-      netPublish({ t: 'join', name: profile.name, avatar: profile.avatar });
+      netPublish({ t: 'join', name: profile.name, avatar: profile.avatar, side: profile.side });
     } else if (ui.online.role === 'host') {
       announceRoom();
     }
@@ -7651,7 +7779,7 @@ async function joinRoom(code, opts = {}) {
   ui.online.connected = true;
   if (!spectate) startTrysteroRoom(code);
   setLobby(spectate ? 'Подключаемся к наблюдению за комнатой ' + code + '…' : 'Подключаемся к комнате ' + code + '…');
-  netPublish(spectate ? { t: 'watch', name: profile.name } : { t: 'join', name: profile.name, avatar: profile.avatar });
+  netPublish(spectate ? { t: 'watch', name: profile.name } : { t: 'join', name: profile.name, avatar: profile.avatar, side: profile.side });
   clearInterval(ui.online.joinTimer);
   let tries = 0;
   ui.online.joinTimer = setInterval(() => {
@@ -7663,7 +7791,7 @@ async function joinRoom(code, opts = {}) {
       return;
     }
     if (tries % 5 === 0) setLobby('Ждём ответа комнаты ' + code + '… попытка ' + (tries + 1));
-    netPublish(spectate ? { t: 'watch', name: profile.name } : { t: 'join', name: profile.name, avatar: profile.avatar });
+    netPublish(spectate ? { t: 'watch', name: profile.name } : { t: 'join', name: profile.name, avatar: profile.avatar, side: profile.side });
   }, 4000);
 }
 
@@ -7718,7 +7846,7 @@ function handleNet(text) {
 
   if (msg.t === 'room' && ui.online.role === 'guest') {
     if (!ui.online.started) setLobby(`Комната ${ui.online.code}: ${msg.name || 'соперник'} ждёт. Подключаемся…`);
-    netPublish({ t: 'join', name: profile.name, avatar: profile.avatar });
+    netPublish({ t: 'join', name: profile.name, avatar: profile.avatar, side: profile.side });
     return;
   }
 
@@ -7744,7 +7872,7 @@ function handleNet(text) {
       seed: ui.st.seed,
       moves: ui.moves.map((m) => ({ from: m.from, to: m.to, promo: m.promo || null })),
       cw: ui.clocks.w, cb: ui.clocks.b,
-      names: { w: ui.online.names?.w || profile.name, b: ui.online.guestName || 'Соперник' },
+      names: ui.names || { w: { name: profile.name, avatar: profile.avatar }, b: { name: ui.online.guestName || 'Соперник', avatar: 'k' } },
       name: profile.name,
       guestName: ui.online.guestName || 'Соперник',
     });
@@ -7752,50 +7880,68 @@ function handleNet(text) {
   }
 
   if (msg.t === 'join' && ui.online.role === 'host') {
-    if (ui.online.guestName === msg.name && ui.st) return;
+    if (ui.online.guestName === msg.name && ui.st) {
+      // Повторный join — это ещё и повторная доставка старта, если первый пакет потерялся.
+      publishOnlineStart();
+      return;
+    }
+    if (ui.online.guestName === msg.name && ui.online.starting) return;
     ui.online.guestName = msg.name;
-    ui.online.names = { w: profile.name, b: msg.name || 'Соперник' };
-    ui.online.avatars = { w: profile.avatar, b: msg.avatar || 'k' };
+    ui.online.starting = true;
     ui.online.sid = ui.online.sid || Math.random().toString(36).slice(2, 10);
     ui.online.waiting = false;
     clearInterval(ui.online.announce);
     const ultra = (ui.online.modeId || profile.modeId) === 'ultraBalance';
     ui.online.coop = ultra;
+    const randomHost = !ultra && !ui.st && (profile.side === 'random' || msg.side === 'random');
+    const hostColor = ultra
+      ? 'w'
+      : (ui.st ? (ui.playerSide || 'w') : (randomHost ? randomSide() : (profile.side === 'b' ? 'b' : 'w')));
+    ui.online.hostColor = hostColor;
+    const guestColor = other(hostColor);
+    ui.online.names = ultra
+      ? { w: { name: profile.name, avatar: profile.avatar }, b: { name: 'Бот · ' + botLabel('gm'), avatar: 'k' } }
+      : (hostColor === 'w'
+        ? { w: { name: profile.name, avatar: profile.avatar }, b: { name: msg.name || 'Соперник', avatar: msg.avatar || 'k' } }
+        : { w: { name: msg.name || 'Соперник', avatar: msg.avatar || 'k' }, b: { name: profile.name, avatar: profile.avatar } });
+    ui.online.avatars = {
+      w: (ui.online.names.w && ui.online.names.w.avatar) || 'k',
+      b: (ui.online.names.b && ui.online.names.b.avatar) || 'k',
+    };
     setLobby('');
     $('#roomRow').classList.add('hidden');
-    if (!ui.st) {
-      newGame({
-        mode: 'online', role: 'host', modeId: ultra ? 'ultraBalance' : profile.modeId,
-        timeMs: profile.timeMs, orientation: 'w', splash: true,
-        bot: ultra ? { level: 'gm', color: 'b' } : null,
+    const beginHost = () => {
+      ui.online.starting = false;
+      if (!ui.st) {
+        newGame({
+          mode: 'online', role: 'host', modeId: ultra ? 'ultraBalance' : profile.modeId,
+          timeMs: profile.timeMs, side: hostColor, orientation: hostColor, splash: true,
+          bot: ultra ? { level: 'gm', color: 'b' } : null,
+        });
+      }
+      ui.online.started = true;
+      // Имена после newGame: хозяин и гость могут играть любым цветом.
+      ui.names = ultra
+        ? { w: { name: profile.name, avatar: profile.avatar }, b: { name: 'Бот · ' + botLabel('gm'), avatar: 'k' } }
+        : (hostColor === 'w'
+          ? { w: { name: profile.name, avatar: profile.avatar }, b: { name: msg.name || 'Соперник', avatar: msg.avatar || 'k' } }
+          : { w: { name: msg.name || 'Соперник', avatar: msg.avatar || 'k' }, b: { name: profile.name, avatar: profile.avatar } });
+      ui.chat.push({
+        name: 'Система',
+        text: ultra
+          ? `${msg.name || 'Друг'} присоединился как союзник — он ходит белыми после бота`
+          : `${msg.name || 'Соперник'} присоединился к партии за ${guestColor === 'w' ? 'белых' : 'чёрных'}`,
       });
-    }
-    ui.chat.push({
-      name: 'Система',
-      text: ultra
-        ? `${msg.name || 'Друг'} присоединился как союзник — он ходит белыми после бота`
-        : `${ui.online.names.b} присоединился к партии`,
-    });
-    renderChat();
-    renderPlayers();
-    toast(ultra
-      ? 'Друг присоединился — он сможет ходить после бота'
-      : imboT('Соперник присоединился', 'Opponent joined'));
-    netPublish({
-      t: 'start',
-      modeId: ui.st.modeId,
-      square: !!ui.st.square,
-      timeMs: ui.timeMs,
-      timeLabel: profile.timeLabel,
-      raceMs: ui.race ? ui.race.duration : null,
-      seed: ui.st.seed,
-      moves: ui.moves.map((m) => ({ from: m.from, to: m.to })),
-      cw: ui.clocks.w, cb: ui.clocks.b,
-      name: profile.name, avatar: profile.avatar,
-      coop: !!ui.online.coop,
-      bot: ui.online.coop ? { level: 'gm', color: 'b' } : null,
-      names: ui.names,
-    });
+      renderChat();
+      renderPlayers();
+      renderMeta();
+      toast(ultra
+        ? 'Друг присоединился — он сможет ходить после бота'
+        : `Вы за ${hostColor === 'w' ? 'белых' : 'чёрных'} · ${msg.name || 'Соперник'} за ${guestColor === 'w' ? 'белых' : 'чёрных'}`);
+      publishOnlineStart({ randomSide: randomHost });
+    };
+    if (randomHost) showSideRoulette(hostColor, beginHost);
+    else beginHost();
     return;
   }
 
@@ -7831,34 +7977,59 @@ function handleNet(text) {
   }
 
   if (msg.t === 'start' && ui.online.role === 'guest') {
+    if (ui.st && ui.online.started) return;
     clearInterval(ui.online.joinTimer);
     ui.online.started = true;
     ui.online.sid = msg.sid || ui.online.sid;
     ui.online.coop = !!msg.coop;
-    ui.online.names = msg.names || { w: msg.name || 'Соперник', b: profile.name };
-    ui.online.avatars = { w: msg.avatar || 'k', b: profile.avatar };
-    ui.replaying = true;
-    newGame({
-      mode: 'online', role: 'guest', modeId: msg.modeId, square: !!msg.square,
-      timeMs: msg.timeMs, raceMs: msg.raceMs, seed: msg.seed,
-      orientation: msg.coop ? 'w' : 'b', splash: false,
-      bot: msg.coop ? (msg.bot || { level: 'gm', color: 'b' }) : null,
-    });
-    if (msg.names) ui.names = msg.names;
-    for (const mv of (msg.moves || [])) commitMove(mv, { remote: true, silent: true });
-    ui.replaying = false;
-    if (msg.cw != null) ui.clocks = { w: msg.cw, b: msg.cb };
-    ui.turnStart = performance.now();
-    if (ui.moves.length) ui.running = true;
-    renderAll(false);
-    renderMoves();
-    renderPlayers();
-    renderMeta();
-    setLobby('');
-    toast(ui.online.coop
-      ? 'Вы подключились: ходите белыми после хода бота'
-      : imboT('Вы подключились к партии', 'You joined the game'));
-    showPhase('opening');
+    const hostColor = msg.hostColor === 'b' ? 'b' : 'w';
+    const mySide = msg.coop ? 'w' : other(hostColor);
+    ui.online.hostColor = hostColor;
+    ui.online.names = msg.names || (mySide === 'w'
+      ? { w: { name: profile.name, avatar: profile.avatar }, b: { name: msg.name || 'Соперник', avatar: msg.avatar || 'k' } }
+      : { w: { name: msg.name || 'Соперник', avatar: msg.avatar || 'k' }, b: { name: profile.name, avatar: profile.avatar } });
+    ui.online.avatars = {
+      w: (ui.online.names.w && ui.online.names.w.avatar) || 'k',
+      b: (ui.online.names.b && ui.online.names.b.avatar) || 'k',
+    };
+    const beginGuest = () => {
+      ui.replaying = true;
+      newGame({
+        mode: 'online', role: 'guest', modeId: msg.modeId, square: !!msg.square,
+        timeMs: msg.timeMs, raceMs: msg.raceMs, seed: msg.seed,
+        side: mySide, orientation: mySide, splash: false,
+        bot: msg.coop ? (msg.bot || { level: 'gm', color: 'b' }) : null,
+      });
+      if (msg.names) ui.names = msg.names;
+      for (const mv of (msg.moves || [])) commitMove(mv, { remote: true, silent: true });
+      const pending = ui.online.pendingMoves || [];
+      ui.online.pendingMoves = [];
+      for (const pm of pending) {
+        if (ui.st) commitMove({ from: pm.from, to: pm.to, promo: pm.promo || null }, { remote: true });
+      }
+      ui.replaying = false;
+      if (msg.cw != null) ui.clocks = { w: msg.cw, b: msg.cb };
+      ui.turnStart = performance.now();
+      if (ui.moves.length) ui.running = true;
+      renderAll(false);
+      renderMoves();
+      renderPlayers();
+      renderMeta();
+      setLobby('');
+      toast(ui.online.coop
+        ? 'Вы подключились: ходите белыми после хода бота'
+        : (mySide === 'w' ? 'Вы за белых' : 'Вы за чёрных'));
+      showPhase('opening');
+    };
+    if (msg.randomSide && !msg.coop) showSideRoulette(mySide, beginGuest);
+    else beginGuest();
+    return;
+  }
+
+  if (msg.t === 'move' && !ui.st && ui.online) {
+    // Гость может ещё смотреть жеребьёвку, когда хозяин уже пошёл.
+    if (!ui.online.pendingMoves) ui.online.pendingMoves = [];
+    ui.online.pendingMoves.push(msg);
     return;
   }
 
@@ -7874,8 +8045,9 @@ function handleNet(text) {
   }
 
   if (msg.t === 'chat') {
-    const side = ui.online.coop ? 'w' : (msg.sender === 'host' ? 'w' : 'b');
-    ui.chat.push({ name: ui.online.names?.[side] || 'Соперник', text: String(msg.text || '').slice(0, 200) });
+    const hostSide = ui.online.hostColor || (ui.role === 'host' ? (ui.playerSide || 'w') : 'w');
+    const side = ui.online.coop ? 'w' : (msg.sender === 'host' ? hostSide : other(hostSide));
+    ui.chat.push({ name: ui.online.names?.[side]?.name || ui.online.names?.[side] || 'Соперник', text: String(msg.text || '').slice(0, 200) });
     renderChat();
     return;
   }
@@ -7901,21 +8073,30 @@ function handleNet(text) {
   }
 
   if (msg.t === 'hello' && ui.online.role === 'host' && ui.st) {
-    netPublish({
-      t: 'start',
-      modeId: ui.st.modeId,
-      square: !!ui.st.square,
-      timeMs: ui.timeMs,
-      timeLabel: profile.timeLabel,
-      seed: ui.st.seed,
-      moves: ui.moves.map((m) => ({ from: m.from, to: m.to })),
-      cw: ui.clocks.w, cb: ui.clocks.b,
-      name: profile.name, avatar: profile.avatar,
-      coop: !!ui.online.coop,
-      bot: ui.online.coop ? { level: 'gm', color: 'b' } : null,
-      names: ui.names,
-    });
+    publishOnlineStart();
   }
+}
+
+/** Единый пакет старта: используется и для первого join, и для повторной доставки. */
+function publishOnlineStart(extra = {}) {
+  if (!ui.st || !ui.online) return;
+  netPublish({
+    t: 'start',
+    modeId: ui.st.modeId,
+    square: !!ui.st.square,
+    timeMs: ui.timeMs,
+    timeLabel: profile.timeLabel,
+    raceMs: ui.race ? ui.race.duration : null,
+    seed: ui.st.seed,
+    moves: ui.moves.map((m) => ({ from: m.from, to: m.to, promo: m.promo || null })),
+    cw: ui.clocks.w, cb: ui.clocks.b,
+    name: profile.name, avatar: profile.avatar,
+    hostColor: ui.online.hostColor || ui.playerSide || 'w',
+    randomSide: !!extra.randomSide,
+    coop: !!ui.online.coop,
+    bot: ui.online.coop ? { level: 'gm', color: 'b' } : null,
+    names: ui.names,
+  });
 }
 
 let offerEl = null;
@@ -8478,10 +8659,12 @@ function bindEvents() {
   document.querySelectorAll('.side-pick').forEach((b) => {
     b.addEventListener('click', () => {
       const pick = b.dataset.side;
-      profile.side = pick === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : pick;
+      // «Случайно» — это preference, а не мгновенный бросок:
+      // цвет определяется жеребьёвкой непосредственно перед партией.
+      profile.side = pick === 'random' ? 'random' : pick;
       saveProfile();
       renderQuickSide();
-      if (pick === 'random') toast(profile.side === 'w' ? 'Вы за белых' : 'Вы за чёрных');
+      if (pick === 'random') toast(profile.language === 'en' ? 'Colour will be drawn before the game' : 'Цвет определится перед партией — жеребьёвка');
     });
   });
   const randomTheme = () => {
@@ -8744,7 +8927,7 @@ function boot() {
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame, finishGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
-    brawlBotTryDeploy, brawlDeploy, brawlCanDeploy, onlineCoachMayMove,
+    brawlBotTryDeploy, brawlDeploy, brawlCanDeploy, brawlBotPickCard, onlineCoachMayMove,
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
     chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink, strategySelectAttacker, strategyAttack, strategyEndTurn, strategyAfterMove, strategySpecial, strategyRender,
     captureFx, playResultFx, renderResultKings, mateKingWaves,
