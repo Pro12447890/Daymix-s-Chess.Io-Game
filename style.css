@@ -594,15 +594,33 @@ input::placeholder { color: var(--text-dim); }
 .list-title { margin: 4px 0 8px; font-size: 14px; }
 .history { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 5px; }
 .history-row {
+  position: relative;
   display: grid;
   grid-template-columns: 92px minmax(90px, 1fr) minmax(90px, 1.2fr) 64px 110px 54px;
   gap: 8px;
   align-items: center;
-  padding: 8px 10px;
+  padding: 8px 42px 8px 10px;
   border-radius: var(--radius-sm);
   background: var(--panel-card);
   font-size: 12.5px;
 }
+.hr-eye {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #4d4a45;
+  background: #26231f;
+  color: #d9d3c8;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hr-eye:hover { border-color: var(--accent-green); color: #fff; background: #33402a; }
+.hr-eye:disabled { opacity: .3; cursor: default; }
 .history-row.win { border-left: 3px solid var(--accent-green); }
 .history-row.loss { border-left: 3px solid var(--danger); }
 .history-row.draw { border-left: 3px solid var(--text-dim); }
@@ -701,7 +719,7 @@ input::placeholder { color: var(--text-dim); }
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
 }
-.board { position: relative; width: 100%; height: 100%; }
+.board { position: relative; width: 100%; height: 100%; border-radius: 4px; overflow: hidden; }
 
 .squares, .pieces, .hints, .fog-layer { position: absolute; inset: 0; }
 .fog-layer { pointer-events: none; }
@@ -935,30 +953,25 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 calc(var(--sq) * .035)
 }
 .panel-toggle:active { transform: scale(.95); }
 
-/* пауза */
-.pause-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  display: grid;
-  place-items: center;
-  border-radius: 4px;
-  background: #12110fc4;
-  backdrop-filter: blur(3px);
+/* пауза: без плашки — просто приглушённые часы */
+.pause-overlay { display: none !important; }
+.game-shell.paused .clock {
+  color: #8c8881 !important;
+  opacity: .55;
+  filter: saturate(.15);
 }
-.pause-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 18px 22px;
-  border-radius: var(--radius);
-  border: 1px solid var(--line-light);
-  background: var(--panel-card);
-  box-shadow: 0 20px 50px #000000aa;
+.game-shell.paused .clock::after {
+  content: ' · пауза';
+  font-size: 10px;
+  letter-spacing: .3px;
+  color: #77736d;
 }
-.pause-card b { font-size: 26px; letter-spacing: 3px; text-transform: uppercase; color: #fff; }
-.pause-card span { font-size: 12px; color: var(--text-muted); }
+.game-shell.paused #railPause,
+.game-shell.paused #mobPause {
+  border-color: #8c8881;
+  color: #c9c4bb;
+  background: #2f2c28;
+}
 
 /* ───────────────────────────── боковая панель ─────────────────────── */
 
@@ -1384,7 +1397,8 @@ html[data-skin-shadow="1"] .piece { filter: drop-shadow(0 calc(var(--sq) * .035)
 .modal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .confirm-card { width: min(420px, 100%); }
 
-#importText {
+#importText,
+#exportText {
   min-height: 170px;
   resize: vertical;
   background: var(--bg-darker);
@@ -3804,20 +3818,44 @@ strategy-bar, .strategy-bar {
 .strategy-bar .strat-action { margin-bottom: 2px; }
 
 
-/* стрелки просмотра истории */
+/* стрелки просмотра истории: всегда на доске, а не спрятаны в панели */
 .history-nav {
-  position: absolute; left: 50%; bottom: -28px; transform: translateX(-50%);
-  z-index: 25; display: flex; align-items: center; gap: 6px;
-  padding: 2px 6px; border-radius: 999px; background: #0c1526dd;
-  border: 1px solid #46618f; opacity: .82;
+  position: relative; left: auto; bottom: auto; transform: none;
+  z-index: 40; display: flex; align-items: center; gap: 5px;
+  width: max-content; max-width: 100%;
+  padding: 4px 6px; border-radius: 999px; background: #0c1526ee;
+  border: 1px solid #46618f; opacity: .96;
+  box-shadow: 0 8px 22px #00000066;
 }
 .history-nav button {
-  width: 26px; height: 24px; border-radius: 50%; border: 1px solid #46618f;
-  background: #16233a; color: #dce8ff; font-size: 17px; line-height: 1;
+  min-width: 72px; height: 34px; padding: 0 10px; border-radius: 18px;
+  border: 1px solid #46618f; background: #16233a; color: #dce8ff;
+  font-size: 17px; line-height: 1; display: inline-flex; align-items: center;
+  justify-content: center; gap: 4px;
+}
+.history-nav button small {
+  font-size: 9px; letter-spacing: .2px; text-transform: uppercase;
+  font-weight: 700; color: #b9cbe6;
 }
 .history-nav button:disabled { opacity: .35; }
-.history-nav span { min-width: 34px; text-align: center; font-size: 9px; color: #9fb8d8; }
+.history-nav span { min-width: 38px; text-align: center; font-size: 10px; color: #9fb8d8; }
 .history-nav.hidden { display: none; }
+.history-nav .review-exit {
+  min-width: 28px; width: 28px; height: 28px; padding: 0; border-radius: 50%;
+  font-size: 12px; color: #f0d7d7; border-color: #805050; background: #351f1f;
+}
+.game-shell.review-mode .history-nav {
+  gap: 10px; padding: 7px 9px;
+}
+.game-shell.review-mode .history-nav button:not(.review-exit) {
+  min-width: 132px; height: 54px; font-size: 25px; border-radius: 27px;
+}
+.game-shell.review-mode .history-nav button small { font-size: 10px; }
+.game-shell.review-mode .history-nav span { min-width: 58px; font-size: 12px; }
+body.reviewing .game-controls-bar,
+body.reviewing .mobile-actions { display: none !important; }
+body.reviewing .history-nav { border-color: #8a6b2e; }
+body.training .history-nav { border-color: #2f6feb; }
 
 
 /* красная клетка короля перед объявлением мата/пата */
@@ -4434,4 +4472,163 @@ html[data-skin-shadow="1"] .checker { filter: drop-shadow(0 3px 3px #0008); }
 @media (max-width: 999px) {
   .theme-preview-slot { order: 3; min-height: 0; margin-top: 8px; }
   .theme-preview { width: 100% !important; max-width: 300px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Боты-характеры, просмотр партии, обучение и экспорт
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* слой нимбов и эмоций над королём бота */
+.persona-fx { position: absolute; inset: 0; pointer-events: none; z-index: 30; }
+.persona-halo {
+  position: absolute; left: 0; top: 0; border-radius: 50%;
+  border: 2px solid #63b3ff;
+  box-shadow: 0 0 14px #63b3ffaa, inset 0 0 10px #63b3ff55;
+  animation: personaHalo 1.8s ease-in-out infinite alternate;
+}
+.persona-halo.yellow { border-color: #ffd45e; box-shadow: 0 0 16px #ffd45ecc, inset 0 0 10px #ffd45e66; }
+.persona-halo.lime { border-color: #a8ff4f; box-shadow: 0 0 16px #a8ff4fcc, inset 0 0 10px #a8ff4f66; }
+.persona-halo.rage { border-color: #ff5b4a; box-shadow: 0 0 18px #ff5b4acc, inset 0 0 12px #ff5b4a66; }
+.persona-halo.cinema { border-color: #a46cff; box-shadow: 0 0 18px #a46cffcc, inset 0 0 12px #a46cff66; }
+.bot-rant { color: #ff9f92; font-size: 9px; font-weight: 800; letter-spacing: .2px; white-space: nowrap; }
+@keyframes personaHalo { from { opacity: .38; filter: brightness(.9); } to { opacity: 1; filter: brightness(1.15); } }
+.persona-emote {
+  position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none;
+  padding: 2px 5px; border-radius: 10px; background: #10131add;
+  border: 1px solid #46618f; color: #fff; font-size: 14px; line-height: 1.1;
+  box-shadow: 0 6px 18px #00000088;
+  animation: personaEmote .5s cubic-bezier(.2,.9,.3,1.4) both;
+}
+@keyframes personaEmote { from { opacity: 0; transform: translateY(8px) scale(.7); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.persona-rant {
+  position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none;
+  max-width: 190px; padding: 2px 6px; border-radius: 8px;
+  background: #2a1616ee; border: 1px solid #7d3b3b; color: #ffb3a8;
+  font-size: 9px; line-height: 1.15; font-weight: 800;
+  box-shadow: 0 5px 14px #00000088;
+}
+.piece.bot-king-cinema .pc-svg .body { fill: #4a1d78 !important; stroke: #1a082b !important; }
+.piece.bot-king-cinema .pc-svg .detail { fill: #c8a6ff !important; stroke: #c8a6ff !important; }
+.piece.bot-king-cinema { filter: drop-shadow(0 0 10px #8d45ddaa); }
+.piece.bot-king-cry .pc-svg .body { fill: #5b9dff !important; stroke: #123a6b !important; }
+.piece.bot-king-cry .pc-svg .detail { fill: #a8c9ff !important; stroke: #a8c9ff !important; }
+.piece.bot-king-cry { filter: drop-shadow(0 0 9px #5b9dffcc); }
+.piece.bot-king-cry .pc-svg { animation: botCry .55s ease-in-out 3; transform-origin: 50% 78%; }
+@keyframes botCry {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  30% { transform: translateY(2px) rotate(-3deg); }
+  65% { transform: translateY(1px) rotate(3deg); }
+}
+
+/* вкладка «Боты» */
+.persona-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.persona-card {
+  position: relative; text-align: left; border: 1px solid #46423c; border-radius: 14px;
+  padding: 14px 14px 13px; background: linear-gradient(160deg, #332f2a, #26231f);
+  color: var(--text); display: flex; flex-direction: column; gap: 5px; overflow: hidden;
+  transition: border-color .2s, transform .2s;
+}
+.persona-card:hover { border-color: var(--accent-green); transform: translateY(-2px); }
+.persona-card::after {
+  content: ''; position: absolute; width: 120px; height: 120px; right: -40px; top: -45px;
+  border-radius: 50%; background: var(--persona-glow, #63b3ff22); filter: blur(8px);
+}
+.persona-card .pc-icon { font-size: 28px; line-height: 1; }
+.persona-card b { font-size: 15px; color: #fff; }
+.persona-card span { font-size: 11.5px; color: var(--text-muted); line-height: 1.35; }
+.persona-card em {
+  align-self: flex-start; margin-top: 5px; padding: 4px 9px; border-radius: 999px;
+  font-style: normal; font-size: 10.5px; font-weight: 700; color: #dff1c7;
+  background: #3d4f2c; border: 1px solid #5f7a43;
+}
+.persona-card.cinema { --persona-glow: #8d45dd55; background: linear-gradient(160deg, #2c1d3c, #1d1526); }
+.persona-card.cinema em { color: #e4ccff; background: #4a2c68; border-color: #7649a2; }
+.persona-card.friendly { --persona-glow: #63b3ff44; }
+.persona-card.tilter { --persona-glow: #ff5b4a33; }
+.persona-card.catchup { --persona-glow: #7dffb044; }
+.persona-card.overtake { --persona-glow: #ffd45e44; }
+
+/* режим просмотра */
+.game-shell.review-mode .side-panel { opacity: .55; }
+body.reviewing .game-shell .side-panel { pointer-events: none; }
+body.reviewing .stage .player-capsule .clock { opacity: .45; filter: saturate(.2); }
+body.reviewing .review-exit { display: inline-flex !important; }
+
+/* обучение */
+.training-panel {
+  position: fixed; right: 22px; top: 86px; width: min(360px, calc(100vw - 32px));
+  z-index: 70; padding: 14px; border-radius: 18px;
+  background: #201e1af2; border: 1px solid #3d5f9a;
+  box-shadow: 0 24px 70px #000000cc; backdrop-filter: blur(8px);
+  color: var(--text);
+}
+.tr-head { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #8fc0ff; }
+.tr-head .icon-btn { width: 24px; height: 24px; font-size: 11px; }
+.tr-power { display: flex; flex-direction: column; gap: 7px; margin: 10px 0 12px; }
+.tr-power-row span { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-muted); margin-bottom: 3px; }
+.tr-power-row b { color: #fff; }
+.tr-power-row i { display: block; height: 8px; border-radius: 99px; background: #131210; overflow: hidden; }
+.tr-power-row em { display: block; height: 100%; width: 50%; border-radius: inherit; transition: width .35s ease; }
+.tr-power-row.w em { background: linear-gradient(90deg, #e9e3d7, #b9b2a4); }
+.tr-power-row.b em { background: linear-gradient(90deg, #3d3934, #8d857a); }
+.tr-move-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 5px; }
+#trMoveSan { font-size: 18px; color: #fff; }
+.tr-grade { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 99px; background: #333; color: #ddd; }
+.tr-grade.best { background: #215c37; color: #a9ffca; }
+.tr-grade.good { background: #2e5434; color: #c9f4c0; }
+.tr-grade.inaccuracy { background: #5b4d1f; color: #ffe38a; }
+.tr-grade.mistake { background: #61371f; color: #ffbb8a; }
+.tr-grade.blunder { background: #612525; color: #ff9b9b; }
+#trText { margin: 0 0 10px; font-size: 12px; line-height: 1.45; color: #cfc8bc; min-height: 52px; }
+.tr-moves { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 5px; margin-bottom: 9px; }
+.tr-mv { flex: none; border: 0; border-radius: 6px; padding: 4px 6px; font-size: 10.5px; font-weight: 700; background: #33302b; color: #ddd; cursor: pointer; }
+.tr-mv.active { outline: 2px solid #fff; }
+.tr-mv.best { background: #215c37; }
+.tr-mv.good { background: #2e5434; }
+.tr-mv.inaccuracy { background: #5b4d1f; }
+.tr-mv.mistake { background: #61371f; }
+.tr-mv.blunder { background: #612525; }
+.tr-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tr-controls .btn, .tr-controls .btn-game-green { min-width: 40px; }
+#trDone { margin-left: auto; }
+.tr-count { margin-top: 7px; font-size: 9.5px; color: var(--text-dim); text-align: right; }
+.game-shell.training-on .side-panel { visibility: hidden; }
+.game-shell.training-on .mobile-actions { display: none; }
+.mv.tr-best { color: #8fe0a8; }
+.mv.tr-good { color: #b9e0a0; }
+.mv.tr-inaccuracy { color: #e0c76b; }
+.mv.tr-mistake { color: #e29a62; }
+.mv.tr-blunder { color: #ff8888; }
+
+/* кнопка обучения на финале */
+.result-training { position: relative; display: flex; justify-content: center; align-items: stretch; gap: 8px; margin: 4px 0 12px; }
+.btn-training {
+  flex: 1 1 auto; min-height: 46px; border: 0; border-radius: 10px;
+  background: linear-gradient(180deg, #2f8fff, #1f6feb); color: #fff;
+  font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 0 #144eae;
+}
+.btn-training:active { transform: translateY(2px); box-shadow: 0 2px 0 #144eae; }
+.btn-training em { font-style: normal; font-size: 10px; opacity: .8; margin-left: 4px; }
+.btn-training:disabled { filter: grayscale(1); opacity: .5; cursor: default; }
+.btn-training-skip {
+  flex: 0 0 auto; min-width: 70px; border: 1px solid #9a958b; border-radius: 10px;
+  background: transparent; color: #c9c3b8; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.btn-training-skip:hover { border-color: #d6d0c5; color: #fff; }
+
+/* экспорт */
+.export-text { min-height: 320px; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; line-height: 1.45; }
+.modal-card .export-text { resize: vertical; }
+@media (max-width: 999px) {
+  .persona-grid { grid-template-columns: 1fr; }
+  .training-panel {
+    left: 10px; right: 10px; top: auto; bottom: 10px; width: auto;
+    max-height: 54vh; overflow: auto; padding: 12px;
+  }
+  #trText { min-height: 0; }
+  .history-nav { padding: 3px 5px; }
+  .history-nav button { min-width: 62px; padding: 0 7px; }
+  .history-nav button small { font-size: 8px; }
+  .game-shell.review-mode .history-nav button:not(.review-exit) { min-width: 92px; height: 46px; }
+  body.reviewing .mobile-actions { display: none !important; }
 }

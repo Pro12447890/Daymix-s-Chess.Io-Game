@@ -34,6 +34,8 @@ const DEFAULT_PROFILE = {
   timeLabel: '5 минут',
   publicRoom: false,
   points: 0,
+  trainingDate: '',
+  trainingUsed: 0,
   stats: { games: 0, wins: 0, losses: 0, draws: 0, mates: 0, timeWins: 0, streak: 0, best: 0 },
   history: [],
 };
@@ -146,6 +148,33 @@ const BOT_POINTS = {
   engine: { win: 12, loss: -1, draw: 0 },
 };
 
+const BOT_PERSONAS = {
+  friendly: {
+    title: 'Дружелюбный', icon: '😊', level: 'hard', glow: 'friendly',
+    desc: 'Между средним и сильным. Замечает ваш глупый ход и специально снижает планку.',
+  },
+  tilter: {
+    title: 'Дотер', icon: '😤', level: 'hard', glow: 'tilter',
+    desc: 'После неудач синеет и плачет, копит злость и играет всё агрессивнее. Если вы ошибаетесь — наоборот, успокаивается.',
+  },
+  catchup: {
+    title: 'Подстраивающийся: догоняющий', icon: '🏃', level: 'medium', glow: 'catchup',
+    desc: 'Чуть слабее вас. После каждого вашего хода подтягивается к вашему уровню.',
+  },
+  overtake: {
+    title: 'Подстраивающийся: обгоняющий', icon: '⚡', level: 'hard', glow: 'overtake',
+    desc: 'Чуть сильнее вас. После вашего хода старается держаться на шаг впереди.',
+  },
+  cinema: {
+    title: 'Абсолют синема', icon: '🎬', level: 'engine', glow: 'cinema',
+    desc: 'Тёмно-фиолетовый король. Играет максимально глубоко и думает ровно секунду — мощно, но без вечной паузы.',
+  },
+};
+
+function personaById(id) {
+  return BOT_PERSONAS[id] || null;
+}
+
 const FAKE_NAMES = ['Alex_777', 'MashaChess', 'IvanPetrov', 'Nika_99', 'Danya', 'SashaGM',
   'Kostya', 'Lena_2009', 'MaxPower', 'Vlad_2010', 'Sonya', 'Timur', 'Egor', 'Poly'];
 
@@ -218,23 +247,144 @@ function startBotGame(level) {
   });
 }
 
-function chooseBotMove(st, level) {
+/** Пять характеров ботов из вкладки «Боты». */
+function startPersonaGame(id) {
+  const persona = personaById(id);
+  if (!persona) return;
+  ui.online = null;
+  closeBotModal();
+  sound.click();
+  startGameWithMode({
+    mode: 'local',
+    modeId: profile.modeId,
+    timeMs: profile.timeMs,
+    splash: true,
+    bot: {
+      level: persona.level,
+      persona: id,
+      name: persona.title,
+    },
+  });
+}
+
+function levelFromSkill(skill) {
+  if (skill < 1.6) return 'easy';
+  if (skill < 2.6) return 'medium';
+  if (skill < 3.7) return 'hard';
+  if (skill < 4.7) return 'gm';
+  return 'engine';
+}
+
+/** Текущая сила бота с учётом характера и его настроения. */
+function personaLevel() {
+  const p = ui.persona;
+  if (!p) return ui.bot ? ui.bot.level : 'medium';
+  if (p.id === 'friendly') return p.throw > 0 ? 'medium' : 'hard';
+  if (p.id === 'tilter') {
+    if (p.anger >= 72) return 'gm';
+    if (p.anger >= 34) return 'hard';
+    return 'medium';
+  }
+  if (p.id === 'catchup') return levelFromSkill(p.skill - 0.45);
+  if (p.id === 'overtake') return levelFromSkill(p.skill + 0.55);
+  if (p.id === 'cinema') return 'engine';
+  return ui.bot ? ui.bot.level : 'medium';
+}
+
+function personaDelay(level) {
+  const p = ui.persona;
+  if (!p) return BOT_DELAY[level] || 600;
+  if (p.id === 'cinema') return 1000;
+  if (p.id === 'friendly' && p.throw > 0) return 760;
+  if (p.id === 'tilter' && p.anger >= 72) return 620;
+  return BOT_DELAY[level] || 650;
+}
+
+/** Реакция характера на ход: до/после — оценка в пользу белых. */
+function personaAfterMove(mover, before, after) {
+  const p = ui.persona;
+  if (!p || !ui.bot) return;
+  const botSide = ui.bot.color;
+  const botMoved = mover === botSide;
+  // Положительная дельта — ход удачен для того, кто его сделал.
+  const delta = mover === 'w' ? after - before : before - after;
+  const now = performance.now();
+  if (p.id === 'friendly') {
+    if (!botMoved && delta < -1.05) {
+      p.throw = 2;
+      p.limeUntil = now + 2600;
+    } else if (botMoved && p.throw > 0) {
+      p.throw -= 1;
+    }
+  } else if (p.id === 'tilter') {
+    if (botMoved && delta < -0.85) {
+      p.anger = Math.min(100, p.anger + 19);
+      p.cryUntil = now + 2100;
+      p.limeUntil = 0;
+      if (p.anger >= 72) p.rageUntil = now + 2400;
+    } else if (!botMoved && delta < -1.05) {
+      p.anger = Math.max(0, p.anger - 17);
+      p.limeUntil = now + 2800;
+      p.cryUntil = 0;
+    } else if (botMoved && delta > 0.7) {
+      p.anger = Math.max(0, p.anger - 2);
+    }
+  } else if (p.id === 'catchup' || p.id === 'overtake') {
+    if (!botMoved) {
+      if (delta > -0.35) p.skill = Math.min(5.2, p.skill + 0.13);
+      else if (delta < -1.1) p.skill = Math.max(0.8, p.skill - 0.18);
+    }
+  }
+  const until = Math.max(p.cryUntil || 0, p.limeUntil || 0, p.rageUntil || 0);
+  clearTimeout(p.fxTimer);
+  if (until > now) {
+    p.fxTimer = setTimeout(() => {
+      if (ui.persona === p) renderPersonaFx();
+    }, until - now + 40);
+  }
+  renderPersonaFx();
+}
+
+function chooseBotMove(st, level, persona) {
   const moves = legalMoves(st, st.turn);
   if (!moves.length) return null;
-  if (level === 'easy') {
+  const p = persona || ui.persona;
+  if (level === 'easy' && !p) {
     if (Math.random() < 0.55) return moves[Math.floor(Math.random() * moves.length)];
     const caps = moves.filter((m) => m.capture != null || m.ep || (m.caps && m.caps.length));
     if (caps.length) return caps[Math.floor(Math.random() * caps.length)];
     return moves[Math.floor(Math.random() * moves.length)];
   }
   const big = st.W * st.H > 64;
-  const depth = big ? 2 : (BOT_DEPTH[level] || 2);
+  let depth = big ? 2 : (BOT_DEPTH[level] || 2);
+  if (p && p.id === 'friendly' && p.throw > 0 && !big) depth = 2;
   let ranked = [];
   try { ranked = rankMoves(st, depth); } catch (error) { ranked = []; }
   if (!ranked.length) return moves[Math.floor(Math.random() * moves.length)];
-  if (level === 'hard') return ranked[0].move;
-  const top = ranked.slice(0, Math.min(3, ranked.length));
-  return top[Math.floor(Math.random() * top.length)].move;
+  if (p && p.id === 'friendly') {
+    // Дружелюбный иногда выбирает второй-третий по силе ход, а в поддавках — почти случайный.
+    const pool = p.throw > 0 ? 7 : 2;
+    const top = ranked.slice(0, Math.min(pool, ranked.length));
+    return top[Math.floor(Math.random() * top.length)].move;
+  }
+  if (p && p.id === 'tilter') {
+    if (p.anger >= 72) {
+      const strike = ranked.find((row) => row.move.capture != null || row.move.ep);
+      return (strike || ranked[0]).move;
+    }
+    const pool = p.anger >= 34 ? 2 : 4;
+    const top = ranked.slice(0, Math.min(pool, ranked.length));
+    return top[Math.floor(Math.random() * top.length)].move;
+  }
+  if (p && p.id === 'overtake' && level !== 'engine') {
+    const top = ranked.slice(0, Math.min(2, ranked.length));
+    return top[Math.floor(Math.random() * top.length)].move;
+  }
+  if (level === 'medium' || level === 'easy') {
+    const top = ranked.slice(0, Math.min(3, ranked.length));
+    return top[Math.floor(Math.random() * top.length)].move;
+  }
+  return ranked[0].move;
 }
 
 function maybeBotTurn() {
@@ -246,16 +396,16 @@ function maybeBotTurn() {
   ui.bot.busy = true;
   ui.botThinking = true;
   renderStatus();
-  const level = ui.bot.level;
+  const level = ui.persona ? personaLevel() : ui.bot.level;
   setTimeout(() => {
     ui.bot.busy = false;
     ui.botThinking = false;
     if (ui.paused || ui.away || !ui.st || ui.st.status !== 'play' || !ui.bot || ui.st.turn !== ui.bot.color) { renderStatus(); return; }
     if (ui.st.flags.clashBrawl && brawlBotTryDeploy()) { renderStatus(); return; }
-    const move = chooseBotMove(ui.st, level);
+    const move = chooseBotMove(ui.st, level, ui.persona);
     if (move) commitMove(move, { bot: true });
     renderStatus();
-  }, ui.bot.fake ? 3000 + Math.random() * 12000 : (BOT_DELAY[level] || 600));
+  }, ui.bot.fake ? 3000 + Math.random() * 12000 : (ui.persona ? personaDelay(level) : (BOT_DELAY[level] || 600)));
 }
 
 /* ─────────────────────── ЭКСПОРТ И ИМПОРТ ───────────────────────────── */
@@ -277,6 +427,7 @@ function buildGameJson() {
     startedAt: ui.startedAt ? new Date(ui.startedAt).toISOString() : null,
     endedAt: st.status === 'over' ? new Date().toISOString() : null,
     result: st.result || null,
+    viewSide: myColor(),
     bot: ui.bot ? { level: ui.bot.level, color: ui.bot.color, name: ui.bot.name, fake: !!ui.bot.fake } : null,
     moves: ui.moves.map((m, i) => ({
       n: i + 1,
@@ -293,30 +444,88 @@ function buildGameJson() {
   };
 }
 
-function gameJsonText() {
-  const data = buildGameJson();
-  return data ? JSON.stringify(data, null, 2) : '';
+function lastGameData() {
+  if (ui.st) return buildGameJson();
+  const rec = profile.history.find((g) => g && g.game);
+  return rec ? rec.game : null;
 }
 
-function exportGameFile() {
-  const text = gameJsonText();
+function buildGameText(data) {
+  if (!data) return '';
+  const names = data.players || {};
+  const mode = data.mode || {};
+  const white = (names.w && names.w.name) || 'Белые';
+  const black = (names.b && names.b.name) || 'Чёрные';
+  const ms = Number(data.time && data.time.ms) || 0;
+  const control = ms ? `${Math.round(ms / 60000)} мин (${ms} мс)` : 'без ограничений';
+  const started = data.startedAt ? new Date(data.startedAt) : new Date();
+  const date = Number.isNaN(started.getTime()) ? '' : started.toLocaleString('ru-RU');
+  let result = 'партия не завершена';
+  if (data.result) {
+    const why = REASON_TEXT[data.result.reason] || data.result.reason || '';
+    result = data.result.winner
+      ? `${data.result.winner === 'w' ? 'победа белых' : 'победа чёрных'}${why ? ' · ' + why : ''}`
+      : `ничья${why ? ' · ' + why : ''}`;
+  }
+  const lines = [
+    'Daymix’s Chess — запись партии',
+    '',
+    `Режим: ${mode.name || 'Классика'} (${mode.id || 'classic'})`,
+    `Белые: ${white}`,
+    `Чёрные: ${black}`,
+    `Контроль: ${control}`,
+    `Начало: ${date}`,
+    `Результат: ${result}`,
+    '',
+    'Ходы:',
+  ];
+  const moves = Array.isArray(data.moves) ? data.moves : [];
+  moves.forEach((m, i) => {
+    const num = Math.floor(i / 2) + 1;
+    const prefix = i % 2 === 0 ? `${num}.` : `${num}...`;
+    const promo = m.promo ? '=' + String(m.promo).toUpperCase() : '';
+    const san = m.san ? ` (${m.san})` : '';
+    const time = m.ms != null && Number(m.ms) > 0 ? `${(Number(m.ms) / 1000).toFixed(1)} с` : 'без времени';
+    lines.push(`${prefix} ${m.from}-${m.to}${promo}${san} — ${time}`);
+  });
+  if (!moves.length) lines.push('— ходов пока нет —');
+  return lines.join('\n');
+}
+
+function gameJsonText(data) {
+  const payload = data || buildGameJson();
+  return payload ? JSON.stringify(payload, null, 2) : '';
+}
+
+function currentGameText() {
+  const data = lastGameData();
+  return data ? buildGameText(data) : '';
+}
+
+function downloadText(text, ext, mime) {
   if (!text) { toast('Партия ещё не начата'); return; }
-  const blob = new Blob([text], { type: 'application/json' });
+  const blob = new Blob([text], { type: mime || 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const a = document.createElement('a');
   a.href = url;
-  a.download = `daymix-chess-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  a.download = `daymix-chess-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.${ext}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function exportGameFile() {
+  const data = lastGameData();
+  if (!data) { toast('Партия ещё не начата'); return; }
+  downloadText(gameJsonText(data), 'json', 'application/json');
   toast('JSON сохранён');
 }
 
 async function copyGameJson() {
-  const text = gameJsonText();
+  const text = gameJsonText(lastGameData());
   if (!text) { toast('Партия ещё не начата'); return; }
   try {
     await navigator.clipboard.writeText(text);
@@ -324,6 +533,41 @@ async function copyGameJson() {
   } catch (error) {
     toast('Не удалось скопировать');
   }
+}
+
+function openExport() {
+  const text = currentGameText();
+  if (!text) { toast('Партия ещё не начата'); return; }
+  const modal = $('#exportModal');
+  const box = $('#exportText');
+  if (!modal || !box) return;
+  box.value = text;
+  modal.classList.remove('hidden');
+  setTimeout(() => { box.focus(); box.select(); }, 60);
+}
+
+function closeExport() {
+  const modal = $('#exportModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function copyExportText() {
+  const box = $('#exportText');
+  const text = box ? box.value : currentGameText();
+  if (!text) { toast('Партия ещё не начата'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Текст партии в буфере');
+  } catch (error) {
+    toast('Не удалось скопировать');
+  }
+}
+
+function downloadExportText() {
+  const box = $('#exportText');
+  const text = box ? box.value : currentGameText();
+  downloadText(text, 'txt', 'text/plain;charset=utf-8');
+  toast('TXT сохранён');
 }
 
 function openImport() {
@@ -348,16 +592,98 @@ function parseSquare(st, text) {
   return rank * st.W + file;
 }
 
-function importGameText(raw) {
-  let data = null;
-  try { data = JSON.parse(String(raw)); } catch (error) { toast('Это не JSON'); return false; }
-  if (!data || data.app !== 'daymix-chess') { toast('Это не партия Daymix’s Chess'); return false; }
-  const mode = modeById(data.mode && data.mode.id);
+/** Разбор человекочитаемого TXT-экспорта. */
+function parseExportText(raw) {
+  const lines = String(raw || '').replace(/\r/g, '').split('\n');
+  const data = {
+    app: 'daymix-chess',
+    version: 3,
+    exportedAt: new Date().toISOString(),
+    mode: { id: 'classic', name: 'Классика', W: 8, H: 8, square: false },
+    time: { ms: 0, label: 'без ограничений' },
+    players: { w: { name: 'Белые', avatar: 'k' }, b: { name: 'Чёрные', avatar: 'k' } },
+    startedAt: null,
+    result: null,
+    moves: [],
+  };
+  for (const line of lines) {
+    const value = line.trim();
+    const mode = value.match(/^Режим:\s*(.+?)\s*\(([a-zA-Z0-9_-]+)\)\s*$/);
+    if (mode) {
+      data.mode.name = mode[1];
+      data.mode.id = modeIdOr(mode[2]);
+      continue;
+    }
+    const white = value.match(/^Белые:\s*(.+)$/);
+    if (white) { data.players.w.name = white[1].trim(); continue; }
+    const black = value.match(/^Чёрные:\s*(.+)$/);
+    if (black) { data.players.b.name = black[1].trim(); continue; }
+    const control = value.match(/^Контроль:\s*(.*?)\s*\((\d+)\s*мс\)\s*$/);
+    if (control) {
+      data.time.ms = Number(control[2]) || 0;
+      data.time.label = control[1].trim();
+      continue;
+    }
+    const move = value.match(/^(\d+)\.{1,3}\s+([a-n]\d{1,2})-([a-n]\d{1,2})(?:=([qrbnQRBN]))?\s*(?:\(([^)]*)\))?\s*(?:—|-)\s*(?:([\d.]+)\s*с|без времени)\s*$/i);
+    if (move) {
+      data.moves.push({
+        n: data.moves.length + 1,
+        side: data.moves.length % 2 === 0 ? 'w' : 'b',
+        san: move[5] || '',
+        from: move[2].toLowerCase(),
+        to: move[3].toLowerCase(),
+        promo: move[4] ? move[4].toLowerCase() : null,
+        at: null,
+        ms: move[6] ? Math.round(Number(move[6]) * 1000) : 0,
+        clockSec: null,
+      });
+    }
+  }
+  return data.moves.length ? data : null;
+}
+
+function modeIdOr(id) {
+  return modeById(String(id || '').toLowerCase()) ? String(id).toLowerCase() : 'classic';
+}
+
+function parseGameText(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  if (text.startsWith('{')) {
+    try {
+      const data = JSON.parse(text);
+      return data && data.app === 'daymix-chess' ? data : null;
+    } catch (error) { return null; }
+  }
+  return parseExportText(text);
+}
+
+function importGameText(raw, opts = {}) {
+  const data = parseGameText(raw);
+  if (!data) {
+    toast('Не удалось разобрать партию — нужен JSON или TXT-экспорт Daymix’s Chess');
+    return false;
+  }
+  return importGameData(data, opts);
+}
+
+function importGameData(data, opts = {}) {
+  if (!data) return false;
+  const review = !!opts.review;
+  if (review) ui.reviewFrom = opts.from || ui.reviewFrom || (ui.screen === 'stats' ? 'stats' : 'home');
+  const mode = modeById(data.mode && data.mode.id) || modeById('classic');
   ui.online = null;
   ui.bot = null;
-  ui.playerSide = profile.side === 'b' ? 'b' : 'w';
-  ui.imported = true;
+  ui.persona = null;
+  ui.training = null;
+  ui.reviewOnly = review;
+  ui.imported = review;
   ui.scored = true;
+  ui.spectator = false;
+  ui.role = null;
+  ui.mode = 'local';
+  ui.away = false;
+  ui.paused = false;
   ui.timeMs = Number(data.time && data.time.ms) || 0;
   ui.clocks = { w: ui.timeMs, b: ui.timeMs };
   ui.st = createState(mode.id, { square: !!(data.mode && data.mode.square) });
@@ -368,11 +694,25 @@ function importGameText(raw) {
   ui.chat = [];
   ui.selected = -1;
   ui.hint = null;
+  ui.endSquare = -1;
+  ui.persona = null;
+  clearTimeout(ui.endTimer);
+  ui.endTimer = 0;
   ui.names = {
     w: (data.players && data.players.w) || { name: 'Белые', avatar: 'k' },
     b: (data.players && data.players.b) || { name: 'Чёрные', avatar: 'k' },
   };
+  const pname = String(profile.name || '').trim().toLowerCase();
+  const wname = String(ui.names.w.name || '').trim().toLowerCase();
+  const bname = String(ui.names.b.name || '').trim().toLowerCase();
+  let side = profile.side === 'b' ? 'b' : 'w';
+  if (pname && pname === wname) side = 'w';
+  else if (pname && pname === bname) side = 'b';
+  if (review) side = data.viewSide === 'b' ? 'b' : 'w';
+  ui.playerSide = side;
+  ui.orientation = review ? side : side;
   ui.startedAt = data.startedAt ? Date.parse(data.startedAt) : Date.now();
+  if (Number.isNaN(ui.startedAt)) ui.startedAt = Date.now();
   const list = Array.isArray(data.moves) ? data.moves : [];
   for (const rec of list) {
     const legal = legalMoves(ui.st, ui.st.turn);
@@ -390,31 +730,72 @@ function importGameText(raw) {
       clock: rec.clockSec != null ? Number(rec.clockSec) * 1000 : null,
       at: rec.at ? Date.parse(rec.at) : 0,
       promo: found.promo || null,
+      captured: !!found.capture || !!(found.caps && found.caps.length) || !!found.ep,
     });
     ui.lastMove = { from, to };
   }
-  ui.viewPly = ui.frames.length - 1;
+  ui.viewPly = review ? 0 : ui.frames.length - 1;
   updateStatus(ui.st);
   if (data.result) {
     ui.st.result = data.result;
     ui.st.status = 'over';
   }
   closeImport();
+  closeExport();
+  document.body.classList.toggle('reviewing', review);
+  const shell = $('#gameShell');
+  if (shell) {
+    shell.classList.toggle('review-mode', review);
+    shell.classList.remove('training-on', 'paused');
+  }
+  showScreen('game');
   buildSquares();
   renderAll(false);
   renderMoves();
   renderPlayers();
   renderMeta();
   switchTab('moves');
-  showScreen('game');
   updateNav();
-  toast(`Партия импортирована: ${ui.moves.length} ходов`);
+  if (review) {
+    toast(`Просмотр партии: ${ui.moves.length} ходов`);
+  } else {
+    ui.running = ui.st.status === 'play' && ui.timeMs > 0;
+    ui.turnStart = performance.now();
+    startClocks();
+    ui.running = ui.st.status === 'play' && ui.timeMs > 0;
+    saveCurrentGame();
+    toast(`Партия импортирована: ${ui.moves.length} ходов — можно продолжать`);
+  }
   return true;
+}
+
+/** Открыть запись из истории в режиме просмотра. */
+function reviewHistoryGame(rec) {
+  const data = rec && rec.game;
+  if (!data) { toast('У этой записи нет полной партии для просмотра'); return; }
+  ui.reviewFrom = ui.screen === 'stats' ? 'stats' : 'home';
+  importGameData(data, { review: true, from: ui.reviewFrom });
+}
+
+function leaveReview() {
+  if (ui.training) { endTraining(); return; }
+  const dest = ui.reviewFrom || 'stats';
+  ui.reviewOnly = false;
+  ui.imported = false;
+  ui.reviewFrom = null;
+  ui.selected = -1;
+  document.body.classList.remove('reviewing');
+  const shell = $('#gameShell');
+  if (shell) shell.classList.remove('review-mode');
+  const exit = $('#reviewExit');
+  if (exit) exit.classList.add('hidden');
+  showScreen(dest === 'game' ? 'stats' : dest);
 }
 
 function showHint() {
   const st = ui.st;
   if (!st || st.status !== 'play') return;
+  if (ui.reviewOnly) { toast('Режим просмотра — ходы недоступны'); return; }
   if (ui.viewPly !== ui.frames.length - 1) { toast('Вернитесь в конец партии'); return; }
   if (ui.mode === 'online' && st.turn !== myColor()) { toast('Сейчас ход соперника'); return; }
   sound.click();
@@ -1434,6 +1815,11 @@ const ui = {
   suppressClick: false,
   hintKey: '',
   hintAt: 0,
+  reviewOnly: false,
+  reviewFrom: null,
+  training: null,
+  trainingSkipped: false,
+  persona: null,
   away: false,
   confirmAction: null,
   sameStreak: 0,
@@ -3209,6 +3595,7 @@ const MODE_CATS = {
   pieces: ['jester', 'boy', 'queens', 'pawnField', 'pawnFieldQ', 'knights', 'rooks', 'bishops'],
   chaos: ['explode', 'annihilation', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center'],
   mini: ['strategy', 'ultraBalance', 'zombie', 'royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
+  bots: [],
   imbo: [],
 };
 
@@ -3277,7 +3664,7 @@ function renderModesGrid(filter) {
   box.innerHTML = '';
   box.className = 'modes-groups';
   const list = modesByFilter(mode);
-  for (const [label, count] of [['all', MODES.length], ['popular', MODE_CATS.popular.length], ['pieces', MODE_CATS.pieces.length], ['chaos', MODE_CATS.chaos.length], ['mini', MODE_CATS.mini.length], ['imbo', 9]]) {
+  for (const [label, count] of [['all', MODES.length], ['popular', MODE_CATS.popular.length], ['pieces', MODE_CATS.pieces.length], ['chaos', MODE_CATS.chaos.length], ['mini', MODE_CATS.mini.length], ['bots', Object.keys(BOT_PERSONAS).length], ['imbo', 9]]) {
     const b = $(`.mode-filter[data-filter="${label}"]`);
     if (b) {
       const em = b.querySelector('em') || document.createElement('em');
@@ -3285,6 +3672,24 @@ function renderModesGrid(filter) {
       b.appendChild(em);
       b.classList.toggle('active', label === mode);
     }
+  }
+  if (mode === 'bots') {
+    const grid = document.createElement('div');
+    grid.className = 'persona-grid';
+    for (const [id, persona] of Object.entries(BOT_PERSONAS)) {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'persona-card ' + persona.glow;
+      card.innerHTML = `
+        <span class="pc-icon">${persona.icon}</span>
+        <b>${persona.title}</b>
+        <span>${persona.desc}</span>
+        <em>Играть</em>`;
+      card.addEventListener('click', () => startPersonaGame(id));
+      grid.appendChild(card);
+    }
+    box.appendChild(grid);
+    return;
   }
   if (mode === 'imbo') {
     const grid = document.createElement('div');
@@ -3364,7 +3769,8 @@ function renderStats() {
     return;
   }
   box.innerHTML = '';
-  for (const g of profile.history.slice(0, 40)) {
+  const recent = profile.history.slice(0, 40);
+  recent.forEach((g, idx) => {
     const row = document.createElement('div');
     row.className = 'history-row ' + (g.result || 'draw');
     const delta = g.points > 0 ? `+${g.points}` : String(g.points);
@@ -3374,9 +3780,16 @@ function renderStats() {
       <span class="hr-why">${escapeHtml(g.reasonText || '')}</span>
       <span class="hr-moves">${g.plies} ход.</span>
       <span class="hr-date">${g.date || ''}</span>
-      <span class="hr-points ${g.points >= 0 ? 'up' : 'down'}">${delta}</span>`;
+      <span class="hr-points ${g.points >= 0 ? 'up' : 'down'}">${delta}</span>
+      <button class="hr-eye" data-idx="${idx}" type="button" title="${g.game ? 'Просмотреть партию' : 'Для этой старой записи нет полного просмотра'}" ${g.game ? '' : 'disabled'}>👁</button>`;
     box.appendChild(row);
-  }
+  });
+  box.querySelectorAll('.hr-eye[data-idx]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const rec = recent[Number(b.dataset.idx)];
+      if (rec) reviewHistoryGame(rec);
+    });
+  });
 }
 
 /* ────────────────────────── 5. ЭКРАНЫ И ТОСТЫ ─────────────────────────── */
@@ -3782,6 +4195,18 @@ function markScreenSheen() {
 }
 
 function showScreen(name) {
+  if (name !== 'game' && ui.reviewOnly) {
+    if (ui.training) clearInterval(ui.training.auto);
+    ui.reviewOnly = false;
+    ui.imported = false;
+    ui.training = null;
+    ui.reviewFrom = null;
+    document.body.classList.remove('reviewing', 'training');
+    const cleanShell = $('#gameShell');
+    if (cleanShell) cleanShell.classList.remove('review-mode', 'training-on');
+    const cleanPanel = $('#trainingPanel');
+    if (cleanPanel) cleanPanel.classList.add('hidden');
+  }
   const changed = ui.screen !== name;
   if (name === 'game') stopConnectHud();
   if (name !== 'game') { closeDrawer(); closePanel(); }
@@ -3924,9 +4349,11 @@ function layoutBoard() {
   const cinema = window.matchMedia && window.matchMedia('(max-height: 480px) and (orientation: landscape)').matches;
   const phone = window.innerWidth < 1000;
   const brawlH = ui.st && ui.st.flags.clashBrawl ? (cinema ? 112 : 150) : 0;
+  const navEl = $('#historyNav');
+  const navH = navEl && !navEl.classList.contains('hidden') ? navEl.offsetHeight + 4 : 0;
   const barH = (phone
     ? (cinema ? 24 + 24 : 76 + 22 + 38)
-    : 96) + brawlH + (ui.strategy ? 46 : 0);   // фиксировано: доска не дёргается при взятии
+    : 96) + brawlH + (ui.strategy ? 46 : 0) + navH;   // фиксировано: доска не дёргается при взятии
   const gaps = 8;
   const shell = $('#gameShell');
   const panel = $('#sidePanel');
@@ -4111,6 +4538,10 @@ function renderPieces(animate) {
       ui.pieceNodes.set(p.id, el);
     }
     el.className = `piece ${p.c === 'w' ? 'w' : 'b'} t-${p.t}${p.gold ? ' gold' : ''}${p.special ? ' ' + p.special : ''}`;
+    if (ui.persona && ui.bot && p.t === 'k' && p.c === ui.bot.color) {
+      el.classList.add('bot-king', 'bot-king-' + ui.persona.id);
+      if (ui.persona.id === 'tilter' && performance.now() < ui.persona.cryUntil) el.classList.add('bot-king-cry');
+    }
     if (st.flags.strategy) {
       const hp = strategyHp(p);
       const max = strategyMaxHp(p);
@@ -4186,6 +4617,65 @@ function renderHints() {
   ui.hintAt = now;
 }
 
+function renderPersonaFx() {
+  const layer = $('#personaFx');
+  if (!layer) return;
+  layer.innerHTML = '';
+  if (!ui.persona || !ui.st || !ui.bot) return;
+  const kingSq = findKing(ui.st, ui.bot.color);
+  if (kingSq < 0) return;
+  const now = performance.now();
+  const p = ui.persona;
+  const { dx, dy } = disp(ui.st, kingSq);
+  const sq = ui.sq;
+  const piece = ui.st.board[kingSq];
+  const kingEl = piece ? ui.pieceNodes.get(piece.id) : null;
+  if (kingEl) {
+    kingEl.classList.add('bot-king', 'bot-king-' + p.id);
+    kingEl.classList.toggle('bot-king-cry', p.id === 'tilter' && now < p.cryUntil);
+  }
+  let halo = '';
+  if (p.id === 'friendly') halo = (p.throw > 0 || now < p.limeUntil) ? 'yellow' : 'blue';
+  else if (p.id === 'tilter') {
+    if (now < p.limeUntil) halo = 'lime';
+    else if (p.anger >= 72) halo = 'rage';
+    else halo = 'blue';
+  } else if (p.id === 'cinema') halo = 'cinema';
+  if (halo) {
+    const el = document.createElement('span');
+    el.className = 'persona-halo ' + halo;
+    el.style.width = (sq * 0.92) + 'px';
+    el.style.height = (sq * 0.46) + 'px';
+    el.style.left = (dx * sq + sq * 0.04) + 'px';
+    el.style.top = (dy * sq - sq * 0.24) + 'px';
+    layer.appendChild(el);
+  }
+  let emote = '';
+  if (p.id === 'friendly' && p.throw > 0) emote = '🙂';
+  else if (p.id === 'tilter') {
+    if (now < p.cryUntil) emote = '😭';
+    else if (now < p.limeUntil) emote = '😌';
+    else if (p.anger >= 72) emote = '💢';
+  }
+  if (emote) {
+    const el = document.createElement('span');
+    el.className = 'persona-emote';
+    el.textContent = emote;
+    el.style.fontSize = Math.max(13, Math.round(sq * 0.28)) + 'px';
+    el.style.left = (dx * sq + sq * 0.62) + 'px';
+    el.style.top = (dy * sq - sq * 0.12) + 'px';
+    layer.appendChild(el);
+  }
+  if (p.id === 'tilter') {
+    const rant = document.createElement('span');
+    rant.className = 'persona-rant';
+    rant.textContent = '##%@@&??"!!!';
+    rant.style.left = (dx * sq - sq * 0.15) + 'px';
+    rant.style.top = (dy * sq + sq * 0.76) + 'px';
+    layer.appendChild(rant);
+  }
+}
+
 function renderBoard(animate) {
   if (!ui.st) return;
   const boardEl = document.getElementById('board');
@@ -4198,6 +4688,7 @@ function renderBoard(animate) {
   renderSquares();
   renderPieces(animate);
   renderHints();
+  renderPersonaFx();
 }
 
 /* ───────────────────────── 7. ЧАСЫ И СТАТУС ──────────────────────────── */
@@ -6145,6 +6636,16 @@ function newGame(opts = {}) {
   }
   ui.rotated = false;
   ui.tableRotated = false;
+  ui.reviewOnly = false;
+  ui.reviewFrom = null;
+  ui.training = null;
+  ui.trainingSkipped = false;
+  ui.persona = null;
+  document.body.classList.remove('reviewing', 'training');
+  const reviewShell = $('#gameShell');
+  if (reviewShell) reviewShell.classList.remove('review-mode', 'training-on', 'paused');
+  const trainingPanel = $('#trainingPanel');
+  if (trainingPanel) trainingPanel.classList.add('hidden');
   ui.away = false;
   ui.suppressClick = false;
   const boardEl = $('#board');
@@ -6213,8 +6714,26 @@ function newGame(opts = {}) {
   ui.role = opts.role || null;
   ui.spectator = !!opts.spectator;
   ui.bot = opts.bot
-    ? { ...opts.bot, name: opts.bot.fake ? (opts.bot.name || 'Игрок') : ('Бот · ' + botLabel(opts.bot.level)) }
+    ? {
+      ...opts.bot,
+      name: opts.bot.persona
+        ? (opts.bot.name || (personaById(opts.bot.persona) || {}).title || 'Бот')
+        : opts.bot.fake ? (opts.bot.name || 'Игрок') : ('Бот · ' + botLabel(opts.bot.level)),
+    }
     : null;
+  if (ui.bot && ui.bot.persona) {
+    const persona = personaById(ui.bot.persona);
+    ui.persona = {
+      id: ui.bot.persona,
+      anger: 16,
+      throw: 0,
+      skill: 2.4,
+      cryUntil: 0,
+      limeUntil: 0,
+      rageUntil: 0,
+      label: persona ? persona.title : '',
+    };
+  }
   ui.paused = false;
   ui.movedId = null;
   ui.gameLocked = false;
@@ -6224,6 +6743,7 @@ function newGame(opts = {}) {
     $('#railPause').classList.remove('paused');
     $('#railPause').classList.toggle('hidden', (opts.mode || 'local') === 'online');
   }
+  if ($('#mobPause')) $('#mobPause').textContent = '⏸';
   ui.botThinking = false;
   ui.imported = false;
   ui.startedAt = Date.now();
@@ -6338,7 +6858,9 @@ function renderPlayers() {  const st = ui.st;
     const roleEl = bar === 'top' ? $('#topRole') : $('#bottomRole');
     const avEl = bar === 'top' ? $('#topAvatar') : $('#bottomAvatar');
     nameEl.textContent = nameFor(color);
-    roleEl.textContent = color === 'w' ? 'белые' : 'чёрные';
+    const personaRant = ui.persona && ui.persona.id === 'tilter' && ui.bot && color === ui.bot.color;
+    roleEl.innerHTML = (color === 'w' ? 'белые' : 'чёрные')
+      + (personaRant ? ' <span class="bot-rant">##%@@&amp;??"!!!</span>' : '');
     avEl.innerHTML = pieceSvg(avatarFor(color), 'av-pc');
   };
   setBar('top', topColor);
@@ -6420,6 +6942,7 @@ function renderAll(animate) {
   renderStatus();
   renderMeta();
   updateNav();
+  if (ui.training) renderTrainingAtPly();
   renderCaptured();
   if (ui.royal) renderRoyalHud();
   if (ui.zombie) renderZombieHud();
@@ -6434,6 +6957,16 @@ function renderStatus() {
   const sub = $('#gameSub');
   const shell = $('#gameShell');
   if (!st) return;
+  if (ui.training) {
+    el.textContent = 'ОБУЧЕНИЕ';
+    sub.textContent = `${ui.viewPly}/${ui.frames.length - 1} · разбор ходов и ошибок`;
+    return;
+  }
+  if (ui.reviewOnly) {
+    el.textContent = profile.language === 'en' ? 'Game review' : 'Просмотр партии';
+    sub.textContent = `${ui.viewPly}/${ui.frames.length - 1} · ${modeName(st.mode)}`;
+    return;
+  }
   if (ui.imported) {
     el.textContent = profile.language === 'en' ? 'Imported game' : 'Импортированная партия';
     sub.textContent = profile.language === 'en' ? 'review and export · moves disabled' : 'просмотр и экспорт · ходы недоступны';
@@ -6526,6 +7059,7 @@ function resultReason(res) {
 
 function onSquareClick(sq) {
   if (ui.spectator) return;
+  if (ui.reviewOnly) { toast('Режим просмотра — ходы недоступны'); return; }
   if (ui.brawl && ui.st && ui.st.flags.clashBrawl && ui.brawl.selected !== null && ui.st.status === 'play') {
     if (brawlDeploy(sq)) return;
     ui.brawl.selected = null;
@@ -6687,6 +7221,7 @@ function commitMove(m, opts = {}) {
   ui.hint = null;
   ui.movedId = st.board[match.to] ? st.board[match.to].id : null;
   const evalAfter = evaluateWhite(st);
+  if (ui.persona) personaAfterMove(mover, evalBefore, evalAfter);
   const movedPiece = st.board[match.to];
   const monotony = updateSameStreak(movedPiece ? movedPiece.id : null, mover);
 
@@ -6861,6 +7396,7 @@ function finishGame(res, opts = {}) {
   ui.scored = true;
 
   const st = ui.st;
+  if (!st.result) st.result = res;
   let points = ui.spectator ? 0 : scoreGame(res, st);
   const side = ui.spectator ? (res.winner || 'w') : myColor();
   const win = res.winner === side;
@@ -6896,6 +7432,7 @@ function finishGame(res, opts = {}) {
       points,
       plies: ui.moves.length,
       moves: ui.moves.map((m) => m.san).join(' ').slice(0, 4000),
+      game: buildGameJson(),
     });
     profile.history = profile.history.slice(0, 60);
     saveProfile(true);
@@ -6928,7 +7465,223 @@ function finishGame(res, opts = {}) {
   $('#result').classList.remove('hidden');
   renderResultKings(res);
   if (res.reason !== 'abort') playResultFx(!res.winner ? 'draw' : res.winner === side ? 'win' : 'lose');
+  renderTrainingCta();
   renderStatsIfOpen();
+}
+
+/* ───────────────────────── ОБУЧЕНИЕ ПОСЛЕ ПАРТИИ ─────────────────────── */
+
+function trainingDayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function trainingLeft() {
+  const today = trainingDayKey();
+  if (profile.trainingDate !== today) {
+    profile.trainingDate = today;
+    profile.trainingUsed = 0;
+  }
+  return Math.max(0, 3 - (Number(profile.trainingUsed) || 0));
+}
+
+function renderTrainingCta() {
+  const row = $('#resultTrainingRow');
+  if (!row) return;
+  const can = !!(ui.st && ui.st.status === 'over' && ui.st.result
+    && ui.st.result.reason !== 'abort' && ui.moves.length >= 2 && !ui.spectator && !ui.trainingSkipped && !ui.training);
+  const left = trainingLeft();
+  row.classList.toggle('hidden', !can);
+  const btn = $('#resultTraining');
+  const label = $('#trainingLeftLabel');
+  if (btn) btn.disabled = left <= 0;
+  if (label) label.textContent = `${left}/3`;
+}
+
+function trainingEval(frame) {
+  if (!frame) return 0;
+  try { return evaluateWhite({ ...ui.st, board: frame.board, turn: frame.turn }); } catch (error) { return 0; }
+}
+
+function trainingMoveText(mv, grade, bits) {
+  const label = {
+    best: 'Лучший ход', good: 'Хороший ход', inaccuracy: 'Неточность',
+    mistake: 'Ошибка', blunder: 'Зевок',
+  }[grade] || 'Ход';
+  const extra = bits.length ? ` (${bits.join(', ')})` : '';
+  const tail = {
+    best: 'Позиция усилена, сопернику не за что зацепиться.',
+    good: 'Спокойный и полезный ход, преимущество сохраняется.',
+    inaccuracy: 'Соперник получает шанс перехватить инициативу.',
+    mistake: 'Часть преимущества уходит — стоило поискать точнее.',
+    blunder: 'Резкое ухудшение позиции: этот ход лучше было не делать.',
+  }[grade] || '';
+  return `${mv.san}${extra} — ${label}. ${tail}`;
+}
+
+function buildTrainingRows() {
+  const rows = [];
+  const W = ui.st ? ui.st.W : 8;
+  for (let i = 0; i < ui.moves.length; i++) {
+    const mv = ui.moves[i];
+    const beforeFrame = ui.frames[i];
+    const afterFrame = ui.frames[i + 1];
+    if (!mv || !beforeFrame || !afterFrame) continue;
+    const before = trainingEval(beforeFrame);
+    const after = trainingEval(afterFrame);
+    let loss = mv.color === 'w' ? Math.max(0, before - after) : Math.max(0, after - before);
+    const state = { ...ui.st, board: beforeFrame.board, turn: beforeFrame.turn };
+    try {
+      const depth = ui.st.W * ui.st.H > 64 ? 1 : 2;
+      const ranked = rankMoves(state, depth);
+      if (ranked.length) {
+        const best = ranked[0];
+        const actual = ranked.find((row) => row.move.from === mv.from && row.move.to === mv.to
+          && (row.move.promo || null) === (mv.promo || null));
+        if (actual) loss = Math.max(loss, Math.max(0, best.score - actual.score));
+      }
+    } catch (error) { /* оставляем оценку по материалу */ }
+    const p = beforeFrame.board[mv.from];
+    const toX = mv.to % W;
+    const toY = Math.floor(mv.to / W);
+    // Ранние f/g-пешки и вылет ферзя — типичные ошибки дебюта, даже если материал цел.
+    if (i < 8 && p && p.t === 'p' && (toX === 5 || toX === 6)) loss += 0.75;
+    if (i < 8 && p && p.t === 'q' && !mv.captured) loss += 0.45;
+    let grade = 'best';
+    if (loss > 2.15) grade = 'blunder';
+    else if (loss > 1.1) grade = 'mistake';
+    else if (loss > 0.55) grade = 'inaccuracy';
+    else if (loss > 0.2) grade = 'good';
+    const x = toX;
+    const y = toY;
+    const bits = [];
+    if (mv.captured) bits.push('взятие');
+    if (mv.san && (mv.san.includes('+') || mv.san.includes('#'))) bits.push('шах');
+    if (mv.san && mv.san.startsWith('O-O')) bits.push('рокировка');
+    if (Math.abs(x - (W - 1) / 2) <= 1.1 && Math.abs(y - (ui.st.H - 1) / 2) <= 1.1) bits.push('центр');
+    const white = Math.max(5, Math.min(95, 50 + after * 3.2));
+    rows.push({
+      ...mv, before, after, loss, grade, bits,
+      white, black: 100 - white,
+      text: trainingMoveText(mv, grade, bits),
+    });
+  }
+  return rows;
+}
+
+function startTraining() {
+  if (!ui.st || !ui.moves.length) { toast('Нужна партия хотя бы с двумя ходами'); return; }
+  const left = trainingLeft();
+  if (left <= 0) { toast('Обучение на сегодня закончилось — 3 из 3'); return; }
+  profile.trainingUsed = (Number(profile.trainingUsed) || 0) + 1;
+  saveProfile(true);
+  const rows = buildTrainingRows();
+  if (!rows.length) { toast('Не удалось разобрать ходы'); return; }
+  ui.training = { rows, auto: 0, returnResult: true };
+  ui.reviewOnly = true;
+  ui.trainingSkipped = false;
+  ui.running = false;
+  clearInterval(ui.timer);
+  ui.selected = -1;
+  ui.viewPly = 0;
+  $('#result').classList.add('hidden');
+  $('#trainingPanel').classList.remove('hidden');
+  document.body.classList.add('training', 'reviewing');
+  const shell = $('#gameShell');
+  if (shell) shell.classList.add('training-on', 'review-mode');
+  if (ui.screen !== 'game') showScreen('game');
+  renderAll(false);
+  renderMoves();
+  updateNav();
+  renderTrainingAtPly();
+  toast(`Обучение: осталось ${trainingLeft()} из 3`);
+}
+
+function renderTrainingAtPly() {
+  const t = ui.training;
+  if (!t) return;
+  const rows = t.rows;
+  const idx = Math.max(0, Math.min(rows.length, ui.viewPly) - 1);
+  const row = ui.viewPly > 0 ? rows[idx] : null;
+  const score = row ? row.after : trainingEval(ui.frames[0]);
+  const white = Math.max(5, Math.min(95, 50 + score * 3.2));
+  if ($('#trPowerW')) $('#trPowerW').textContent = Math.round(white) + '%';
+  if ($('#trPowerB')) $('#trPowerB').textContent = Math.round(100 - white) + '%';
+  if ($('#trBarW')) $('#trBarW').style.width = white + '%';
+  if ($('#trBarB')) $('#trBarB').style.width = (100 - white) + '%';
+  if ($('#trMoveSan')) $('#trMoveSan').textContent = row ? row.san : 'Начальная позиция';
+  const grade = $('#trGrade');
+  if (grade) {
+    grade.className = 'tr-grade' + (row ? ' ' + row.grade : '');
+    grade.textContent = row ? ({ best: 'ЛУЧШИЙ', good: 'ХОРОШИЙ', inaccuracy: 'НЕТОЧНОСТЬ', mistake: 'ОШИБКА', blunder: 'ЗЕВОК' }[row.grade] || '') : 'СТАРТ';
+  }
+  if ($('#trText')) {
+    $('#trText').textContent = row ? row.text
+      : 'Партия прогоняется через тестер. Дальше — ход за ходом: где вы усилили позицию, а где отдали перевес.';
+  }
+  const box = $('#trMoves');
+  if (box) {
+    box.innerHTML = rows.map((r, i) => `<button type="button" class="tr-mv ${r.grade}${ui.viewPly === i + 1 ? ' active' : ''}" data-ply="${i + 1}">${escapeHtml(r.san)}</button>`).join('');
+    box.querySelectorAll('.tr-mv').forEach((b) => b.addEventListener('click', () => gotoPly(Number(b.dataset.ply))));
+    const act = box.querySelector('.tr-mv.active');
+    if (act) act.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  const max = ui.frames.length - 1;
+  if ($('#trPrev')) $('#trPrev').disabled = ui.viewPly <= 0;
+  if ($('#trNext')) $('#trNext').disabled = ui.viewPly >= max;
+  if ($('#trPlay')) $('#trPlay').textContent = t.auto ? '⏸ Пауза' : '▶ Авто';
+  if ($('#trCount')) $('#trCount').textContent = `Ход ${ui.viewPly} из ${max} · осталось ${trainingLeft()} из 3`;
+}
+
+function stopTrainingAuto() {
+  if (!ui.training) return;
+  clearInterval(ui.training.auto);
+  ui.training.auto = 0;
+  if ($('#trPlay')) $('#trPlay').textContent = '▶ Авто';
+}
+
+function toggleTrainingAuto() {
+  const t = ui.training;
+  if (!t) return;
+  if (t.auto) { stopTrainingAuto(); return; }
+  if (ui.viewPly >= ui.frames.length - 1) gotoPly(0);
+  t.auto = setInterval(() => {
+    if (!ui.training) { stopTrainingAuto(); return; }
+    if (ui.viewPly >= ui.frames.length - 1) { stopTrainingAuto(); return; }
+    gotoPly(ui.viewPly + 1);
+  }, 850);
+  if ($('#trPlay')) $('#trPlay').textContent = '⏸ Пауза';
+}
+
+function endTraining() {
+  stopTrainingAuto();
+  const returnResult = ui.training && ui.training.returnResult;
+  ui.training = null;
+  ui.reviewOnly = false;
+  ui.reviewFrom = null;
+  ui.selected = -1;
+  ui.viewPly = ui.frames.length - 1;
+  document.body.classList.remove('training', 'reviewing');
+  const shell = $('#gameShell');
+  if (shell) shell.classList.remove('training-on', 'review-mode');
+  const panel = $('#trainingPanel');
+  if (panel) panel.classList.add('hidden');
+  renderAll(false);
+  renderMoves();
+  updateNav();
+  if (returnResult) {
+    $('#result').classList.remove('hidden');
+    renderTrainingCta();
+  } else {
+    showScreen('stats');
+  }
+}
+
+function skipTraining() {
+  ui.trainingSkipped = true;
+  const row = $('#resultTrainingRow');
+  if (row) row.classList.add('hidden');
+  toast('Обучение пропущено');
 }
 
 function animateResultPoints(points) {
@@ -7114,7 +7867,8 @@ function renderMoves() {
     const cell = (m, ply) => {
       if (!m) return '<span class="mv-empty"></span>';
       const time = ui.timeMs && m.spent > 0 ? `<em>${(m.spent / 1000).toFixed(1)}с</em>` : '';
-      return `<button type="button" class="mv ${ply === cur ? 'active' : ''}" data-ply="${ply}">${escapeHtml(m.san)}${time}</button>`;
+      const grade = ui.training && ui.training.rows[ply - 1] ? ui.training.rows[ply - 1].grade : '';
+      return `<button type="button" class="mv ${ply === cur ? 'active' : ''}${grade ? ' tr-' + grade : ''}" data-ply="${ply}">${escapeHtml(m.san)}${time}</button>`;
     };
     rows.push(`<div class="move-row"><span class="mv-num">${num}.</span>${cell(one, i + 1)}${cell(two, i + 2)}</div>`);
   }
@@ -7134,6 +7888,12 @@ function updateNav() {
   $('#navEnd').disabled = ui.viewPly >= max;
   const hn = $('#historyNav');
   if (hn) hn.classList.toggle('hidden', !ui.st);
+  const review = !!(ui.reviewOnly || ui.training);
+  const shell = $('#gameShell');
+  if (shell) shell.classList.toggle('review-mode', review);
+  document.body.classList.toggle('reviewing', review);
+  const exit = $('#reviewExit');
+  if (exit) exit.classList.toggle('hidden', !review);
   const hp = $('#histPos');
   if (hp) hp.textContent = `${ui.viewPly}/${max}`;
   if ($('#histPrev')) $('#histPrev').disabled = ui.viewPly <= 0;
@@ -7145,6 +7905,16 @@ function updateNav() {
 function gotoPly(ply) {
   const max = ui.frames.length - 1;
   const target = Math.max(0, Math.min(max, ply));
+  if (ui.reviewOnly) {
+    ui.viewPly = target;
+    ui.selected = -1;
+    renderAll(false);
+    renderMoves();
+    updateNav();
+    renderPgnBox();
+    if (ui.training) renderTrainingAtPly();
+    return;
+  }
   if (ui.mode === 'local' && !ui.bot && ui.st && target < max) {
     /* В игре на одном телефоне это настоящий откат, а не только просмотр. */
     const f = ui.frames[target];
@@ -8202,17 +8972,22 @@ function togglePause(force) {
     }
     ui.paused = true;
     ui.running = false;
-    $('#pauseOverlay').classList.remove('hidden');
+    const shell = $('#gameShell');
+    if (shell) shell.classList.add('paused');
     $('#railPause').classList.add('paused');
+    if ($('#mobPause')) $('#mobPause').textContent = '▶';
     updateClockEls();
     renderStatus();
-    toast('Пауза — часы стоят');
+    toast('Пауза — часы серые');
   } else {
     ui.paused = false;
     ui.turnStart = performance.now();
     ui.running = ui.timeMs > 0 && ui.moves.length > 0;
-    $('#pauseOverlay').classList.add('hidden');
+    const shell = $('#gameShell');
+    if (shell) shell.classList.remove('paused');
     $('#railPause').classList.remove('paused');
+    if ($('#mobPause')) $('#mobPause').textContent = '⏸';
+    updateClockEls();
     renderStatus();
     if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 400);
     toast('Продолжаем');
@@ -8296,6 +9071,7 @@ function hardStopBotGame() {
   ui.race = null;
   ui.st = null;
   ui.bot = null;
+  ui.persona = null;
   ui.away = false;
   ui.selected = -1;
   updateResumeFloat();
@@ -8347,11 +9123,18 @@ function leaveGame() {
   ui.running = false;
   ui.paused = false;
   ui.bot = null;
+  ui.persona = null;
+  ui.reviewOnly = false;
+  ui.training = null;
   ui.movedId = null;
   clearInterval(ui.timer);
   $('#result').classList.add('hidden');
   if ($('#pauseOverlay')) $('#pauseOverlay').classList.add('hidden');
   if ($('#railPause')) $('#railPause').classList.remove('paused');
+  if ($('#mobPause')) $('#mobPause').textContent = '⏸';
+  const pauseShell = $('#gameShell');
+  if (pauseShell) pauseShell.classList.remove('paused', 'review-mode', 'training-on');
+  document.body.classList.remove('reviewing', 'training');
   showScreen('home');
 }
 
@@ -8449,7 +9232,13 @@ function bindEvents() {
   if ($('#optCalm')) $('#optCalm').addEventListener('change', (e) => setCalm(e.target.checked));
   if ($('#btnRefreshGame')) $('#btnRefreshGame').addEventListener('click', refreshActiveGame);
   if ($('#btnImportLocal')) $('#btnImportLocal').addEventListener('click', openImport);
+  if ($('#homeImport')) $('#homeImport').addEventListener('click', openImport);
   if ($('#btnExportCurrent')) $('#btnExportCurrent').addEventListener('click', exportGameFile);
+  if ($('#exportClose')) $('#exportClose').addEventListener('click', closeExport);
+  if ($('#exportCopy')) $('#exportCopy').addEventListener('click', copyExportText);
+  if ($('#exportDownload')) $('#exportDownload').addEventListener('click', downloadExportText);
+  if ($('#exportJson')) $('#exportJson').addEventListener('click', exportGameFile);
+  if ($('#exportModal')) $('#exportModal').addEventListener('click', (e) => { if (e.target === $('#exportModal')) closeExport(); });
   if ($('#langSelect')) $('#langSelect').addEventListener('change', (e) => {
     profile.language = e.target.value === 'en' ? 'en' : 'ru';
     saveProfile();
@@ -8514,7 +9303,7 @@ function bindEvents() {
   $('#importClose').addEventListener('click', closeImport);
   $('#importConfirm').addEventListener('click', () => {
     const text = $('#importText').value.trim();
-    if (!text) { toast('Вставьте JSON партии'); return; }
+    if (!text) { toast('Вставьте JSON или TXT партии'); return; }
     importGameText(text);
   });
   $('#importPaste').addEventListener('click', async () => {
@@ -8703,7 +9492,6 @@ function bindEvents() {
   if ($('#rejoinBtn')) $('#rejoinBtn').addEventListener('click', () => {
     if (profile.lastRoom && profile.lastRoom.code) joinRoom(profile.lastRoom.code);
   });
-  $('#resumeGame').addEventListener('click', () => togglePause(false));
   $('#confirmCancel').addEventListener('click', closeConfirm);
   $('#confirmLeave').addEventListener('click', () => {
     if (ui.confirmAction === 'resign') {
@@ -8735,6 +9523,12 @@ function bindEvents() {
   $('#navStart').addEventListener('click', () => gotoPly(0));
   if ($('#histPrev')) $('#histPrev').addEventListener('click', () => gotoPly(ui.viewPly - 1));
   if ($('#histNext')) $('#histNext').addEventListener('click', () => gotoPly(ui.viewPly + 1));
+  if ($('#reviewExit')) $('#reviewExit').addEventListener('click', leaveReview);
+  if ($('#trPlay')) $('#trPlay').addEventListener('click', toggleTrainingAuto);
+  if ($('#trPrev')) $('#trPrev').addEventListener('click', () => gotoPly(ui.viewPly - 1));
+  if ($('#trNext')) $('#trNext').addEventListener('click', () => gotoPly(ui.viewPly + 1));
+  if ($('#trDone')) $('#trDone').addEventListener('click', endTraining);
+  if ($('#trainingClose')) $('#trainingClose').addEventListener('click', endTraining);
   $('#navPrev').addEventListener('click', () => gotoPly(ui.viewPly - 1));
   $('#navNext').addEventListener('click', () => gotoPly(ui.viewPly + 1));
   $('#navEnd').addEventListener('click', () => gotoPly(ui.frames.length - 1));
@@ -8752,6 +9546,10 @@ function bindEvents() {
     try { await navigator.clipboard.writeText($('#pgnBox').value); toast('PGN скопирован'); }
     catch (error) { toast('Не удалось скопировать'); }
   });
+  if ($('#btnExportTxt')) $('#btnExportTxt').addEventListener('click', openExport);
+  if ($('#btnExportMenu')) $('#btnExportMenu').addEventListener('click', openExport);
+  if ($('#mobExport')) $('#mobExport').addEventListener('click', openExport);
+  if ($('#homeExport')) $('#homeExport').addEventListener('click', openExport);
 
   $('#btnResign').addEventListener('click', resign);
   $('#btnDraw').addEventListener('click', offerDraw);
@@ -8764,6 +9562,9 @@ function bindEvents() {
     newGame({ mode: ui.mode || 'local', modeId: ui.st ? ui.st.modeId : profile.modeId, timeMs: ui.timeMs, splash: true });
   });
   $('#resultMenu').addEventListener('click', leaveGame);
+  $('#resultExport').addEventListener('click', openExport);
+  $('#resultTraining').addEventListener('click', startTraining);
+  $('#resultTrainingSkip').addEventListener('click', skipTraining);
   $('#resultClose').addEventListener('click', () => {
     $('#result').classList.add('hidden');
     ui.endSquare = -1;
@@ -8857,6 +9658,7 @@ function bindEvents() {
     if (e.button !== undefined && e.button !== 0) return;
     const sqEl = e.target.closest('.sq');
     if (ui.spectator) return;
+    if (ui.reviewOnly) return;
     if (!sqEl || !ui.st || ui.st.status !== 'play' || ui.gameLocked || ui.paused || ui.imported) return;
     if (ui.viewPly !== ui.frames.length - 1) return;
     if (ui.bot && ui.st.turn === ui.bot.color) return;
@@ -8952,6 +9754,8 @@ function boot() {
     ui, profile,
     newGame, commitMove, gotoPly, showScreen, myColor, scoreGame, finishGame,
     startBotGame, maybeBotTurn, chooseBotMove, buildGameJson, importGameText,
+    startPersonaGame, personaLevel, personaDelay, startTraining, endTraining, trainingLeft, renderTrainingCta,
+    openExport, openImport, togglePause, reviewHistoryGame, leaveReview,
     brawlBotTryDeploy, brawlDeploy, brawlCanDeploy, brawlBotPickCard, onlineCoachMayMove,
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
     chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink, strategySelectAttacker, strategyAttack, strategyEndTurn, strategyAfterMove, strategySpecial, strategyRender,

@@ -36,7 +36,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261101-04">
+  <link rel="stylesheet" href="style.css?v=20261101-05">
 </head>
 <body>
 
@@ -210,6 +210,8 @@
             </span>
             <span class="home-actions">
               <button class="btn btn-sm hidden" id="resumeBtn" type="button">▶ Продолжить партию</button>
+              <button class="btn btn-sm" id="homeImport" type="button">📥 Импорт</button>
+              <button class="btn btn-sm" id="homeExport" type="button">📤 Экспорт</button>
               <button class="btn btn-sm" id="homeSettings" type="button">⚙ Настройки</button>
             </span>
           </div>
@@ -368,7 +370,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-11-01-04 · клик по фигуре</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-11-01-05 · история, экспорт, боты, обучение</div>
             <div class="theme-preview-slot" id="themePreviewSlot">
               <div class="theme-preview" id="themePreview"></div>
             </div>
@@ -476,6 +478,7 @@
           <button class="mode-filter" data-filter="pieces" type="button">Фигуры</button>
           <button class="mode-filter" data-filter="chaos" type="button">Хаос</button>
           <button class="mode-filter" data-filter="mini" type="button">Мини-игры</button>
+          <button class="mode-filter" data-filter="bots" type="button">Боты</button>
           <button class="mode-filter" data-filter="imbo" type="button">Имбовинки <span class="beta-tag">Beta</span></button>
         </div>
         <div class="modes-scroll" id="modesScroll">
@@ -552,13 +555,9 @@
               <div class="squares" id="squares"></div>
               <div class="pieces" id="pieces"></div>
               <div class="hints" id="hints"></div>
+              <div class="persona-fx" id="personaFx"></div>
               <div class="brawl-layer" id="brawlLayer"></div>
               <div class="fog-layer" id="fogLayer"></div>
-            </div>
-            <div class="history-nav" id="historyNav">
-              <button id="histPrev" type="button" title="Предыдущий ход">‹</button>
-              <span id="histPos">0/0</span>
-              <button id="histNext" type="button" title="Следующий ход">›</button>
             </div>
             <div class="promo hidden" id="promo">
               <div class="promo-card">
@@ -566,6 +565,13 @@
                 <div class="promo-row" id="promoRow"></div>
               </div>
             </div>
+          </div>
+
+          <div class="history-nav" id="historyNav">
+            <button id="histPrev" type="button" title="Предыдущий ход"><span>‹</span><small>Назад</small></button>
+            <span id="histPos">0/0</span>
+            <button id="histNext" type="button" title="Следующий ход"><small>Вперёд</small><span>›</span></button>
+            <button class="review-exit hidden" id="reviewExit" type="button" title="Закрыть просмотр">✕</button>
           </div>
 
 
@@ -648,6 +654,7 @@
           <div class="mobile-actions">
             <button class="mob-btn" id="panelToggle" type="button" title="Ходы и чат">≡ Ходы</button>
             <button class="mob-btn" id="mobPause" type="button" title="Пауза">⏸</button>
+            <button class="mob-btn" id="mobExport" type="button" title="Экспорт партии">📤</button>
             <button class="mob-btn danger" id="mobResign" type="button">⚑ Сдаться</button>
             <button class="mob-btn" id="mobLeave" type="button">Выйти</button>
             <button class="mob-btn" id="mobSettings" type="button" title="Настройки партии">⚙</button>
@@ -655,13 +662,7 @@
 
           <div class="rep-ring hidden" id="repRing" title="Монотонное повторение"><span>8×</span></div>
 
-          <div class="pause-overlay hidden" id="pauseOverlay">
-            <div class="pause-card">
-              <b>ПАУЗА</b>
-              <span>Часы остановлены</span>
-              <button class="btn-game-green btn-sm" id="resumeGame" type="button">Продолжить</button>
-            </div>
-          </div>
+          <div class="pause-overlay hidden" id="pauseOverlay" aria-hidden="true"></div>
         </div>
 
         <!-- БОКОВАЯ ПАНЕЛЬ С ХОДАМИ И УПРАВЛЕНИЕМ -->
@@ -708,6 +709,7 @@
               <div class="info-row">
                 <button class="btn btn-sm" id="btnCopyPgn" type="button">PGN</button>
                 <button class="btn btn-sm" id="btnExport" type="button">JSON</button>
+                <button class="btn btn-sm" id="btnExportTxt" type="button">TXT</button>
                 <button class="btn btn-sm" id="btnCopyGame" type="button">В буфер</button>
                 <button class="btn btn-sm" id="btnImport" type="button">Импорт</button>
               </div>
@@ -726,6 +728,30 @@
             <button class="btn-action-icon" id="railHome" type="button" title="В меню">⌂</button>
           </div>
         </aside>
+
+        <div class="training-panel hidden" id="trainingPanel">
+          <div class="tr-head">
+            <span>🎓 ОБУЧЕНИЕ</span>
+            <button class="icon-btn" id="trainingClose" type="button" title="Закрыть">✕</button>
+          </div>
+          <div class="tr-power">
+            <div class="tr-power-row w"><span>Белые <b id="trPowerW">50%</b></span><i><em id="trBarW"></em></i></div>
+            <div class="tr-power-row b"><span>Чёрные <b id="trPowerB">50%</b></span><i><em id="trBarB"></em></i></div>
+          </div>
+          <div class="tr-move-line">
+            <b id="trMoveSan">Начальная позиция</b>
+            <span class="tr-grade" id="trGrade"></span>
+          </div>
+          <p id="trText">Прогоняем партию: ходы, ошибки и лучшие решения.</p>
+          <div class="tr-moves" id="trMoves"></div>
+          <div class="tr-controls">
+            <button class="btn btn-sm" id="trPrev" type="button">‹</button>
+            <button class="btn btn-sm" id="trPlay" type="button">▶ Авто</button>
+            <button class="btn btn-sm" id="trNext" type="button">›</button>
+            <button class="btn-game-green btn-sm" id="trDone" type="button">Готово</button>
+          </div>
+          <div class="tr-count" id="trCount"></div>
+        </div>
 
         <div class="scrim" id="scrim"></div>
 
@@ -760,6 +786,9 @@
               <button class="btn btn-sm" id="btnAbort" type="button">Прервать</button>
               <button class="btn btn-sm" id="btnNew" type="button">Новая партия</button>
             </div>
+            <div class="g-block g-links">
+              <button class="btn btn-sm" id="btnExportMenu" type="button">📤 Экспорт партии</button>
+            </div>
             <button class="btn btn-sm btn-ghost" id="btnLeave" type="button">В меню</button>
           </div>
         </div>
@@ -790,9 +819,14 @@
     <h2 class="result-title" id="resultTitle">Мат</h2>
     <p class="result-sub" id="resultSub"></p>
     <div class="result-points" id="resultPoints"></div>
+    <div class="result-training" id="resultTrainingRow">
+      <button class="btn-training" id="resultTraining" type="button">🎓 Обучение <em id="trainingLeftLabel">3/3</em></button>
+      <button class="btn-training-skip" id="resultTrainingSkip" type="button">Skip</button>
+    </div>
     <div class="result-actions">
       <button class="btn-game-green" id="resultAgain" type="button">Ещё партию</button>
       <button class="btn" id="resultMenu" type="button">В меню</button>
+      <button class="btn btn-ghost" id="resultExport" type="button">📤 Экспорт</button>
       <button class="btn btn-ghost" id="resultClose" type="button">Посмотреть доску</button>
     </div>
   </div>
@@ -884,14 +918,28 @@
 <div class="modal hidden" id="importModal">
   <div class="modal-card">
     <div class="modal-head"><b>Импорт партии</b><button class="icon-btn" id="importClose" type="button">✕</button></div>
-    <p class="modal-note">Вставьте JSON партии, вставьте из буфера или выберите файл.</p>
-    <textarea id="importText" placeholder='{"app":"daymix-chess", ...}' spellcheck="false"></textarea>
+    <p class="modal-note">Вставьте JSON или TXT-запись Daymix’s Chess, вставьте из буфера или выберите файл. После импорта можно сразу продолжать партию.</p>
+    <textarea id="importText" placeholder='{"app":"daymix-chess", ...} или текстовый экспорт партии' spellcheck="false"></textarea>
     <div class="modal-actions">
       <button class="btn btn-sm" id="importFileBtn" type="button">Выбрать файл</button>
       <button class="btn btn-sm" id="importPaste" type="button">Из буфера</button>
       <button class="btn-game-green btn-sm" id="importConfirm" type="button">Импортировать</button>
     </div>
-    <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <input type="file" id="importFile" accept=".json,.txt,application/json,text/plain" hidden>
+  </div>
+</div>
+
+<!-- экспорт партии -->
+<div class="modal hidden" id="exportModal">
+  <div class="modal-card">
+    <div class="modal-head"><b>Экспорт партии</b><button class="icon-btn" id="exportClose" type="button">✕</button></div>
+    <p class="modal-note">Имена игроков, режим, каждый ход и время на него. Скопируйте текст или скачайте файл.</p>
+    <textarea id="exportText" class="export-text" readonly spellcheck="false"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-sm" id="exportCopy" type="button">Копировать</button>
+      <button class="btn btn-sm" id="exportDownload" type="button">Скачать .txt</button>
+      <button class="btn btn-sm btn-ghost" id="exportJson" type="button">JSON</button>
+    </div>
   </div>
 </div>
 
@@ -919,8 +967,8 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261101-04"></script>
-<script src="app.js?v=20261101-04"></script>
+<script src="engine.js?v=20261101-05"></script>
+<script src="app.js?v=20261101-05"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>
