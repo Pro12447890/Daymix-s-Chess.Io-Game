@@ -36,7 +36,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261101-05">
+  <link rel="stylesheet" href="style.css?v=20261102-78">
 </head>
 <body>
 
@@ -567,15 +567,6 @@
             </div>
           </div>
 
-          <div class="history-nav" id="historyNav">
-            <button id="histPrev" type="button" title="Предыдущий ход"><span>‹</span><small>Назад</small></button>
-            <span id="histPos">0/0</span>
-            <button id="histNext" type="button" title="Следующий ход"><small>Вперёд</small><span>›</span></button>
-            <button class="review-exit hidden" id="reviewExit" type="button" title="Закрыть просмотр">✕</button>
-          </div>
-
-
-
           <div class="zombie-hud hidden" id="zombieHud">
             <span>🧟 <b id="zombieCount">0</b></span>
             <span id="zombieNext">нет заражений</span>
@@ -636,6 +627,16 @@
               </div>
             </div>
             <div class="strat-gold-badge" id="stratGoldBadgeW"><span id="stratFactionW">WhiteTown</span>: <b id="stratGoldW">30/50</b></div>
+            <div class="history-nav" id="historyNav" aria-label="История ходов">
+              <button id="histPrev" type="button" title="Предыдущий ход" aria-label="Предыдущий ход">
+                <svg viewBox="0 0 24 36" aria-hidden="true"><path d="M17 4 7 18l10 14"/></svg>
+              </button>
+              <span id="histPos" aria-live="polite">0/0</span>
+              <button id="histNext" type="button" title="Следующий ход" aria-label="Следующий ход">
+                <svg viewBox="0 0 24 36" aria-hidden="true"><path d="M7 4l10 14L7 32"/></svg>
+              </button>
+              <button class="review-exit hidden" id="reviewExit" type="button" title="Закрыть просмотр" aria-label="Закрыть просмотр">✕</button>
+            </div>
             <div class="clock" id="bottomClock">—</div>
           </div>
 
@@ -732,6 +733,7 @@
         <div class="training-panel hidden" id="trainingPanel">
           <div class="tr-head">
             <span>🎓 ОБУЧЕНИЕ</span>
+            <button class="icon-btn tr-min" id="trainingMin" type="button" title="Свернуть" aria-label="Свернуть обучение" aria-expanded="true">▾</button>
             <button class="icon-btn" id="trainingClose" type="button" title="Закрыть">✕</button>
           </div>
           <div class="tr-power">
@@ -967,8 +969,8 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261101-05"></script>
-<script src="app.js?v=20261101-05"></script>
+<script src="engine.js?v=20261102-78"></script>
+<script src="app.js?v=20261102-78"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>
@@ -981,3 +983,5 @@
   </div>
 </body>
 </html>
+
+

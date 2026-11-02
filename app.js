@@ -4349,11 +4349,15 @@ function layoutBoard() {
   const cinema = window.matchMedia && window.matchMedia('(max-height: 480px) and (orientation: landscape)').matches;
   const phone = window.innerWidth < 1000;
   const brawlH = ui.st && ui.st.flags.clashBrawl ? (cinema ? 112 : 150) : 0;
-  const navEl = $('#historyNav');
-  const navH = navEl && !navEl.classList.contains('hidden') ? navEl.offsetHeight + 4 : 0;
+  /* Стрелки истории живут внутри нижней плашки, отдельной полосы больше нет.
+     Высоту плашек считаем по фактическому состоянию экрана: иначе на телефоне
+     и в кинематическом ландшафте доска выходит неквадратной. */
+  const shortLandscape = !!(window.matchMedia && window.matchMedia('(max-height: 480px) and (orientation: landscape)').matches);
+  const tightLandscape = !shortLandscape && !!(window.matchMedia && window.matchMedia('(max-height: 560px)').matches);
+  const phoneBar = shortLandscape ? 86 : tightLandscape ? 136 : 162;
   const barH = (phone
-    ? (cinema ? 24 + 24 : 76 + 22 + 38)
-    : 96) + brawlH + (ui.strategy ? 46 : 0) + navH;   // фиксировано: доска не дёргается при взятии
+    ? phoneBar
+    : 96 + 42) + brawlH + (ui.strategy ? 46 : 0);   // фиксировано: доска не дёргается при взятии
   const gaps = 8;
   const shell = $('#gameShell');
   const panel = $('#sidePanel');
@@ -7463,6 +7467,7 @@ function finishGame(res, opts = {}) {
   ['#resultAgain', '#resultMenu', '#resultClose'].forEach((id) => $(id).classList.remove('hidden'));
   if (ui.spectator) $('#resultAgain').classList.add('hidden');
   $('#result').classList.remove('hidden');
+  lockResultCard();
   renderResultKings(res);
   if (res.reason !== 'abort') playResultFx(!res.winner ? 'draw' : res.winner === side ? 'win' : 'lose');
   renderTrainingCta();
@@ -7470,6 +7475,24 @@ function finishGame(res, opts = {}) {
 }
 
 /* ───────────────────────── ОБУЧЕНИЕ ПОСЛЕ ПАРТИИ ─────────────────────── */
+
+/* Первую секунду после мата/пата карточка результата «заморожена»:
+   ни одна кнопка не срабатывает, закрыть её нельзя. Потом кнопки
+   коротко вспыхивают и чуть увеличиваются — приглашение нажать. */
+function lockResultCard() {
+  const box = $('#result');
+  if (!box) return;
+  clearTimeout(ui.resultLockTimer);
+  box.classList.remove('result-ready');
+  box.classList.add('result-locked');
+  ui.resultLockedUntil = performance.now() + 1000;
+  ui.resultLockTimer = setTimeout(() => {
+    ui.resultLockTimer = 0;
+    ui.resultLockedUntil = 0;
+    box.classList.remove('result-locked');
+    box.classList.add('result-ready');
+  }, 1000);
+}
 
 function trainingDayKey() {
   const d = new Date();
@@ -7585,6 +7608,10 @@ function startTraining() {
   ui.selected = -1;
   ui.viewPly = 0;
   $('#result').classList.add('hidden');
+  const tPanel = $('#trainingPanel');
+  if (tPanel) tPanel.classList.remove('collapsed');
+  const tMin = $('#trainingMin');
+  if (tMin) { tMin.textContent = '▾'; tMin.title = 'Свернуть'; tMin.setAttribute('aria-expanded', 'true'); }
   $('#trainingPanel').classList.remove('hidden');
   document.body.classList.add('training', 'reviewing');
   const shell = $('#gameShell');
@@ -7595,6 +7622,19 @@ function startTraining() {
   updateNav();
   renderTrainingAtPly();
   toast(`Обучение: осталось ${trainingLeft()} из 3`);
+}
+
+function toggleTrainingMin() {
+  const panel = $('#trainingPanel');
+  if (!panel || !ui.training) return;
+  const collapsed = panel.classList.toggle('collapsed');
+  const btn = $('#trainingMin');
+  if (btn) {
+    btn.textContent = collapsed ? '▴' : '▾';
+    btn.title = collapsed ? 'Развернуть' : 'Свернуть';
+    btn.setAttribute('aria-expanded', String(!collapsed));
+  }
+  if (!collapsed) renderTrainingAtPly();
 }
 
 function renderTrainingAtPly() {
@@ -7665,7 +7705,7 @@ function endTraining() {
   const shell = $('#gameShell');
   if (shell) shell.classList.remove('training-on', 'review-mode');
   const panel = $('#trainingPanel');
-  if (panel) panel.classList.add('hidden');
+  if (panel) { panel.classList.add('hidden'); panel.classList.remove('collapsed'); }
   renderAll(false);
   renderMoves();
   updateNav();
@@ -7905,6 +7945,14 @@ function updateNav() {
 function gotoPly(ply) {
   const max = ui.frames.length - 1;
   const target = Math.max(0, Math.min(max, ply));
+  const from = ui.viewPly;
+  if (target === from) return;
+
+  const cur = viewState();
+  const prevView = { ...cur, board: cur.board.slice() };
+  const targetView = frameViewAt(target);
+  const ghosts = historyGhosts(targetView.board);
+
   if (ui.reviewOnly) {
     ui.viewPly = target;
     ui.selected = -1;
@@ -7913,9 +7961,7 @@ function gotoPly(ply) {
     updateNav();
     renderPgnBox();
     if (ui.training) renderTrainingAtPly();
-    return;
-  }
-  if (ui.mode === 'local' && !ui.bot && ui.st && target < max) {
+  } else if (ui.mode === 'local' && !ui.bot && ui.st && target < max) {
     /* В игре на одном телефоне это настоящий откат, а не только просмотр. */
     const f = ui.frames[target];
     ui.st.board = f.board.slice();
@@ -7937,19 +7983,148 @@ function gotoPly(ply) {
     clearTimeout(ui.endTimer);
     ui.endTimer = 0;
     ui.selected = -1;
+    ui.turnStart = performance.now();
+    ui.running = !!ui.timeMs && ui.moves.length > 0;
+    const rolledResult = $('#result');
+    if (rolledResult) rolledResult.classList.add('hidden');
     renderAll(false);
     renderMoves();
     updateNav();
     renderPgnBox();
     saveCurrentGame();
-    return;
+  } else {
+    ui.viewPly = target;
+    ui.selected = -1;
+    renderAll(false);
+    renderMoves();
+    updateNav();
+    renderPgnBox();
   }
-  ui.viewPly = target;
-  ui.selected = -1;
-  renderAll(false);
-  renderMoves();
-  updateNav();
-  renderPgnBox();
+
+  animateHistoryJump(prevView, targetView, ghosts);
+  playHistorySound(prevView, targetView);
+}
+
+/* ── плавный переход по истории: фигуры едут, а не телепортируются ── */
+
+function frameViewAt(ply) {
+  const max = ui.frames.length - 1;
+  const f = ui.frames[Math.max(0, Math.min(max, ply))];
+  if (!f) return viewState();
+  return {
+    ...ui.st,
+    board: f.board,
+    lastMove: f.lastMove || null,
+    turn: f.turn,
+    ep: f.ep,
+    castling: f.castling,
+    blocked: f.blocked,
+    capturedKing: f.capturedKing,
+    check: f.check,
+  };
+}
+
+function boardIdMap(board) {
+  const map = new Map();
+  for (let i = 0; i < board.length; i++) if (board[i]) map.set(board[i].id, i);
+  return map;
+}
+
+/* Снятые фигуры остаются призраками и растворяются поверх доски. */
+function historyGhosts(nextBoard) {
+  const nextIds = new Set();
+  for (const p of nextBoard) if (p) nextIds.add(p.id);
+  const ghosts = [];
+  for (const [id, el] of ui.pieceNodes) {
+    if (nextIds.has(id)) continue;
+    const ghost = el.cloneNode(true);
+    ghost.classList.add('piece-ghost');
+    ghost.style.transition = 'none';
+    ghost.style.transform = el.style.transform;
+    ghost.style.zIndex = '190';
+    ghost.style.pointerEvents = 'none';
+    ghosts.push(ghost);
+  }
+  return ghosts;
+}
+
+function animateHistoryJump(prevView, nextView, ghosts) {
+  const layer = $('#pieces');
+  const sq = ui.sq;
+  if (!layer || !sq) return;
+  ui.histAnim = (ui.histAnim || 0) + 1;
+  const token = ui.histAnim;
+  const prevMap = boardIdMap(prevView.board);
+  const nextMap = boardIdMap(nextView.board);
+  const movers = [];
+
+  for (const [id, to] of nextMap) {
+    const el = ui.pieceNodes.get(id);
+    if (!el) continue;
+    const from = prevMap.get(id);
+    if (from == null) {
+      /* откат взятия — фигура возвращается мягко */
+      el.animate([
+        { opacity: 0, transform: el.style.transform + ' scale(.6)' },
+        { opacity: 1, transform: el.style.transform + ' scale(1)' },
+      ], { duration: 210, easing: 'cubic-bezier(.2,.8,.3,1)' });
+      continue;
+    }
+    if (from === to) continue;
+    const a = disp(prevView, from);
+    const b = disp(nextView, to);
+    if (a.dx === b.dx && a.dy === b.dy) continue;
+    movers.push({
+      el,
+      from: `translate(${a.dx * sq}px, ${a.dy * sq}px)`,
+      to: `translate(${b.dx * sq}px, ${b.dy * sq}px)`,
+      z: 10 + b.dy,
+    });
+  }
+
+  for (const ghost of ghosts) layer.appendChild(ghost);
+
+  if (movers.length) {
+    for (const m of movers) {
+      m.el.style.transition = 'none';
+      m.el.style.transform = m.from;
+      m.el.style.zIndex = '200';
+    }
+    void layer.offsetWidth; // фиксируем стартовый кадр до перехода
+    requestAnimationFrame(() => {
+      if (token !== ui.histAnim) return;
+      for (const m of movers) {
+        m.el.style.transition = 'transform .24s cubic-bezier(.22,.8,.25,1)';
+        m.el.style.transform = m.to;
+      }
+    });
+    setTimeout(() => {
+      if (token !== ui.histAnim) return;
+      for (const m of movers) {
+        m.el.style.transition = '';
+        m.el.style.zIndex = String(m.z);
+      }
+    }, 300);
+  }
+
+  for (const ghost of ghosts) {
+    ghost.animate([
+      { opacity: 1, transform: ghost.style.transform + ' scale(1)' },
+      { opacity: 0, transform: ghost.style.transform + ' scale(.55)' },
+    ], { duration: 220, easing: 'ease-out' }).onfinish = () => ghost.remove();
+    setTimeout(() => ghost.remove(), 420);
+  }
+}
+
+function playHistorySound(prevView, nextView) {
+  if (profile.sound === false) return;
+  let before = 0;
+  let after = 0;
+  for (const p of prevView.board) if (p) before += 1;
+  for (const p of nextView.board) if (p) after += 1;
+  if (before !== after) sound.capture();
+  else sound.move();
+  if (nextView.check) setTimeout(() => sound.check(), 110);
 }
 
 function buildPgnText() {
@@ -9529,6 +9704,14 @@ function bindEvents() {
   if ($('#trNext')) $('#trNext').addEventListener('click', () => gotoPly(ui.viewPly + 1));
   if ($('#trDone')) $('#trDone').addEventListener('click', endTraining);
   if ($('#trainingClose')) $('#trainingClose').addEventListener('click', endTraining);
+  if ($('#trainingMin')) $('#trainingMin').addEventListener('click', toggleTrainingMin);
+  const resultLockBox = $('#result');
+  if (resultLockBox) resultLockBox.addEventListener('click', (e) => {
+    if (performance.now() < (ui.resultLockedUntil || 0)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
   $('#navPrev').addEventListener('click', () => gotoPly(ui.viewPly - 1));
   $('#navNext').addEventListener('click', () => gotoPly(ui.viewPly + 1));
   $('#navEnd').addEventListener('click', () => gotoPly(ui.frames.length - 1));
