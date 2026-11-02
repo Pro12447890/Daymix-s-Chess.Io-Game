@@ -114,6 +114,7 @@ const sound = {
   win() { if (!this.on) return; [523, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.2, 'triangle', 0.055, i * 0.12)); },
   lose() { if (!this.on) return; [392, 330, 262].forEach((f, i) => this.tone(f, 0.22, 'sine', 0.05, i * 0.14)); },
   click() { if (this.on) this.tone(220, 0.03, 'sine', 0.028); },
+  tick() { if (this.on) this.tone(880, 0.018, 'square', 0.022); },
 };
 
 function buzz(pattern) {
@@ -1715,6 +1716,7 @@ const THEMES = [
 
 const PIECE_SKINS = [
   { id: '1', name: 'Классика', w: '#ffffff', we: '#1f1f1f', wd: '#404040', b: '#312e2b', be: '#0d0d0d', bd: '#5a5652', sw: 2.2 },
+  { id: 'thin', name: 'Тонкие', w: '#ffffff', we: '#2b2b2b', wd: '#4a4a4a', b: '#312e2b', be: '#111111', bd: '#5a5652', sw: 1.45 },
   { id: '2', name: 'Жирные', w: '#fdfbf6', we: '#b9ab90', wd: '#a89a80', b: '#23262c', be: '#0d0f12', bd: '#343a43', sw: 4.2 },
   { id: '3', name: 'Контур', w: '#2a241d', we: '#2a241d', wd: '#2a241d', b: '#1d2026', be: '#1d2026', bd: '#1d2026', sw: 1.9, hollow: true },
   { id: '4', name: 'Металл', w: '#e8edf2', we: '#4a4640', wd: '#7d786f', b: '#3a4048', be: '#e9edf2', bd: '#d7dbe0', sw: 1.9, metal: true },
@@ -1777,7 +1779,7 @@ for (const [name, w, we, wd, b, be, bd, extra] of SKIN_EFFECTS) {
 }
 
 const PIECE_SETS = PIECE_SKINS;
-const QUICK_SKINS = 5;
+const QUICK_SKINS = 6;
 const skinById = (id) => PIECE_SKINS.find((s) => s.id === String(id)) || PIECE_SKINS[0];
 
 /* ──────────────────────────── 3. СОСТОЯНИЕ UI ─────────────────────────── */
@@ -3509,30 +3511,35 @@ function randomSide() {
   return Math.random() < 0.5 ? 'w' : 'b';
 }
 
-/** Жеребьёвка цвета: показывается до стартовой анимации доски. */
+/** Жеребьёвка цвета: лента королей в духе кейсов, медленно тормозит на цвете. */
 function showSideRoulette(side, done, opts = {}) {
   const overlay = $('#sideRoulette');
   if (!overlay || opts.immediate) { done(side); return; }
   const chosen = side === 'b' ? 'b' : 'w';
-  const white = $('#srWhite');
-  const black = $('#srBlack');
-  if (white && !white.innerHTML) white.innerHTML = pieceSvg('k');
-  if (black && !black.innerHTML) black.innerHTML = pieceSvg('k');
-  const kicker = overlay.querySelector('.sr-kicker');
+  const track = $('#srTrack');
+  const reel = $('#srReel');
   const result = $('#srResult');
   const sub = $('#srSub');
+  const kicker = overlay.querySelector('.sr-kicker');
   const card = overlay.querySelector('.sr-card');
   if (kicker) kicker.textContent = profile.language === 'en' ? 'DRAWING COLOURS' : 'ЖЕРЕБЬЁВКА';
   if (result) result.textContent = profile.language === 'en' ? 'Drawing colours…' : 'Определяем цвет…';
-  if (sub) sub.textContent = profile.language === 'en' ? 'fate decides for you' : 'судьба решает за вас';
-  overlay.classList.remove('hidden');
+  if (sub) {
+    sub.textContent = profile.language === 'en' ? 'fate decides for you' : 'судьба решает за вас';
+  }
+  overlay.classList.remove('hidden', 'sr-stopped');
   overlay.removeAttribute('data-side');
   if (card) { card.classList.remove('sr-show'); void card.offsetWidth; card.classList.add('sr-show'); }
   sound.click();
   clearTimeout(showSideRoulette.timer);
   clearTimeout(showSideRoulette.doneTimer);
-  showSideRoulette.timer = setTimeout(() => {
+  showSideRoulette.token = (showSideRoulette.token || 0) + 1;
+  const token = showSideRoulette.token;
+
+  function finish() {
+    if (token !== showSideRoulette.token) return;
     overlay.dataset.side = chosen;
+    overlay.classList.add('sr-stopped');
     if (result) {
       result.textContent = profile.language === 'en'
         ? `You are ${chosen === 'w' ? 'White' : 'Black'}`
@@ -3541,10 +3548,58 @@ function showSideRoulette(side, done, opts = {}) {
     if (sub) sub.textContent = profile.language === 'en' ? 'the board is ready' : 'доска уже ждёт';
     sound.check();
     showSideRoulette.doneTimer = setTimeout(() => {
+      if (token !== showSideRoulette.token) return;
       overlay.classList.add('hidden');
       done(chosen);
-    }, 900);
-  }, 1100);
+    }, 1100);
+  }
+
+  if (track && reel) {
+    const mirror = !!opts.mirror;
+    const base = 32 + Math.floor(Math.random() * 3) * 2; // чётный индекс
+    const target = base + (chosen === 'b' ? 1 : 0);
+    const total = target + 34;
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < total; i++) {
+      const color = i % 2 === 0 ? 'w' : 'b';
+      const tile = document.createElement('div');
+      tile.className = 'sr-tile ' + color;
+      const king = document.createElement('span');
+      king.className = 'sr-king ' + color;
+      king.innerHTML = pieceSvg('k');
+      tile.appendChild(king);
+      frag.appendChild(tile);
+    }
+    if (track.getAnimations) track.getAnimations().forEach((a) => a.cancel());
+    track.innerHTML = '';
+    track.appendChild(frag);
+    track.style.transform = 'translateX(0px)';
+    const first = track.firstElementChild;
+    const tileW = first ? first.offsetWidth : 98;
+    const gap = parseFloat(getComputedStyle(track).gap) || 10;
+    const step = tileW + gap;
+    const viewW = reel.clientWidth || 500;
+    const final = viewW / 2 - tileW / 2 - target * step;
+    const travel = 2300 + Math.random() * 500;
+    const start = mirror ? final + travel : final - travel;
+    track.style.transform = `translateX(${start}px)`;
+    void track.offsetWidth;
+    let delay = 55;
+    for (let i = 0; i < 11; i++) {
+      delay += 55 * Math.pow(1.3, i);
+      setTimeout(() => sound.tick(), delay);
+    }
+    track.animate(
+      [{ transform: `translateX(${start}px)` }, { transform: `translateX(${final}px)` }],
+      { duration: 3000, easing: 'cubic-bezier(.05,.62,.08,1)', fill: 'forwards' },
+    ).onfinish = () => {
+      const win = track.children[target];
+      if (win) win.classList.add('win');
+      finish();
+    };
+  } else {
+    showSideRoulette.timer = setTimeout(finish, 1200);
+  }
 }
 
 function normalizeBot(bot, side) {
@@ -4354,10 +4409,10 @@ function layoutBoard() {
      и в кинематическом ландшафте доска выходит неквадратной. */
   const shortLandscape = !!(window.matchMedia && window.matchMedia('(max-height: 480px) and (orientation: landscape)').matches);
   const tightLandscape = !shortLandscape && !!(window.matchMedia && window.matchMedia('(max-height: 560px)').matches);
-  const phoneBar = shortLandscape ? 86 : tightLandscape ? 136 : 162;
+  const phoneBar = shortLandscape ? 86 : tightLandscape ? 136 : 152;
   const barH = (phone
     ? phoneBar
-    : 96 + 42) + brawlH + (ui.strategy ? 46 : 0);   // фиксировано: доска не дёргается при взятии
+    : 104) + brawlH + (ui.strategy ? 46 : 0);   // фиксировано: доска не дёргается при взятии
   const gaps = 8;
   const shell = $('#gameShell');
   const panel = $('#sidePanel');
@@ -8991,7 +9046,7 @@ function handleNet(text) {
         : (mySide === 'w' ? 'Вы за белых' : 'Вы за чёрных'));
       showPhase('opening');
     };
-    if (msg.randomSide && !msg.coop) showSideRoulette(mySide, beginGuest);
+    if (msg.randomSide && !msg.coop) showSideRoulette(mySide, beginGuest, { mirror: true });
     else beginGuest();
     return;
   }

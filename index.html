@@ -36,7 +36,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261102-78">
+  <link rel="stylesheet" href="style.css?v=20261102-79">
 </head>
 <body>
 
@@ -370,7 +370,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-11-01-05 · история, экспорт, боты, обучение</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-11-02-79 · история, обучение, рулетка цвета</div>
             <div class="theme-preview-slot" id="themePreviewSlot">
               <div class="theme-preview" id="themePreview"></div>
             </div>
@@ -861,10 +861,9 @@
 <div class="side-roulette hidden" id="sideRoulette" aria-hidden="true">
   <div class="sr-card">
     <div class="sr-kicker">ЖЕРЕБЬЁВКА</div>
-    <div class="sr-kings">
-      <span class="sr-king w" id="srWhite"></span>
-      <span class="sr-vs">VS</span>
-      <span class="sr-king b" id="srBlack"></span>
+    <div class="sr-reel" id="srReel">
+      <div class="sr-track" id="srTrack"></div>
+      <div class="sr-marker" aria-hidden="true"></div>
     </div>
     <div class="sr-result" id="srResult">Определяем цвет…</div>
     <div class="sr-sub" id="srSub">судьба решает за вас</div>
@@ -969,8 +968,8 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261102-78"></script>
-<script src="app.js?v=20261102-78"></script>
+<script src="engine.js?v=20261102-79"></script>
+<script src="app.js?v=20261102-79"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>
@@ -983,5 +982,6 @@
   </div>
 </body>
 </html>
+
 
 
