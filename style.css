@@ -3918,7 +3918,7 @@ body.reviewing .toast { bottom: 116px; }
   align-items: center !important;
   justify-content: space-between !important;
 }
-#barBottom .clock { order: 1; }
+#barBottom .clock { order: 3; }
 #barBottom .history-nav {
   position: absolute;
   left: 50%;
@@ -3926,10 +3926,10 @@ body.reviewing .toast { bottom: 116px; }
   transform: translate(-50%, -50%);
   margin: 0;
 }
-#barBottom .pc-left { order: 3; flex: 0 1 auto !important; flex-direction: row-reverse; padding-right: 2px; }
-#barBottom .pc-info { align-items: flex-end; }
-#barBottom .pc-title-line { justify-content: flex-end; }
-#barBottom .captured-bar { justify-content: flex-end; }
+#barBottom .pc-left { order: 1; flex: 0 1 auto !important; }
+#barBottom .pc-info { align-items: flex-start; }
+#barBottom .pc-title-line { justify-content: flex-start; }
+#barBottom .captured-bar { justify-content: flex-start; }
 #barBottom .strat-gold-badge {
   position: absolute;
   left: 84px;
@@ -4837,3 +4837,103 @@ body.reviewing .review-exit { display: inline-flex !important; }
   #trText { min-height: 0; }
   body.reviewing .mobile-actions { display: none !important; }
 }
+
+/* ═══════════════════ 17. ЖИДКОЕ СТЕКЛО (опция) ═══════════════════ */
+
+html[data-glass="1"] {
+  --glass-border: rgba(255, 255, 255, .16);
+  --glass-fill: linear-gradient(155deg, rgba(255, 255, 255, .11), rgba(255, 255, 255, .035));
+}
+html[data-glass="1"] body {
+  background:
+    radial-gradient(900px 620px at 10% 0%, rgba(80, 190, 160, .38), transparent 60%),
+    radial-gradient(820px 600px at 95% 2%, rgba(92, 132, 232, .36), transparent 62%),
+    radial-gradient(920px 720px at 50% 115%, rgba(220, 140, 70, .28), transparent 60%),
+    #101418;
+  background-attachment: fixed;
+}
+html[data-glass="1"] .main { background: transparent; }
+
+html[data-glass="1"] .app-sidebar,
+html[data-glass="1"] .side-panel,
+html[data-glass="1"] .modal-card,
+html[data-glass="1"] .result-card,
+html[data-glass="1"] .training-panel,
+html[data-glass="1"] .sr-card,
+html[data-glass="1"] .card,
+html[data-glass="1"] .online-box {
+  background: linear-gradient(155deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .04)) !important;
+  border-color: rgba(255, 255, 255, .24) !important;
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .34),
+    inset 0 -1px 0 rgba(0, 0, 0, .22),
+    0 24px 60px rgba(0, 0, 0, .5) !important;
+}
+html[data-glass="1"] .app-sidebar {
+  background: rgba(14, 20, 24, .42) !important;
+}
+html[data-glass="1"] .side-panel-header,
+html[data-glass="1"] .tabs,
+html[data-glass="1"] .game-controls-bar,
+html[data-glass="1"] .drawer-head {
+  background: rgba(255, 255, 255, .035) !important;
+  border-color: var(--glass-border) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+html[data-glass="1"] .moves,
+html[data-glass="1"] .chat,
+html[data-glass="1"] .pgn,
+html[data-glass="1"] .lobby-list {
+  background: rgba(8, 10, 12, .26) !important;
+  border: 1px solid rgba(255, 255, 255, .08);
+}
+html[data-glass="1"] input,
+html[data-glass="1"] select,
+html[data-glass="1"] textarea {
+  background: rgba(255, 255, 255, .07) !important;
+  border-color: var(--glass-border) !important;
+}
+html[data-glass="1"] .btn:not(.btn-game-green):not(.btn-primary):not(.btn-danger),
+html[data-glass="1"] .btn-ghost,
+html[data-glass="1"] .icon-btn,
+html[data-glass="1"] .btn-action:not(.danger),
+html[data-glass="1"] .mob-btn,
+html[data-glass="1"] .pset,
+html[data-glass="1"] .mode-tile,
+html[data-glass="1"] .time-item,
+html[data-glass="1"] .swatch,
+html[data-glass="1"] .seg button {
+  background: rgba(255, 255, 255, .06) !important;
+  border-color: var(--glass-border) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+html[data-glass="1"] .clock {
+  background: rgba(255, 255, 255, .10) !important;
+  border: 1px solid rgba(255, 255, 255, .16);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+}
+html[data-glass="1"] .player-capsule.active .clock {
+  background: #ffffff !important;
+  color: #1a1a1a;
+  border-color: #ffffff;
+}
+html[data-glass="1"] .board-wrap {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .2), 0 0 55px rgba(120, 220, 190, .12), 0 30px 80px rgba(0, 0, 0, .6);
+}
+html[data-glass="1"] .toast {
+  background: rgba(20, 22, 25, .72);
+  color: #fff;
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+html[data-glass="1"] .sb-btn {
+  background: rgba(255, 255, 255, .045);
+}
+

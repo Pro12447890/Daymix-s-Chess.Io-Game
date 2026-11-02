@@ -25,6 +25,8 @@ const DEFAULT_PROFILE = {
   flipAll: false,
   tableFlip: true,
   epicFx: false,
+  glass: false,
+  resultPause: false,
   autoQueen: true,
   sound: true,
   side: 'w',
@@ -1717,6 +1719,7 @@ const THEMES = [
 const PIECE_SKINS = [
   { id: '1', name: 'Классика', w: '#ffffff', we: '#1f1f1f', wd: '#404040', b: '#312e2b', be: '#0d0d0d', bd: '#5a5652', sw: 2.2 },
   { id: 'thin', name: 'Тонкие', w: '#ffffff', we: '#2b2b2b', wd: '#4a4a4a', b: '#312e2b', be: '#111111', bd: '#5a5652', sw: 1.45 },
+  { id: 'medium', name: 'Средние', w: '#ffffff', we: '#252525', wd: '#454545', b: '#312e2b', be: '#0f0f0f', bd: '#5a5652', sw: 3.1 },
   { id: '2', name: 'Жирные', w: '#fdfbf6', we: '#b9ab90', wd: '#a89a80', b: '#23262c', be: '#0d0f12', bd: '#343a43', sw: 4.2 },
   { id: '3', name: 'Контур', w: '#2a241d', we: '#2a241d', wd: '#2a241d', b: '#1d2026', be: '#1d2026', bd: '#1d2026', sw: 1.9, hollow: true },
   { id: '4', name: 'Металл', w: '#e8edf2', we: '#4a4640', wd: '#7d786f', b: '#3a4048', be: '#e9edf2', bd: '#d7dbe0', sw: 1.9, metal: true },
@@ -1779,7 +1782,7 @@ for (const [name, w, we, wd, b, be, bd, extra] of SKIN_EFFECTS) {
 }
 
 const PIECE_SETS = PIECE_SKINS;
-const QUICK_SKINS = 6;
+const QUICK_SKINS = 7;
 const skinById = (id) => PIECE_SKINS.find((s) => s.id === String(id)) || PIECE_SKINS[0];
 
 /* ──────────────────────────── 3. СОСТОЯНИЕ UI ─────────────────────────── */
@@ -1884,6 +1887,9 @@ function renderProfile() {
   document.documentElement.classList.toggle('epic-fx', !!profile.epicFx && !profile.calm);
   if ($('#optCalm')) $('#optCalm').checked = !!profile.calm;
   document.documentElement.classList.toggle('calm', !!profile.calm);
+  if ($('#optGlass')) $('#optGlass').checked = !!profile.glass;
+  document.documentElement.dataset.glass = profile.glass ? '1' : '0';
+  if ($('#optResultPause')) $('#optResultPause').checked = !!profile.resultPause;
   if ($('#langSelect')) $('#langSelect').value = profile.language || 'ru';
   document.documentElement.lang = profile.language || 'ru';
   $('#optAutoQueen').checked = profile.autoQueen;
@@ -7538,6 +7544,12 @@ function lockResultCard() {
   const box = $('#result');
   if (!box) return;
   clearTimeout(ui.resultLockTimer);
+  ui.resultLockTimer = 0;
+  if (!profile.resultPause) {
+    box.classList.remove('result-locked', 'result-ready');
+    ui.resultLockedUntil = 0;
+    return;
+  }
   box.classList.remove('result-ready');
   box.classList.add('result-locked');
   ui.resultLockedUntil = performance.now() + 1000;
@@ -9460,6 +9472,17 @@ function bindEvents() {
   };
   if ($('#quickEpicFx')) $('#quickEpicFx').addEventListener('change', (e) => setEpic(e.target.checked));
   if ($('#optCalm')) $('#optCalm').addEventListener('change', (e) => setCalm(e.target.checked));
+  if ($('#optGlass')) $('#optGlass').addEventListener('change', (e) => {
+    profile.glass = e.target.checked;
+    document.documentElement.dataset.glass = profile.glass ? '1' : '0';
+    saveProfile();
+    toast(profile.glass ? 'Жидкое стекло включено' : 'Жидкое стекло выключено');
+  });
+  if ($('#optResultPause')) $('#optResultPause').addEventListener('change', (e) => {
+    profile.resultPause = e.target.checked;
+    saveProfile();
+    toast(profile.resultPause ? 'Пауза на результате включена' : 'Пауза на результате выключена');
+  });
   if ($('#btnRefreshGame')) $('#btnRefreshGame').addEventListener('click', refreshActiveGame);
   if ($('#btnImportLocal')) $('#btnImportLocal').addEventListener('click', openImport);
   if ($('#homeImport')) $('#homeImport').addEventListener('click', openImport);
