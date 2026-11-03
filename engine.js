@@ -14,6 +14,19 @@ function newPiece(t, c) { return { t, c, id: idSeq++, used: 0 }; }
 const PIECE_NAMES = { p: 'пешка', n: 'конь', b: 'слон', r: 'ладья', q: 'ферзь', k: 'король', j: 'шут', g: 'пацанчик' };
 const PIECE_VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0, j: 4, g: 6 };
 
+/* ХП для режимов урона: обычные фигуры стоят своих очков, король — 15. */
+function damageMaxHp(t, flags) {
+  if (t === 'k') return flags && flags.damageKing ? 15 : 0;
+  return PIECE_VALUE[t] || 1;
+}
+function initDamageHp(st) {
+  for (const p of st.board) {
+    if (!p) continue;
+    p.maxHp = damageMaxHp(p.t, st.flags);
+    p.hp = p.maxHp;
+  }
+}
+
 /* Символы: один набор на все темы, цвет задаётся в CSS. */
 const GLYPHS = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟', j: '🃏', g: '🧢' };
 
@@ -53,6 +66,16 @@ const MODES = [
     id: 'kingCapture', n: 2, name: 'Съедение короля', icon: '🗡',
     desc: 'Король может идти под бой и стоять под шахом. Проигрывает тот, чей король съеден.',
     W: 8, H: 8, flags: { kingFree: true },
+  },
+  {
+    id: 'damage', n: 64, name: 'Хардкор урона', icon: '🩸',
+    desc: 'У фигур есть ХП: пешка 1, конь и слон 3, ладья 5, ферзь 9. Атака снимает ХП; если у атакующего меньше ХП, гибнет он, а цель остаётся раненой.',
+    W: 8, H: 8, flags: { classic: true, damage: true },
+  },
+  {
+    id: 'damageKing', n: 65, name: 'Король урона', icon: '💢',
+    desc: 'То же, но у короля 15 ХП. Шах не обязателен: короля можно съесть, а каждый новый шах снимает 1 ХП.',
+    W: 8, H: 8, flags: { classic: true, kingFree: true, damageKing: true },
   },
   {
     id: 'kingOnly', n: 3, name: 'Король один', icon: '👑',
@@ -427,9 +450,14 @@ function createState(modeId, opts = {}) {
     caps: { w: 0, b: 0 },
     converted: -1,
     check: false,
+    checkSide: { w: false, b: false },
+    lastCheckDamage: null,
+    plySeq: 0,
+    checkDamagedSeq: -1,
     seed: opts.seed || Math.floor(Math.random() * 1e9),
   };
   setupBoard(st);
+  if (st.flags.damage || st.flags.damageKing) initDamageHp(st);
   return st;
 }
 
@@ -1172,6 +1200,8 @@ function applyMove(st, m) {
     converted: st.converted,
     exploded: st.exploded,
     annihilated: st.annihilated,
+    plySeq: st.plySeq,
+    checkDamagedSeq: st.checkDamagedSeq,
     capsBefore: null,
     selfRemoved: null,
   };
@@ -1186,6 +1216,7 @@ function applyMove(st, m) {
 
   board[m.from] = null;
   let capturedColor = null;
+  let damageHit = null;
 
   if (m.swap) {
     const q = board[m.to];
@@ -1212,14 +1243,44 @@ function applyMove(st, m) {
         if (v) capturedColor = v.c;
       }
     }
-    if (board[m.to]) {
+    const victim = board[m.to];
+    /* Режимы урона: атака снимает ХП, а не всегда съедает фигуру. */
+    const kingNormal = p.t === 'k' && !st.flags.damageKing;
+    const victimKingNormal = victim && victim.t === 'k' && !st.flags.damageKing;
+    if (victim && (st.flags.damage || st.flags.damageKing) && victim.c !== p.c && !kingNormal && !victimKingNormal) {
+      const atkHp = p.hp != null ? p.hp : damageMaxHp(p.t, st.flags);
+      const defHp = victim.hp != null ? victim.hp : damageMaxHp(victim.t, st.flags);
+      const dmg = Math.max(1, atkHp);
+      const survived = defHp > dmg;
+      damageHit = {
+        square: m.to, dmg, type: victim.t, color: victim.c,
+        survived, hp: Math.max(0, defHp - dmg),
+      };
+      undo.damage = damageHit;
+      if (survived) {
+        undo.damaged = { sq: m.to, piece: victim };
+        board[m.to] = {
+          ...victim,
+          hp: defHp - dmg,
+          maxHp: victim.maxHp || damageMaxHp(victim.t, st.flags),
+        };
+      } else {
+        const v = remove(m.to);
+        if (v) capturedColor = v.c;
+      }
+    } else if (victim) {
       const v = remove(m.to);
       if (v) capturedColor = v.c;
     }
     let placed = p;
-    if (m.vanish) placed = null;
+    if (damageHit && damageHit.survived) placed = null;
+    else if (m.vanish) placed = null;
     else if (m.promo) {
       placed = { ...p, t: m.promo, used: 0 };
+      if (st.flags.damage || st.flags.damageKing) {
+        placed.maxHp = damageMaxHp(m.promo, st.flags);
+        placed.hp = placed.maxHp;
+      }
       if (st.flags.zombie) placed.special = p.c === 'w' ? 'redqueen' : 'bluequeen';
     }
     else if ((m.kingStep && st.flags.bishopKing) || p.t === 'j') placed = { ...p, used: p.used + 1 };
@@ -1324,6 +1385,7 @@ function applyMove(st, m) {
 
   st.half = (p.t === 'p' || capturedColor) ? 0 : st.half + 1;
   if (st.turn === 'b') st.full++;
+  st.plySeq = (st.plySeq || 0) + 1;
   st.turn = other(st.turn);
   st.exploded = exploded;
   st.annihilated = annihilated;
@@ -1338,6 +1400,7 @@ function undoMove(st, undo) {
   st.exploded = undo.exploded;
   st.annihilated = undo.annihilated;
   board[undo.to] = null;                                   // убрать фигуру с места приземления
+  if (undo.damaged) board[undo.damaged.sq] = undo.damaged.piece;  // вернуть раненую фигуру целой
   if (undo.swapPiece) board[undo.to] = undo.swapPiece;     // вернуть обменянную фигуру
   if (undo.rook) board[undo.rook.to] = null;               // убрать ладью с нового места
   board[undo.from] = undo.piece;                           // король/фигура — домой
@@ -1349,6 +1412,8 @@ function undoMove(st, undo) {
   st.ep = undo.ep;
   st.half = undo.half;
   st.full = undo.full;
+  st.plySeq = undo.plySeq;
+  st.checkDamagedSeq = undo.checkDamagedSeq;
   st.turn = undo.turn;
   st.castling = { w: { ...undo.castling.w }, b: { ...undo.castling.b } };
   st.capturedKing = undo.capturedKing;
@@ -1421,8 +1486,67 @@ function insufficient(st) {
   return false;
 }
 
+/* «Король урона»: шахи не обязательны, короля можно съесть,
+   а каждый новый шах снимает 1 ХП. Мат здесь не наступает. */
+function updateDamageKingStatus(st) {
+  st.lastCheckDamage = null;
+  if (st.capturedKing) {
+    st.status = 'over';
+    st.result = { winner: other(st.capturedKing), reason: 'king' };
+    return st.result;
+  }
+  const wk = findKing(st, 'w');
+  const bk = findKing(st, 'b');
+  if (wk < 0 || bk < 0) {
+    const lost = wk < 0 ? 'w' : 'b';
+    st.capturedKing = lost;
+    st.status = 'over';
+    st.result = { winner: other(lost), reason: 'king' };
+    return st.result;
+  }
+  const cw = inCheck(st, 'w');
+  const cb = inCheck(st, 'b');
+  /* Шах засчитывается по ходу, который его дал: сторона, которой сейчас
+     ходить, стоит под шахом — значит, предыдущий ход был шахом. */
+  const checkedColor = st.turn;
+  const checked = checkedColor === 'w' ? cw : cb;
+  if (checked && st.checkDamagedSeq !== st.plySeq) {
+    st.checkDamagedSeq = st.plySeq;
+    const k = findKing(st, checkedColor);
+    if (k >= 0) {
+      const king = st.board[k];
+      const hp = (king.hp != null ? king.hp : 15) - 1;
+      if (hp <= 0) {
+        st.board[k] = null;
+        st.capturedKing = checkedColor;
+        st.checkSide = { w: cw, b: cb };
+        st.check = true;
+        st.status = 'over';
+        st.result = { winner: other(checkedColor), reason: 'kingHp' };
+        return st.result;
+      }
+      st.board[k] = { ...king, hp, maxHp: king.maxHp || 15 };
+      st.lastCheckDamage = { square: k, color: checkedColor, hp };
+    }
+  }
+  st.checkSide = { w: cw, b: cb };
+  st.check = checked;
+  const moves = legalMoves(st, st.turn);
+  if (!moves.length) {
+    st.status = 'over';
+    st.result = st.check
+      ? { winner: other(st.turn), reason: 'king' }
+      : { winner: null, reason: 'stalemate' };
+    return st.result;
+  }
+  st.status = 'play';
+  st.result = null;
+  return null;
+}
+
 function updateStatus(st) {
   const countPieces = (color) => st.board.filter((q) => q && q.c === color).length;
+  if (st.flags.damageKing) return updateDamageKingStatus(st);
   if (st.flags.captureAll) {
     const wLeft = countPieces('w');
     const bLeft = countPieces('b');
@@ -1667,11 +1791,16 @@ function centerCells(st) {
 
 /** Оценка позиции с точки зрения белых: материал плюс тяга к центру. */
 function evaluateWhite(st) {
+  if (st.capturedKing) return st.capturedKing === 'w' ? -9999 : 9999;
   let score = 0;
   for (let i = 0; i < st.board.length; i++) {
     const p = st.board[i];
     if (!p) continue;
     let v = PIECE_VALUE[p.t] || 0;
+    if ((st.flags.damage || st.flags.damageKing) && p.maxHp) {
+      if (p.t === 'k') v = (p.hp || 0) * 0.9;
+      else v *= Math.max(0, p.hp != null ? p.hp : p.maxHp) / p.maxHp;
+    }
     const x = fileOf(st, i);
     const y = rankOf(st, i);
     const dx = Math.abs(x - (st.W - 1) / 2);
@@ -1683,6 +1812,7 @@ function evaluateWhite(st) {
 }
 
 function negamax(st, depth, alpha, beta) {
+  if (st.capturedKing) return st.capturedKing === st.turn ? -90000 : 90000;
   const color = st.turn;
   if (depth === 0) return (color === 'w' ? 1 : -1) * evaluateWhite(st);
   const moves = legalMoves(st, color);

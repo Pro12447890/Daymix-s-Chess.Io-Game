@@ -4149,6 +4149,44 @@ body.reviewing .toast { bottom: 116px; }
 .sr-king .pc-svg .line { fill: none; stroke: var(--detail); }
 .sr-king.w { color: #fff; --edge: #191919; --detail: #404040; --sw: 2.2; }
 .sr-king.b { color: #2a2724; --edge: #000000; --detail: #8f887c; --sw: 2.4; }
+.sr-parity { display: none; flex-direction: column; gap: 12px; margin: 14px 0 6px; }
+.side-roulette.sr-mode-parity .sr-reel { display: none; }
+.side-roulette.sr-mode-parity .sr-parity { display: flex; }
+.sr-duel { display: flex; align-items: center; justify-content: center; gap: 26px; height: 108px; }
+.sr-duel-king { width: 76px; height: 76px; display: block; filter: drop-shadow(0 6px 10px #0008); }
+.sr-duel-king .pc-svg { width: 100%; height: 100%; display: block; }
+.sr-duel-king .pc-svg .body { fill: currentColor; stroke: var(--edge); stroke-width: var(--sw, 2.2); stroke-linejoin: round; }
+.sr-duel-king .pc-svg .detail { fill: var(--detail); stroke: var(--detail); }
+.sr-duel-king .pc-svg .line { fill: none; stroke: var(--detail); }
+.sr-duel-king.w { color: #fff; --edge: #191919; --detail: #404040; --sw: 2.2; }
+.sr-duel-king.b { color: #2a2724; --edge: #000000; --detail: #8f887c; --sw: 2.4; }
+.sr-duel-q {
+  font-size: 74px; line-height: 1; font-weight: 900; color: #ffd45e;
+  text-shadow: 0 0 26px #ffd45e99, 0 6px 18px #000a;
+  animation: srQuestion 1.1s ease-in-out infinite alternate;
+}
+@keyframes srQuestion {
+  from { transform: scale(.92) rotate(-4deg); opacity: .72; }
+  to { transform: scale(1.08) rotate(4deg); opacity: 1; }
+}
+.sr-parity-title { font-size: 19px; font-weight: 900; color: #fff; }
+.sr-parity-btns { display: flex; gap: 10px; }
+.sr-parity-btn {
+  flex: 1; min-width: 0; padding: 11px 8px 10px; border-radius: 12px; cursor: pointer;
+  border: 1px solid #5a544a; background: linear-gradient(180deg, #3a3732, #24221e); color: #fff;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .12s ease;
+}
+.sr-parity-btn:hover:not(:disabled) { border-color: #ffd45e; }
+.sr-parity-btn:active:not(:disabled) { transform: scale(.97); }
+.sr-parity-btn b { display: block; font-size: 17px; }
+.sr-parity-btn i { display: block; font-style: normal; font-size: 10px; opacity: .55; margin-top: 2px; }
+.sr-parity-btn em { display: block; font-style: normal; font-size: 11px; font-weight: 800; margin-top: 4px; color: #ffd45e; }
+.sr-parity-btn.active { border-color: #ffd45e; box-shadow: 0 0 20px #ffd45e66, inset 0 0 18px #ffd45e18; }
+.sr-parity-btn:disabled { opacity: .55; cursor: default; }
+.sr-parity-note { font-size: 11px; color: var(--text-muted); }
+.side-roulette.sr-mode-parity:not(.sr-stopped) .sr-result,
+.side-roulette.sr-mode-parity:not(.sr-stopped) .sr-sub { display: none; }
+.side-roulette.sr-mode-parity.sr-stopped .sr-parity-note { display: none; }
 .sr-marker {
   position: absolute;
   left: 50%;
@@ -4838,6 +4876,85 @@ body.reviewing .review-exit { display: inline-flex !important; }
   body.reviewing .mobile-actions { display: none !important; }
 }
 
+/* ═══════════════════ 19. РЕЖИМЫ УРОНА: ХП И ОРАНЖЕВЫЕ ПОПАДАНИЯ ═══════════════ */
+html[data-damage="1"] .piece[data-hp]::after {
+  content: attr(data-hp);
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  transform: translateX(-50%);
+  min-width: 17px;
+  padding: 1px 4px 0;
+  border-radius: 5px;
+  border: 1px solid #ff9a3c99;
+  background: linear-gradient(180deg, #5a1d08f2, #2a0d05f2);
+  color: #ffc07a;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 19;
+  box-shadow: 0 0 10px #ff7a2a55;
+}
+html[data-damage="1"] .piece[data-hp].hp-low::after {
+  border-color: #ff5a3c;
+  color: #ff8a74;
+  box-shadow: 0 0 12px #ff3b3066;
+}
+
+.dmg-float {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #ffb15e;
+  font-size: 20px;
+  font-weight: 900;
+  text-shadow: 0 0 12px #ff7a2a, 0 2px 0 #3a1200;
+  animation: dmgFloat .9s cubic-bezier(.2, .8, .3, 1) forwards;
+  pointer-events: none;
+  z-index: 240;
+}
+@keyframes dmgFloat {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(.55); }
+  18% { opacity: 1; transform: translate(-50%, -70%) scale(1.18); }
+  100% { opacity: 0; transform: translate(-50%, -150%) scale(.92); }
+}
+.dmg-ring {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 3px solid #ff9a3c;
+  border-radius: 50%;
+  box-shadow: 0 0 24px #ff7a2a, inset 0 0 16px #ffb36b88;
+  animation: dmgRing .55s ease-out forwards;
+  pointer-events: none;
+  z-index: 235;
+}
+@keyframes dmgRing {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(.35); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(1.22); }
+}
+.dmg-spark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffb15e;
+  box-shadow: 0 0 9px #ff7a2a;
+  animation: dmgSpark .62s ease-out forwards;
+}
+@keyframes dmgSpark {
+  to { transform: translate(var(--dx), var(--dy)) scale(.15); opacity: 0; }
+}
+.piece.hp-hit { animation: hpHit .3s ease; }
+@keyframes hpHit {
+  0%, 100% { filter: none; }
+  32% { filter: brightness(1.7) drop-shadow(0 0 9px #ff7a2a); }
+}
+
 /* ═══════════════ 17. ЖИДКОЕ СТЕКЛО: 5 ЗАКРЕПЛЯЕМЫХ ТИПОВ ═══════════════
    Общие переменные лежат на html[data-glass], каждый тип их перекрывает.
    data-glass="0" — стекло выключено, остальные значения — id типа. */
@@ -5099,6 +5216,45 @@ html[data-glass]:not([data-glass="0"]) .sb-btn {
 /* 32 фигуры больше не держат постоянные композитные слои: браузер сам
    поднимает фигуру на время transform-перехода. */
 .piece { will-change: auto; }
+
+/* Стрелки истории: ближе к часам, жирнее и с тонкой обводкой —
+   по ним легче попасть пальцем. */
+#barBottom .history-nav {
+  left: auto;
+  right: 108px;
+  transform: translateY(-50%);
+  gap: 8px;
+}
+.history-nav button {
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(255, 255, 255, .30);
+  border-radius: 12px;
+  background: transparent;
+  color: #fff;
+}
+.history-nav button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, .07);
+  border-color: rgba(255, 255, 255, .55);
+}
+.history-nav button svg { width: 24px; height: 44px; }
+.history-nav button path { stroke-width: 6.5; }
+
+@media (max-width: 999px) {
+  #barBottom .history-nav { right: 96px; gap: 6px; }
+  .history-nav button { width: 40px; height: 40px; border-radius: 10px; }
+  .history-nav button svg { width: 19px; height: 34px; }
+}
+@media (max-height: 560px) {
+  #barBottom .history-nav { right: 86px; gap: 3px; }
+  .history-nav button { width: 31px; height: 30px; border-radius: 8px; }
+  .history-nav button svg { width: 12px; height: 22px; }
+}
+@media (max-height: 480px) {
+  #barBottom .history-nav { right: 78px; gap: 2px; }
+  .history-nav button { width: 26px; height: 26px; border-radius: 7px; }
+  .history-nav button svg { width: 10px; height: 18px; }
+}
 
 /* «Вернуться в партию»: пульс тени перерисовывал кнопку каждый кадр.
    Теперь пульсирует только прозрачность готового свечения. */

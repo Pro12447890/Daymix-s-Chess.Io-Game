@@ -352,6 +352,9 @@ function personaAfterMove(mover, before, after) {
 function chooseBotMove(st, level, persona) {
   const moves = legalMoves(st, st.turn);
   if (!moves.length) return null;
+  /* Если короля реально можно съесть — бот не проходит мимо. */
+  const kingCap = moves.find((m) => m.capture != null && st.board[m.capture] && st.board[m.capture].t === 'k');
+  if (kingCap) return kingCap;
   const p = persona || ui.persona;
   if (level === 'easy' && !p) {
     if (Math.random() < 0.55) return moves[Math.floor(Math.random() * moves.length)];
@@ -691,6 +694,7 @@ function importGameData(data, opts = {}) {
   ui.timeMs = Number(data.time && data.time.ms) || 0;
   ui.clocks = { w: ui.timeMs, b: ui.timeMs };
   ui.st = createState(mode.id, { square: !!(data.mode && data.mode.square) });
+  ui.modePick = mode.id;
   ui.frames = [snap(ui.st)];
   ui.moves = [];
   ui.viewPly = 0;
@@ -800,7 +804,7 @@ function showHint() {
   const st = ui.st;
   if (!st || st.status !== 'play') return;
   if (ui.reviewOnly) { toast('Режим просмотра — ходы недоступны'); return; }
-  if (ui.viewPly !== ui.frames.length - 1) { toast('Вернитесь в конец партии'); return; }
+  if (ui.viewPly !== ui.frames.length - 1 && !canBranchHere()) { toast('Вернитесь в конец партии'); return; }
   if (ui.mode === 'online' && st.turn !== myColor()) { toast('Сейчас ход соперника'); return; }
   sound.click();
   const found = bestMove(st, 2);
@@ -1404,6 +1408,70 @@ function captureFx(list) {
   }
 }
 
+/* Оранжевое попадание в режимах урона: цифра, кольцо, искры и тряска. */
+function damageFx(square, dmg, survived, type) {
+  if (!ui.st || !ui.sq || square == null || square < 0) return;
+  const layer = $('#hints');
+  if (!layer) return;
+  const { dx, dy } = disp(ui.st, square);
+  const cx = (dx + .5) * ui.sq;
+  const cy = (dy + .5) * ui.sq;
+  const ring = document.createElement('span');
+  ring.className = 'dmg-ring';
+  ring.style.left = cx + 'px';
+  ring.style.top = cy + 'px';
+  ring.style.width = Math.round(ui.sq * 0.92) + 'px';
+  ring.style.height = Math.round(ui.sq * 0.92) + 'px';
+  layer.appendChild(ring);
+  const float = document.createElement('span');
+  float.className = 'dmg-float';
+  float.textContent = '−' + dmg;
+  float.style.left = cx + 'px';
+  float.style.top = cy + 'px';
+  layer.appendChild(float);
+  const sparks = survived ? 9 : 14;
+  for (let i = 0; i < sparks; i++) {
+    const spark = document.createElement('i');
+    spark.className = 'dmg-spark';
+    const a = Math.random() * Math.PI * 2;
+    const dist = ui.sq * (0.3 + Math.random() * 0.8);
+    spark.style.left = cx + 'px';
+    spark.style.top = cy + 'px';
+    spark.style.setProperty('--dx', (Math.cos(a) * dist).toFixed(0) + 'px');
+    spark.style.setProperty('--dy', (Math.sin(a) * dist).toFixed(0) + 'px');
+    layer.appendChild(spark);
+    setTimeout(() => spark.remove(), 700);
+  }
+  const victim = ui.st.board[square];
+  const el = victim ? ui.pieceNodes.get(victim.id) : null;
+  if (el) {
+    el.classList.remove('hp-hit');
+    void el.offsetWidth;
+    el.classList.add('hp-hit');
+    setTimeout(() => el.classList.remove('hp-hit'), 340);
+  }
+  if (survived) {
+    const board = $('#board');
+    if (board && !profile.calm) {
+      board.classList.remove('shake-1');
+      void board.offsetWidth;
+      board.classList.add('shake-1');
+      setTimeout(() => board.classList.remove('shake-1'), 260);
+    }
+  }
+  /* Тяжёлое попадание на ПК — янтарная вспышка, как у старого съедения. */
+  if (!profile.calm && dmg >= 5 && window.innerWidth >= 1000) {
+    const flash = $('#fxFlash');
+    if (flash) {
+      flash.className = 'fx-flash';
+      void flash.offsetWidth;
+      flash.classList.add('flash-3');
+      setTimeout(() => { flash.className = 'fx-flash'; }, 520);
+    }
+  }
+  setTimeout(() => { ring.remove(); float.remove(); }, 950);
+}
+
 function mateKingWaves(sq) {
   if (profile.calm || sq < 0 || !ui.st) return;
   const layer = $('#hints');
@@ -1589,6 +1657,7 @@ function openingName() {
 }
 const MODE_SHORT = {
   classic: 'Классика', threeChecks: 'Три шаха', kingCapture: 'Съедение', kingOnly: 'Король',
+  damage: 'Урон', damageKing: 'Король HP',
   pawnRows: '2 ряда', kqp: 'K, Q, пешки', explode: 'Взрывы', queenPierce: 'Ферзь ✳',
   bishopKing: 'Слон-К', race: 'Гонка', wide10: '10×8', tall10: '8×10',
   jester: 'Шут', boy: 'Пацаны', crossCastle: 'Обмены', fog: 'Туман',
@@ -1610,6 +1679,8 @@ const MODE_EN = {
   classic: ['Classic', "Standard 8×8 chess: castling, en passant, promotion, mate, stalemate and the 50-move rule."],
   threeChecks: ['Three-check', "No mate needed: give three checks to win."],
   kingCapture: ['King capture', "The king may move into danger. Lose your king and you lose."],
+  damage: ['Damage hardcore', "Pieces have HP: pawn 1, knight and bishop 3, rook 5, queen 9. An attack deals the attacker's HP; if the attacker has less HP than the target, the attacker dies and the target stays wounded."],
+  damageKing: ['King damage', "Same, but the king has 15 HP. Check is not forced: you may capture the king, and each new check removes 1 HP."],
   kingOnly: ['Lone king', "As soon as you have only your king left, you lose."],
   pawnRows: ['Double pawn rows', "Two full rows of pawns for each side."],
   kqp: ['King, queen & pawns', "Only kings, queens and eight pawns each."],
@@ -3596,6 +3667,8 @@ function showSideRoulette(side, done, opts = {}) {
   const overlay = $('#sideRoulette');
   if (!overlay || opts.immediate) { done(side); return; }
   const chosen = side === 'b' ? 'b' : 'w';
+  overlay.classList.remove('sr-mode-parity');
+  clearTimeout(showParityDraw.timer);
   const track = $('#srTrack');
   const reel = $('#srReel');
   const result = $('#srResult');
@@ -3635,7 +3708,9 @@ function showSideRoulette(side, done, opts = {}) {
   }
 
   if (track && reel) {
-    const mirror = !!opts.mirror;
+    const mirror = opts.direction === 'left' ? true
+      : opts.direction === 'right' ? false
+        : opts.mirror ? true : Math.random() < 0.5;
     const base = 32 + Math.floor(Math.random() * 3) * 2; // чётный индекс
     const target = base + (chosen === 'b' ? 1 : 0);
     const total = target + 34;
@@ -3682,6 +3757,93 @@ function showSideRoulette(side, done, opts = {}) {
   }
 }
 
+/* 30% жеребьёвок — «Чётное или нечётное»: игрок выбирает чётность,
+   а игра уже загадала, какой цвет за ней спрятан. */
+function showColorDraw(done, opts = {}) {
+  const chance = opts.parityChance != null ? opts.parityChance : 0.30;
+  const useParity = !opts.noParity && (opts.force === 'parity'
+    || (opts.force !== 'roulette' && Math.random() < chance));
+  if (useParity) showParityDraw(done, opts);
+  else showSideRoulette(randomSide(), done, opts);
+}
+
+function showParityDraw(done, opts = {}) {
+  const overlay = $('#sideRoulette');
+  if (!overlay) { done(randomSide()); return; }
+  const track = $('#srTrack');
+  if (track && track.getAnimations) track.getAnimations().forEach((a) => a.cancel());
+  clearTimeout(showSideRoulette.timer);
+  clearTimeout(showSideRoulette.doneTimer);
+  clearTimeout(showParityDraw.timer);
+  showSideRoulette.token = (showSideRoulette.token || 0) + 1;
+  const token = showSideRoulette.token;
+  const kicker = overlay.querySelector('.sr-kicker');
+  const result = $('#srResult');
+  const sub = $('#srSub');
+  const card = overlay.querySelector('.sr-card');
+  if (kicker) kicker.textContent = profile.language === 'en' ? 'DRAWING COLOURS' : 'ЖЕРЕБЬЁВКА';
+  if (result) result.textContent = profile.language === 'en' ? 'Even or odd?' : 'Чётное или нечётное?';
+  if (sub) sub.textContent = profile.language === 'en'
+    ? 'the game already hid a colour behind the parity'
+    : 'игра уже загадала, какой цвет прячется за чётным';
+  overlay.classList.remove('hidden', 'sr-stopped');
+  overlay.removeAttribute('data-side');
+  overlay.classList.add('sr-mode-parity');
+  if (card) { card.classList.remove('sr-show'); void card.offsetWidth; card.classList.add('sr-show'); }
+  const kw = $('#srDuelW');
+  const kb = $('#srDuelB');
+  if (kw && !kw.firstChild) kw.innerHTML = pieceSvg('k');
+  if (kb && !kb.firstChild) kb.innerHTML = pieceSvg('k');
+  const btns = Array.from(overlay.querySelectorAll('.sr-parity-btn'));
+  for (const btn of btns) {
+    btn.disabled = false;
+    btn.classList.remove('active');
+    const old = btn.querySelector('em');
+    if (old) old.remove();
+  }
+  let locked = false;
+  const choose = (parity) => {
+    if (locked || token !== showSideRoulette.token) return;
+    locked = true;
+    clearTimeout(showParityDraw.timer);
+    const evenColor = randomSide();
+    const chosen = parity === 'even' ? evenColor : other(evenColor);
+    overlay.dataset.side = chosen;
+    overlay.classList.add('sr-stopped');
+    for (const btn of btns) {
+      const color = btn.dataset.parity === 'even' ? evenColor : other(evenColor);
+      btn.disabled = true;
+      const em = document.createElement('em');
+      em.textContent = profile.language === 'en'
+        ? (color === 'w' ? '♔ White' : '♚ Black')
+        : (color === 'w' ? '♔ белые' : '♚ чёрные');
+      btn.appendChild(em);
+      if (btn.dataset.parity === parity) btn.classList.add('active');
+    }
+    if (result) {
+      result.textContent = profile.language === 'en'
+        ? `You are ${chosen === 'w' ? 'White' : 'Black'}`
+        : `Вы за ${chosen === 'w' ? 'белых' : 'чёрных'}`;
+    }
+    if (sub) {
+      const ev = evenColor === 'w' ? (profile.language === 'en' ? 'White' : 'белые') : (profile.language === 'en' ? 'Black' : 'чёрные');
+      const od = other(evenColor) === 'w' ? (profile.language === 'en' ? 'White' : 'белые') : (profile.language === 'en' ? 'Black' : 'чёрные');
+      sub.textContent = profile.language === 'en'
+        ? `even → ${ev} · odd → ${od}`
+        : `чётное → ${ev} · нечётное → ${od}`;
+    }
+    sound.check();
+    showParityDraw.timer = setTimeout(() => {
+      if (token !== showSideRoulette.token) return;
+      overlay.classList.add('hidden');
+      overlay.classList.remove('sr-mode-parity');
+      done(chosen);
+    }, 1200);
+  };
+  for (const btn of btns) btn.onclick = () => choose(btn.dataset.parity);
+  showParityDraw.timer = setTimeout(() => choose(Math.random() < 0.5 ? 'even' : 'odd'), 12000);
+}
+
 function normalizeBot(bot, side) {
   if (!bot) return null;
   return { ...bot, color: bot.color || other(side) };
@@ -3706,10 +3868,9 @@ function startGameWithMode(opts = {}) {
   }
   const pref = opts.side || profile.side;
   if (pref === 'random' && !opts.sideResolved) {
-    const chosen = randomSide();
-    showSideRoulette(chosen, (side) => {
+    showColorDraw((side) => {
       startGameWithMode({ ...opts, side, sideResolved: true });
-    });
+    }, { noParity: opts.mode === 'online' });
     return;
   }
   const side = pref === 'b' ? 'b' : 'w';
@@ -3721,14 +3882,14 @@ function startGameWithMode(opts = {}) {
   closeBotModal();
   rollRandomMode((modeId) => {
     renderModeCard();
-    newGame({ ...resolved, modeId });
+    newGame({ ...resolved, modeId, modePick: 'random' });
   });
 }
 
 const MODE_CATS = {
   popular: ['classic', 'fischer', 'threeChecks', 'kingCapture'],
   pieces: ['jester', 'boy', 'queens', 'pawnField', 'pawnFieldQ', 'knights', 'rooks', 'bishops'],
-  chaos: ['explode', 'annihilation', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center'],
+  chaos: ['explode', 'annihilation', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center', 'damage', 'damageKing'],
   mini: ['strategy', 'ultraBalance', 'zombie', 'royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
   bots: [],
   imbo: [],
@@ -3750,7 +3911,7 @@ const MODE_GROUP = {
   noQueen7: 1, swapRows: 2, blackFirst: 1, inverted: 2, pawnBack: 2, kingKnight: 1,
   queenLose: 2, weakKnights: 1, castleReturn: 2, square10: 2, square12: 3, infernal: 3, clashBrawl: 3, royalBattle: 3, zombie: 3, strategy: 3,
   losAlamos: 2, berolina: 2, checkless: 2, raceKings: 2, andernach: 3,
-  annihilation: 3, ultraBalance: 3,
+  annihilation: 3, ultraBalance: 3, damage: 3, damageKing: 3,
 };
 const GROUP_TITLES = {
   1: 'Классика и лёгкие изменения',
@@ -4441,6 +4602,11 @@ function viewState() {
     blocked: f.blocked,
     capturedKing: f.capturedKing,
     check: f.check,
+    checkSide: f.checkSide,
+    status: f.status,
+    result: f.result,
+    plySeq: f.plySeq || 0,
+    checkDamagedSeq: f.checkDamagedSeq != null ? f.checkDamagedSeq : -1,
   };
 }
 
@@ -4687,6 +4853,9 @@ function renderPieces(animate) {
       const max = strategyMaxHp(p);
       el.dataset.hp = `${hp}${st.strategy.shield[p.id] ? ' 🛡' : ''}`;
       el.classList.toggle('hp-low', hp <= max * 0.35);
+    } else if ((st.flags.damage || st.flags.damageKing) && p.hp != null && p.maxHp && p.hp < p.maxHp) {
+      el.dataset.hp = String(p.hp);
+      el.classList.toggle('hp-low', p.hp <= Math.ceil(p.maxHp * 0.35));
     } else {
       delete el.dataset.hp;
       el.classList.remove('hp-low');
@@ -4725,7 +4894,7 @@ function renderHints() {
   const st = viewState();
   const layer = $('#hints');
   if (!layer) return;
-  if (!ui.st || ui.viewPly !== ui.frames.length - 1 || ui.selected < 0) {
+  if (!ui.st || (ui.viewPly !== ui.frames.length - 1 && !canBranchHere()) || ui.selected < 0) {
     if (layer.childNodes.length || ui.hintKey) layer.innerHTML = '';
     ui.hintKey = '';
     ui.hintAt = 0;
@@ -4909,6 +5078,11 @@ function snap(st, lastMove = null) {
     blocked: st.blocked.slice(),
     capturedKing: st.capturedKing,
     check: st.check,
+    checkSide: st.checkSide ? { ...st.checkSide } : null,
+    status: st.status,
+    result: st.result ? { ...st.result } : null,
+    plySeq: st.plySeq || 0,
+    checkDamagedSeq: st.checkDamagedSeq != null ? st.checkDamagedSeq : -1,
   };
 }
 
@@ -6755,6 +6929,7 @@ function brawlCaptureFx(st, capInfo, match, mover) {
 function newGame(opts = {}) {
   const pickedMode = modeById(opts.modeId || profile.modeId);
   const mode = pickedMode.flags.randomPick ? randomRealMode() : pickedMode;
+  ui.modePick = opts.modePick || pickedMode.id;
   if (mode.flags.ultraBalance && ((opts.mode || 'local') !== 'online' || opts.bot)) {
     opts.bot = { ...(opts.bot || {}), level: 'gm', color: 'b' };
     opts.side = 'w';
@@ -6796,6 +6971,7 @@ function newGame(opts = {}) {
   ui.extremeShown = 0;
   ui.confirmAction = null;
   document.documentElement.dataset.infernal = mode.flags.infernal ? '1' : '0';
+  document.documentElement.dataset.damage = (mode.flags.damage || mode.flags.damageKing) ? '1' : '0';
   document.body.classList.remove('flip-all');
   const boardElReset = $('#board');
   if (boardElReset) boardElReset.classList.remove('board-rotated');
@@ -7112,6 +7288,14 @@ function renderStatus() {
     sub.textContent = profile.language === 'en' ? 'review and export · moves disabled' : 'просмотр и экспорт · ходы недоступны';
     return;
   }
+  if (ui.viewPly !== ui.frames.length - 1 && ui.mode === 'local' && !ui.bot) {
+    el.textContent = profile.language === 'en' ? 'Rewound' : 'Откат';
+    sub.textContent = profile.language === 'en'
+      ? `position after ${ui.viewPly} plies · play from here to branch`
+      : `позиция после ${ui.viewPly}-го полухода · можно играть отсюда`;
+    if (shell) shell.classList.toggle('check-alert', !!st.check && st.status === 'play');
+    return;
+  }
   if (ui.viewPly !== ui.frames.length - 1) {
     el.textContent = profile.language === 'en' ? 'Game review' : 'Просмотр партии';
     sub.textContent = profile.language === 'en'
@@ -7173,7 +7357,7 @@ function resultReason(res) {
     const en = {
       mate: 'checkmate', time: 'time out', resign: 'resigned', stalemate: 'stalemate',
       fifty: '50-move rule', material: 'insufficient material', repetition: 'threefold repetition',
-      draw: 'agreed draw', king: 'king captured', race: 'king reached the last rank',
+      draw: 'agreed draw', king: 'king captured', kingHp: 'king lost all HP', race: 'king reached the last rank',
       center: 'king in the centre', checks: 'three checks', kingOnly: 'opponent has only a king',
       abort: 'game aborted', brawl: 'king defeated', devoured: 'all pieces eaten',
       raceKing: 'king reached the edge', idle: 'white made no first move',
@@ -7185,7 +7369,7 @@ function resultReason(res) {
     mate: 'мат', time: 'время истекло', resign: 'сдался', stalemate: 'пат',
     fifty: 'правило 50 ходов', material: 'недостаточно материала',
     repetition: 'троекратное повторение', draw: 'ничья по согласию',
-    king: 'король съеден', race: 'король дошёл до верхнего ряда', center: 'король в центре',
+    king: 'король съеден', kingHp: 'король потерял все ХП', race: 'король дошёл до верхнего ряда', center: 'король в центре',
     checks: 'три шаха', kingOnly: 'у соперника остался один король',
     abort: 'партия прервана',
   brawl: 'король побеждён',
@@ -7196,6 +7380,11 @@ function resultReason(res) {
 }
 
 /* ───────────────────────────── 9. ХОДЫ ────────────────────────────────── */
+
+/* В локальной игре откат — игровая позиция: отсюда можно ходить и ветвить. */
+function canBranchHere() {
+  return ui.mode === 'local' && !ui.bot && !ui.reviewOnly && !ui.training && !ui.imported;
+}
 
 function onSquareClick(sq) {
   if (ui.spectator) return;
@@ -7212,7 +7401,7 @@ function onSquareClick(sq) {
   if (ui.paused) return;
   if (ui.imported) { toast('Импортированная партия — только просмотр'); return; }
   if (ui.bot && ui.st.turn === ui.bot.color) return;
-  if (ui.viewPly !== ui.frames.length - 1) return;
+  if (ui.viewPly !== ui.frames.length - 1 && !canBranchHere()) return;
   if (!onlineCoachMayMove()) { toast('Друг ходит белыми после хода бота'); return; }
   const st = ui.st;
   if (ui.mode === 'online' && st.turn !== myColor()) return;
@@ -7302,6 +7491,20 @@ function commitMove(m, opts = {}) {
     && !!x.swap === !!m.swap);
   if (!match) return false;
 
+  /* Новый ход из отката: будущая история больше не существует. */
+  if (ui.mode === 'local' && !ui.bot && ui.viewPly < ui.frames.length - 1) {
+    ui.frames = ui.frames.slice(0, ui.viewPly + 1);
+    ui.moves = ui.moves.slice(0, ui.viewPly);
+    ui.viewPly = ui.frames.length - 1;
+    ui.st.status = 'play';
+    ui.st.result = null;
+    ui.st.lastCheckDamage = null;
+    ui.scored = false;
+    ui.endSquare = -1;
+    const staleResult = $('#result');
+    if (staleResult) staleResult.classList.add('hidden');
+  }
+
   const mover = st.turn;
   if (st.flags.strategy && !opts.remote) {
     if (st.strategy.phase !== 'move') return false;
@@ -7321,7 +7524,7 @@ function commitMove(m, opts = {}) {
   if (!opts.remote) ui.running = true;
 
   const san = moveToSan(st, match, legal);
-  const capInfo = [];
+  let capInfo = [];
   if (match.caps && match.caps.length) {
     for (const i of match.caps) {
       const p = st.board[i];
@@ -7338,6 +7541,10 @@ function commitMove(m, opts = {}) {
   }
   const evalBefore = evaluateWhite(st);
   const undo = applyMove(st, match);
+  const damageHit = undo.damage || null;
+  if (damageHit && damageHit.survived) {
+    capInfo = capInfo.filter((c) => c.square !== damageHit.square);
+  }
   const explodedNow = !!st.exploded;
   const annihilatedNow = !!st.annihilated;
   if (st.flags.blocks) {
@@ -7348,9 +7555,8 @@ function commitMove(m, opts = {}) {
       if (!opts.silent) toast(`Клетка ${sqName(st, blockedSq)} заперта`);
     }
   }
-  ui.frames.push(snap(st, { from: match.from, to: match.to }));
-  ui.viewPly = ui.frames.length - 1;
-  const captured = !!match.capture || (match.caps && match.caps.length) || match.ep;
+  const captured = (!!match.capture || !!(match.caps && match.caps.length) || !!match.ep)
+    && !(damageHit && damageHit.survived);
   ui.moves.push({
     san, from: match.from, to: match.to, color: mover, spent,
     clock: ui.clocks[mover], captured, promo: match.promo || null, at: Date.now(),
@@ -7359,7 +7565,7 @@ function commitMove(m, opts = {}) {
   ui.selected = -1;
   ui.remoteSelected = -1;
   ui.hint = null;
-  ui.movedId = st.board[match.to] ? st.board[match.to].id : null;
+  ui.movedId = (!damageHit || !damageHit.survived) && st.board[match.to] ? st.board[match.to].id : null;
   const evalAfter = evaluateWhite(st);
   if (ui.persona) personaAfterMove(mover, evalBefore, evalAfter);
   const movedPiece = st.board[match.to];
@@ -7378,6 +7584,9 @@ function commitMove(m, opts = {}) {
     st.status = 'over';
     st.result = res;
   }
+  /* Снимок делаем после updateStatus: в нём уже ХП короля от шаха и результат. */
+  ui.frames.push(snap(st, { from: match.from, to: match.to }));
+  ui.viewPly = ui.frames.length - 1;
 
   if (!opts.silent) {
     if (captured && spent > 0 && spent < 2000 && capInfo.some((c) => c.type === 'r')) {
@@ -7399,7 +7608,9 @@ function commitMove(m, opts = {}) {
     renderBrawl();
   }
   if (!opts.silent && !opts.remote) {
-    if (captured) { sound.capture(); buzz([12, 24, 12]); } else { sound.move(); buzz(8); }
+    if (damageHit) { sound.capture(); buzz([10, 20, 10]); }
+    else if (captured) { sound.capture(); buzz([12, 24, 12]); }
+    else { sound.move(); buzz(8); }
     if (inCheck(st, st.turn)) sound.check();
   }
 
@@ -7452,6 +7663,14 @@ function commitMove(m, opts = {}) {
         explosionFx(st, match.to);
       }
     }
+    if (damageHit) {
+      damageFx(damageHit.square, damageHit.dmg, damageHit.survived, damageHit.type);
+    }
+    if (st.lastCheckDamage) {
+      const checkHit = st.lastCheckDamage;
+      st.lastCheckDamage = null;
+      damageFx(checkHit.square, 1, true, 'k');
+    }
     renderMoves();
     if (ui.royal) setTimeout(royalAfterMove, 30);
     if (ui.zombie) setTimeout(zombieAfterMove, 30);
@@ -7484,7 +7703,7 @@ const REASON_TEXT = {
   mate: 'мат', time: 'время истекло', resign: 'сдача', stalemate: 'пат',
   fifty: 'правило 50 ходов', material: 'недостаточно материала',
   repetition: 'троекратное повторение', draw: 'ничья по согласию',
-  king: 'король съеден', race: 'король на вершине', center: 'король в центре',
+  king: 'король съеден', kingHp: 'король потерял все ХП', race: 'король на вершине', center: 'король в центре',
   checks: 'три шаха', kingOnly: 'остался один король', left: 'выход из партии',
   antichess: 'все фигуры потеряны',
   abort: 'партия прервана',
@@ -7513,18 +7732,19 @@ function finishGame(res, opts = {}) {
   clearInterval(ui.timer);
   if (!ui.st) return;
   if (ui.scored) return;
-  if (!opts.delayed && (res.reason === 'mate' || res.reason === 'stalemate' || res.reason === 'king')) {
+  if (!opts.delayed && (res.reason === 'mate' || res.reason === 'stalemate' || res.reason === 'king' || res.reason === 'kingHp')) {
     if (ui.endTimer) return;
+    const kingEnd = res.reason === 'king' || res.reason === 'kingHp';
     const loser = res.winner ? other(res.winner) : ui.st.turn;
-    ui.endSquare = res.reason === 'king' ? -1 : findKing(ui.st, loser);
+    ui.endSquare = kingEnd ? -1 : findKing(ui.st, loser);
     ui.endReason = res.reason;
     ui.st.status = 'over';
     ui.st.result = res;
     renderSquares();
     if (res.reason === 'mate') mateKingWaves(ui.endSquare);
     const statusEl = $('#gameStatus');
-    if (statusEl) statusEl.textContent = res.reason === 'mate' ? 'МАТ' : res.reason === 'stalemate' ? 'ПАТ' : 'КОРОЛЬ СНЯТ';
-    const pause = res.reason === 'king' ? (profile.calm ? 600 : 1900) : 3000;
+    if (statusEl) statusEl.textContent = res.reason === 'mate' ? 'МАТ' : res.reason === 'stalemate' ? 'ПАТ' : res.reason === 'kingHp' ? 'КОРОЛЬ БЕЗ ХП' : 'КОРОЛЬ СНЯТ';
+    const pause = kingEnd ? (profile.calm ? 600 : 1900) : 3000;
     ui.endTimer = setTimeout(() => {
       ui.endTimer = 0;
       ui.endSquare = -1;
@@ -8103,8 +8323,9 @@ function gotoPly(ply) {
     updateNav();
     renderPgnBox();
     if (ui.training) renderTrainingAtPly();
-  } else if (ui.mode === 'local' && !ui.bot && ui.st && target < max) {
-    /* В игре на одном телефоне это настоящий откат, а не только просмотр. */
+  } else if (ui.mode === 'local' && !ui.bot && ui.st) {
+    /* Локальная игра: назад — настоящий откат, но история не стирается.
+       Вперёд можно вернуться; ветку обрежет только новый ход. */
     const f = ui.frames[target];
     ui.st.board = f.board.slice();
     ui.st.turn = f.turn;
@@ -8113,20 +8334,24 @@ function gotoPly(ply) {
     ui.st.blocked = f.blocked.slice();
     ui.st.capturedKing = f.capturedKing;
     ui.st.check = f.check;
-    ui.st.status = 'play';
-    ui.st.result = null;
-    ui.st.full = target;
-    ui.frames = ui.frames.slice(0, target + 1);
-    ui.moves = ui.moves.slice(0, target);
+    ui.st.checkSide = f.checkSide ? { ...f.checkSide } : { w: false, b: false };
+    ui.st.plySeq = f.plySeq || 0;
+    ui.st.checkDamagedSeq = f.checkDamagedSeq != null ? f.checkDamagedSeq : -1;
+    ui.st.lastCheckDamage = null;
+    ui.st.status = f.status || 'play';
+    ui.st.result = f.result ? { ...f.result } : null;
+    ui.st.full = Math.floor(target / 2) + 1;
     ui.viewPly = target;
     ui.lastMove = f.lastMove || null;
-    ui.scored = false;
+    ui.selected = -1;
+    ui.hint = null;
     ui.endSquare = -1;
     clearTimeout(ui.endTimer);
     ui.endTimer = 0;
-    ui.selected = -1;
+    clearTimeout(ui.firstMoveTimer);
+    ui.firstMoveTimer = 0;
     ui.turnStart = performance.now();
-    ui.running = !!ui.timeMs && ui.moves.length > 0;
+    ui.running = !!ui.timeMs && target > 0 && ui.st.status === 'play';
     const rolledResult = $('#result');
     if (rolledResult) rolledResult.classList.add('hidden');
     renderAll(false);
@@ -8163,6 +8388,11 @@ function frameViewAt(ply) {
     blocked: f.blocked,
     capturedKing: f.capturedKing,
     check: f.check,
+    checkSide: f.checkSide,
+    status: f.status,
+    result: f.result,
+    plySeq: f.plySeq || 0,
+    checkDamagedSeq: f.checkDamagedSeq != null ? f.checkDamagedSeq : -1,
   };
 }
 
@@ -9879,17 +10109,20 @@ function bindEvents() {
   if ($('#btnExportTxt')) $('#btnExportTxt').addEventListener('click', openExport);
   if ($('#btnExportMenu')) $('#btnExportMenu').addEventListener('click', openExport);
   if ($('#mobExport')) $('#mobExport').addEventListener('click', openExport);
+  if ($('#mobImport')) $('#mobImport').addEventListener('click', openImport);
+  if ($('#railExport')) $('#railExport').addEventListener('click', openExport);
+  if ($('#railImport')) $('#railImport').addEventListener('click', openImport);
   if ($('#homeExport')) $('#homeExport').addEventListener('click', openExport);
 
   $('#btnResign').addEventListener('click', resign);
   $('#btnDraw').addEventListener('click', offerDraw);
   $('#btnAbort').addEventListener('click', abortGame);
-  $('#btnNew').addEventListener('click', () => newGame({ mode: ui.mode || 'local', modeId: ui.st ? ui.st.modeId : profile.modeId, timeMs: ui.timeMs, splash: true }));
+  $('#btnNew').addEventListener('click', () => newGame({ mode: ui.mode || 'local', modeId: ui.modePick || (ui.st ? ui.st.modeId : profile.modeId), timeMs: ui.timeMs, splash: true }));
   $('#btnLeave').addEventListener('click', askLeave);
 
   $('#resultAgain').addEventListener('click', () => {
     $('#result').classList.add('hidden');
-    newGame({ mode: ui.mode || 'local', modeId: ui.st ? ui.st.modeId : profile.modeId, timeMs: ui.timeMs, splash: true });
+    newGame({ mode: ui.mode || 'local', modeId: ui.modePick || (ui.st ? ui.st.modeId : profile.modeId), timeMs: ui.timeMs, splash: true });
   });
   $('#resultMenu').addEventListener('click', leaveGame);
   $('#resultExport').addEventListener('click', openExport);
@@ -9990,7 +10223,7 @@ function bindEvents() {
     if (ui.spectator) return;
     if (ui.reviewOnly) return;
     if (!sqEl || !ui.st || ui.st.status !== 'play' || ui.gameLocked || ui.paused || ui.imported) return;
-    if (ui.viewPly !== ui.frames.length - 1) return;
+    if (ui.viewPly !== ui.frames.length - 1 && !canBranchHere()) return;
     if (ui.bot && ui.st.turn === ui.bot.color) return;
     if (!onlineCoachMayMove()) return;
     if (ui.mode === 'online' && ui.st.turn !== myColor()) return;
