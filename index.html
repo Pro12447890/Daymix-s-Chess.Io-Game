@@ -36,7 +36,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261102-80">
+  <link rel="stylesheet" href="style.css?v=20261103-81">
 </head>
 <body>
 
@@ -354,7 +354,10 @@
               <label class="toggle"><input type="checkbox" id="optFlipAll"><span>Переворачивать всё: доску и все надписи на 180°</span></label>
               <label class="toggle"><input type="checkbox" id="optEpicFx"><span>✨ Эпичные эффекты (как в мобильной версии)</span></label>
               <label class="toggle"><input type="checkbox" id="optCalm"><span>🌿 Спокойный режим (без лишних эффектов)</span></label>
-              <label class="toggle"><input type="checkbox" id="optGlass"><span>🫧 Жидкое стекло (прозрачные панели)</span></label>
+              <div class="field glass-field">
+                <span class="field-label">Жидкое стекло</span>
+                <div class="glass-row" id="glassRow"></div>
+              </div>
               <label class="toggle"><input type="checkbox" id="optResultPause"><span>⏸ Пауза 1 с перед кнопками результата</span></label>
               <label class="field">
                 <span class="field-label">Язык / Language</span>
@@ -372,7 +375,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-11-02-80 · стекло, фигуры, плашки</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-11-03-81 · 5 стёкол, средние фигуры, мобильный FPS</div>
             <div class="theme-preview-slot" id="themePreviewSlot">
               <div class="theme-preview" id="themePreview"></div>
             </div>
@@ -970,8 +973,8 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261102-80"></script>
-<script src="app.js?v=20261102-80"></script>
+<script src="engine.js?v=20261103-81"></script>
+<script src="app.js?v=20261103-81"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>

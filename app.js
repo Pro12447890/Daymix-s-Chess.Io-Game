@@ -26,6 +26,7 @@ const DEFAULT_PROFILE = {
   tableFlip: true,
   epicFx: false,
   glass: false,
+  glassVariant: 'aurora',
   resultPause: false,
   autoQueen: true,
   sound: true,
@@ -1719,7 +1720,8 @@ const THEMES = [
 const PIECE_SKINS = [
   { id: '1', name: 'Классика', w: '#ffffff', we: '#1f1f1f', wd: '#404040', b: '#312e2b', be: '#0d0d0d', bd: '#5a5652', sw: 2.2 },
   { id: 'thin', name: 'Тонкие', w: '#ffffff', we: '#2b2b2b', wd: '#4a4a4a', b: '#312e2b', be: '#111111', bd: '#5a5652', sw: 1.45 },
-  { id: 'medium', name: 'Средние', w: '#ffffff', we: '#252525', wd: '#454545', b: '#312e2b', be: '#0f0f0f', bd: '#5a5652', sw: 3.1 },
+  /* ровно посередине между «Тонкими» 1.45 и «Жирными» 4.2 */
+  { id: 'medium', name: 'Средние', w: '#ffffff', we: '#252525', wd: '#454545', b: '#312e2b', be: '#0f0f0f', bd: '#5a5652', sw: 2.83 },
   { id: '2', name: 'Жирные', w: '#fdfbf6', we: '#b9ab90', wd: '#a89a80', b: '#23262c', be: '#0d0f12', bd: '#343a43', sw: 4.2 },
   { id: '3', name: 'Контур', w: '#2a241d', we: '#2a241d', wd: '#2a241d', b: '#1d2026', be: '#1d2026', bd: '#1d2026', sw: 1.9, hollow: true },
   { id: '4', name: 'Металл', w: '#e8edf2', we: '#4a4640', wd: '#7d786f', b: '#3a4048', be: '#e9edf2', bd: '#d7dbe0', sw: 1.9, metal: true },
@@ -1887,8 +1889,8 @@ function renderProfile() {
   document.documentElement.classList.toggle('epic-fx', !!profile.epicFx && !profile.calm);
   if ($('#optCalm')) $('#optCalm').checked = !!profile.calm;
   document.documentElement.classList.toggle('calm', !!profile.calm);
-  if ($('#optGlass')) $('#optGlass').checked = !!profile.glass;
-  document.documentElement.dataset.glass = profile.glass ? '1' : '0';
+  applyGlassDom();
+  renderGlassRow();
   if ($('#optResultPause')) $('#optResultPause').checked = !!profile.resultPause;
   if ($('#langSelect')) $('#langSelect').value = profile.language || 'ru';
   document.documentElement.lang = profile.language || 'ru';
@@ -2047,6 +2049,78 @@ function applySkin() {
   root.dataset.metal = s.metal ? '1' : '0';
   root.dataset.skinGlow = s.glow ? '1' : '0';
   root.dataset.skinShadow = s.shadow ? '1' : '0';
+}
+
+/* ─────────────────────── 5а. ПЯТЬ ТИПОВ ЖИДКОГО СТЕКЛА ──────────────────
+   Клик по образцу применяет тему сразу и остаётся в профиле навсегда. */
+const GLASS_VARIANTS = [
+  { id: 'aurora', name: 'Аврора', nameEn: 'Aurora', note: 'бирюза · медь', noteEn: 'teal · copper', p: ['#4fbea0', '#5c84e8', '#dc8c46'] },
+  { id: 'frost', name: 'Иней', nameEn: 'Frost', note: 'лёд · лаванда', noteEn: 'ice · lavender', p: ['#7fd4ff', '#9b8cff', '#4a6fa8'] },
+  { id: 'amber', name: 'Янтарь', nameEn: 'Amber', note: 'закат · мёд', noteEn: 'sunset · honey', p: ['#ffb45e', '#e2607a', '#7a3f8f'] },
+  { id: 'midnight', name: 'Полночь', nameEn: 'Midnight', note: 'индиго · дым', noteEn: 'indigo · smoke', p: ['#2a3f78', '#5a7bd8', '#161a2e'] },
+  { id: 'neon', name: 'Неон', nameEn: 'Neon', note: 'фуксия · циан', noteEn: 'fuchsia · cyan', p: ['#ff4fd8', '#22e0ff', '#7a2bff'] },
+];
+
+function glassVariantId() {
+  const id = String(profile.glassVariant || 'aurora');
+  return GLASS_VARIANTS.some((v) => v.id === id) ? id : 'aurora';
+}
+
+function applyGlassDom() {
+  document.documentElement.dataset.glass = profile.glass ? glassVariantId() : '0';
+}
+
+function setGlass(id) {
+  if (id === 'off') {
+    profile.glass = false;
+  } else {
+    if (!GLASS_VARIANTS.some((v) => v.id === id)) return;
+    profile.glass = true;
+    profile.glassVariant = id;
+  }
+  applyGlassDom();
+  renderGlassRow();
+  saveProfile(true);
+  if (id === 'off') toast('Жидкое стекло выключено');
+  else {
+    const v = GLASS_VARIANTS.find((x) => x.id === id);
+    toast(`Стекло «${profile.language === 'en' ? v.nameEn : v.name}» закреплено`);
+  }
+}
+
+function renderGlassRow() {
+  const box = $('#glassRow');
+  if (!box) return;
+  const en = profile.language === 'en';
+  const current = profile.glass ? glassVariantId() : 'off';
+  box.innerHTML = '';
+  const add = (id, name, note, colors) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'glass-tile' + (current === id ? ' active' : '') + (id === 'off' ? ' off' : '');
+    b.dataset.glassId = id;
+    b.title = note ? `${name} — ${note}` : name;
+    b.setAttribute('aria-pressed', current === id ? 'true' : 'false');
+    const prev = document.createElement('span');
+    prev.className = 'gt-preview';
+    if (colors) {
+      prev.style.setProperty('--p1', colors[0]);
+      prev.style.setProperty('--p2', colors[1]);
+      prev.style.setProperty('--p3', colors[2]);
+    }
+    prev.innerHTML = '<i></i><i></i><i></i>';
+    const nm = document.createElement('span');
+    nm.className = 'gt-name';
+    nm.textContent = name;
+    const nt = document.createElement('span');
+    nt.className = 'gt-note';
+    nt.textContent = note || '';
+    b.append(prev, nm, nt);
+    b.addEventListener('click', () => setGlass(id));
+    box.appendChild(b);
+  };
+  add('off', en ? 'Off' : 'Выкл', en ? 'plain panels' : 'обычные панели', null);
+  for (const v of GLASS_VARIANTS) add(v.id, en ? v.nameEn : v.name, en ? v.noteEn : v.note, v.p);
 }
 
 function renderAvatarRow() {
@@ -4007,6 +4081,7 @@ const EN_STATIC = {
   'Физически переворачивать доску (как на столе)': 'Physically rotate the board (like a real table)',
   '✨ Эпичные эффекты (как в мобильной версии)': '✨ Epic effects (mobile style)',
   '🌿 Спокойный режим (без лишних эффектов)': '🌿 Calm mode (no extra effects)',
+  'Жидкое стекло': 'Liquid glass',
   'Язык / Language': 'Language', 'В локальной игре я играю за': 'In local games I play as',
   'белых': 'white', 'чёрных': 'black',
   'Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.': 'Games, points and stats are stored in this browser. History keeps the last 60 games.',
@@ -9472,12 +9547,6 @@ function bindEvents() {
   };
   if ($('#quickEpicFx')) $('#quickEpicFx').addEventListener('change', (e) => setEpic(e.target.checked));
   if ($('#optCalm')) $('#optCalm').addEventListener('change', (e) => setCalm(e.target.checked));
-  if ($('#optGlass')) $('#optGlass').addEventListener('change', (e) => {
-    profile.glass = e.target.checked;
-    document.documentElement.dataset.glass = profile.glass ? '1' : '0';
-    saveProfile();
-    toast(profile.glass ? 'Жидкое стекло включено' : 'Жидкое стекло выключено');
-  });
   if ($('#optResultPause')) $('#optResultPause').addEventListener('change', (e) => {
     profile.resultPause = e.target.checked;
     saveProfile();
@@ -10021,7 +10090,7 @@ function boot() {
     phaseFor, updateSameStreak, askLeave, confirmLeaveGame, closeConfirm, fitPhaseBadge,
     chooseWelcomeLanguage, finishWelcome, refreshActiveGame, setCalm, autoBrawlDraft, zombieScan, royalShrink, strategySelectAttacker, strategyAttack, strategyEndTurn, strategyAfterMove, strategySpecial, strategyRender,
     captureFx, playResultFx, renderResultKings, mateKingWaves,
-    PIECE_SKINS, applySkin, setPieces,
+    PIECE_SKINS, applySkin, setPieces, GLASS_VARIANTS, setGlass,
     openSkinModal: () => openSkinModal(),
     setProfile: (patch) => { Object.assign(profile, patch); renderProfile(); renderThemeRows(); renderPieceRows(); renderPreview(); saveProfile(true); },
   };
