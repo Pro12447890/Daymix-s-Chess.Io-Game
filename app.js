@@ -394,25 +394,80 @@ function chooseBotMove(st, level, persona) {
   return ranked[0].move;
 }
 
+let botWorker = null;
+let botWorkerUrl = null;
+let botWorkSeq = 0;
+const botWork = new Map();
+function stopBotWorker() {
+  if (botWorker) botWorker.terminate();
+  if (botWorkerUrl) URL.revokeObjectURL(botWorkerUrl);
+  botWorker = null;
+  botWorkerUrl = null;
+  for (const task of botWork.values()) task.resolve(null);
+  botWork.clear();
+}
+function chooseBotMoveOffThread(st, level, persona) {
+  if (typeof Worker !== 'function') return Promise.resolve(chooseBotMove(st, level, persona));
+  try {
+    if (!botWorker) {
+      const engineUrl = new URL('engine.js?v=20261105-83', location.href).href;
+      const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
+        + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
+        + chooseBotMove.toString()
+        + '; self.onmessage = (event) => { const d=event.data; try {'
+        + 'const st=d.state; st.mode=modeById(st.modeId); st.flags=st.mode.flags; ui.persona=d.persona;'
+        + 'self.postMessage({id:d.id,move:chooseBotMove(st,d.level,d.persona)});'
+        + '} catch(error) { self.postMessage({id:d.id,error:String(error)}); } };';
+      botWorkerUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+      botWorker = new Worker(botWorkerUrl);
+      botWorker.onmessage = (event) => {
+        const task = botWork.get(event.data.id);
+        if (!task) return;
+        botWork.delete(event.data.id);
+        task.resolve(event.data.error && ui.st === task.state
+          ? chooseBotMove(task.state, task.level, task.persona) : event.data.move || null);
+      };
+      botWorker.onerror = () => {
+        const tasks = [...botWork.values()];
+        botWork.clear();
+        stopBotWorker();
+        for (const task of tasks) {
+          task.resolve(ui.st === task.state ? chooseBotMove(task.state, task.level, task.persona) : null);
+        }
+      };
+    }
+    return new Promise((resolve) => {
+      const id = ++botWorkSeq;
+      botWork.set(id, { resolve, state: st, level, persona });
+      botWorker.postMessage({ id, state: st, level, persona });
+    });
+  } catch (error) {
+    stopBotWorker();
+    return Promise.resolve(ui.st === st ? chooseBotMove(st, level, persona) : null);
+  }
+}
 function maybeBotTurn() {
-  if (ui.paused || ui.away) return;
-  if (ui.brawl && ui.brawl.draft) return;
+  if (ui.paused || ui.away || (ui.brawl && ui.brawl.draft)) return;
   const coopHost = ui.mode === 'online' && ui.online && ui.online.coop && ui.role === 'host';
   if (!ui.bot || !ui.st || ui.st.status !== 'play' || (ui.mode !== 'local' && !coopHost)) return;
   if (ui.st.turn !== ui.bot.color || ui.bot.busy) return;
-  ui.bot.busy = true;
+  const bot = ui.bot;
+  const state = ui.st;
+  const ply = state.plySeq;
+  bot.busy = true;
   ui.botThinking = true;
   renderStatus();
-  const level = ui.persona ? personaLevel() : ui.bot.level;
-  setTimeout(() => {
-    ui.bot.busy = false;
-    ui.botThinking = false;
-    if (ui.paused || ui.away || !ui.st || ui.st.status !== 'play' || !ui.bot || ui.st.turn !== ui.bot.color) { renderStatus(); return; }
-    if (ui.st.flags.clashBrawl && brawlBotTryDeploy()) { renderStatus(); return; }
-    const move = chooseBotMove(ui.st, level, ui.persona);
-    if (move) commitMove(move, { bot: true });
-    renderStatus();
-  }, ui.bot.fake ? 3000 + Math.random() * 12000 : (ui.persona ? personaDelay(level) : (BOT_DELAY[level] || 600)));
+  const level = ui.persona ? personaLevel() : bot.level;
+  bot.turnTimer = setTimeout(async () => {
+    const valid = () => ui.bot === bot && ui.st === state && state.plySeq === ply
+      && state.status === 'play' && !ui.paused && !ui.away && state.turn === bot.color;
+    if (!valid()) { bot.busy = false; if (ui.bot === bot) { ui.botThinking = false; renderStatus(); } return; }
+    if (state.flags.clashBrawl && brawlBotTryDeploy()) { bot.busy = false; ui.botThinking = false; renderStatus(); return; }
+    const move = await chooseBotMoveOffThread(state, level, ui.persona);
+    bot.busy = false;
+    if (valid() && move) { ui.botThinking = false; commitMove(move, { bot: true }); }
+    if (ui.bot === bot) { ui.botThinking = false; renderStatus(); }
+  }, bot.fake ? 3000 + Math.random() * 12000 : (ui.persona ? personaDelay(level) : (BOT_DELAY[level] || 600)));
 }
 
 /* ─────────────────────── ЭКСПОРТ И ИМПОРТ ───────────────────────────── */
@@ -425,7 +480,7 @@ function buildGameJson() {
     app: 'daymix-chess',
     version: 2,
     exportedAt: new Date().toISOString(),
-    mode: { id: st.modeId, name: st.mode.name, W: st.W, H: st.H, square: !!st.square },
+    mode: { id: st.modeId, name: st.mode.name, W: st.W, H: st.H, square: !!st.square, seed: st.seed },
     time: { ms: ui.timeMs, label: ui.timeMs ? profile.timeLabel : 'без ограничений' },
     players: {
       w: names.w || { name: 'Белые', avatar: 'k' },
@@ -693,7 +748,7 @@ function importGameData(data, opts = {}) {
   ui.paused = false;
   ui.timeMs = Number(data.time && data.time.ms) || 0;
   ui.clocks = { w: ui.timeMs, b: ui.timeMs };
-  ui.st = createState(mode.id, { square: !!(data.mode && data.mode.square) });
+  ui.st = createState(mode.id, { square: !!(data.mode && data.mode.square), seed: data.mode && data.mode.seed });
   ui.modePick = mode.id;
   ui.frames = [snap(ui.st)];
   ui.moves = [];
@@ -1735,7 +1790,7 @@ const MODE_EN = {
   raceKings: ['Racing kings', "No pawns: race your king to the far rank. Checks are allowed, but the king cannot be captured."],
   andernach: ['Andernach', "A capturing piece changes colour. Every capture is a small betrayal."],
   clashBrawl: ['Clash Brawl', "A mobile-game parody: 50 HP kings, purple elixir, a 4-card deck, shields and knockback."],
-  annihilation: ['Annihilation', "Every capture erases both pieces and all four orthogonal neighbours around both squares. Kings survive."],
+  annihilation: ['Annihilation', "Every capture erases both pieces and all eight neighbours in 3×3 areas around both squares. Kings survive."],
   ultraBalance: ['Ultrabalance', "You play White against a grandmaster bot. Black has no rooks and pushed flank pawns; you get two extra wing pawns. Online, a friend can take your moves after the bot."],
   infernal: ['Infernal', "Everything is red, and big moves trigger gambit theorems and meme lines."],
 };
@@ -2003,7 +2058,8 @@ function renderPreview() {
       const p = st.board[i];
       if (!p) continue;
       const el = document.createElement('div');
-      el.className = `piece ${p.c === 'w' ? 'w' : 'b'}`;
+      if (ui.dragging && ui.dragNode === el) continue;
+    el.className = `piece ${p.c === 'w' ? 'w' : 'b'}`;
       el.style.width = size + 'px';
       el.style.height = size + 'px';
       el.style.transform = `translate(${x * size}px, ${(st.H - 1 - y) * size}px)`;
@@ -3604,6 +3660,7 @@ function handleImboNet(msg) {
     return;
   }
   if (msg.t === 'imbo-start' && ui.online.role === 'guest') {
+    ui.online.sid = msg.sid || ui.online.sid;
     clearInterval(ui.online.joinTimer);
     ui.online.started = true;
     ui.online.names = msg.names || { w: 'Хозяин', b: profile.name };
@@ -4492,6 +4549,7 @@ function markScreenSheen() {
 }
 
 function showScreen(name) {
+  if (name !== 'game' && ui.cancelDrag) ui.cancelDrag();
   if (name !== 'game' && ui.reviewOnly) {
     if (ui.training) clearInterval(ui.training.auto);
     ui.reviewOnly = false;
@@ -4607,6 +4665,7 @@ function viewState() {
     result: f.result,
     plySeq: f.plySeq || 0,
     checkDamagedSeq: f.checkDamagedSeq != null ? f.checkDamagedSeq : -1,
+    rngState: f.rngState,
   };
 }
 
@@ -4779,6 +4838,7 @@ function renderSquares() {
     if (i === ui.selected) cls.push('sel');
     if (i === checkSq) cls.push('check');
     if (ui.endSquare === i) cls.push('king-mated');
+    if (ui.dragHoverEl === el) cls.push('drag-over');
     if (st.blocked.includes(i)) cls.push('blocked');
     if (ui.brawl && brawlCanDeploy(i, st.turn)) cls.push('brawl-deploy');
     if (ui.zombie && ui.zombie.infect[i]) cls.push('zombie-threat');
@@ -4843,6 +4903,7 @@ function renderPieces(animate) {
       layer.appendChild(el);
       ui.pieceNodes.set(p.id, el);
     }
+    if (ui.dragging && ui.dragNode === el) continue;
     el.className = `piece ${p.c === 'w' ? 'w' : 'b'} t-${p.t}${p.gold ? ' gold' : ''}${p.special ? ' ' + p.special : ''}`;
     if (ui.persona && ui.bot && p.t === 'k' && p.c === ui.bot.color) {
       el.classList.add('bot-king', 'bot-king-' + ui.persona.id);
@@ -4890,6 +4951,19 @@ function renderPieces(animate) {
    выбранной фигуре заново запускает анимацию их появления. */
 const HINT_REDRAW_MS = 200;
 
+/* Правила считаем один раз на позицию, а не на каждое движение пальца.
+   ХП и лимиты ходов входят в ключ: специальные режимы не получают устаревший кеш. */
+function getUiLegalMoves(st) {
+  let key = positionKey(st) + '|' + st.full;
+  for (const p of st.board) if (p) key += '|' + p.id + ':' + (p.used || 0) + ':' + (p.hp ?? '');
+  key += '|' + st.mv.w.cross + ':' + st.mv.b.cross;
+  const cache = ui.legalCache;
+  if (cache && cache.state === st && cache.key === key) return cache.moves;
+  const moves = legalMoves(st, st.turn);
+  ui.legalCache = { state: st, key, moves };
+  return moves;
+}
+
 function renderHints() {
   const st = viewState();
   const layer = $('#hints');
@@ -4900,7 +4974,7 @@ function renderHints() {
     ui.hintAt = 0;
     return;
   }
-  const moves = legalMoves(ui.st, ui.st.turn).filter((m) => m.from === ui.selected);
+  const moves = getUiLegalMoves(ui.st).filter((m) => m.from === ui.selected);
   const marks = moves.map((m) => {
     const capture = m.capture != null || m.ep || (m.caps && m.caps.length);
     return m.to + (capture ? 'x' : '');
@@ -5029,7 +5103,8 @@ function updateClockEls(override) {
     let ms = ui.clocks[color];
     if (override && override.color === color) ms = override.ms;
     else if (running && color === turn) ms = Math.max(0, ui.clocks[color] - (performance.now() - ui.turnStart));
-    el.textContent = fmtClock(ms);
+    const text = fmtClock(ms);
+    if (el.textContent !== text) el.textContent = text;
     el.classList.toggle('low', ui.timeMs > 0 && ms <= 20000);
   }
   $('#barBottom').classList.toggle('active', turn === bottomColor && ui.st.status === 'play');
@@ -5083,6 +5158,7 @@ function snap(st, lastMove = null) {
     result: st.result ? { ...st.result } : null,
     plySeq: st.plySeq || 0,
     checkDamagedSeq: st.checkDamagedSeq != null ? st.checkDamagedSeq : -1,
+    rngState: st.rngState,
   };
 }
 
@@ -6927,6 +7003,8 @@ function brawlCaptureFx(st, capInfo, match, mover) {
 }
 
 function newGame(opts = {}) {
+  if (ui.cancelDrag) ui.cancelDrag();
+  stopBotWorker();
   const pickedMode = modeById(opts.modeId || profile.modeId);
   const mode = pickedMode.flags.randomPick ? randomRealMode() : pickedMode;
   ui.modePick = opts.modePick || pickedMode.id;
@@ -6991,6 +7069,7 @@ function newGame(opts = {}) {
   }
   ui.st = createState(mode.id, { square: opts.square != null ? opts.square : profile.square, seed: opts.seed });
   ui.frames = [snap(ui.st)];
+  if ((opts.mode || 'local') === 'online' && ui.online) ui.online.initialState = captureNetworkState(ui.st);
   ui.moves = [];
   ui.viewPly = 0;
   ui.selected = -1;
@@ -7189,12 +7268,14 @@ function renderPlayers() {  const st = ui.st;
 }
 
 function updateLinkDots() {
-  const ok = ui.mode === 'online' && ui.online && ui.online.connected;
+  const session = ui.online;
+  const peerReady = !!session && !!session.p2p && session.p2p.links.some((l) => l.peerId);
+  const ok = ui.mode === 'online' && session && (peerReady || session.connected);
   for (const id of ['#topLink', '#bottomLink']) {
     const el = $(id);
     el.classList.toggle('ok', !!ok);
     el.classList.toggle('bad', !ok);
-    el.title = ok ? 'связь есть' : 'связи нет';
+    el.title = ok ? (session.ping != null ? 'связь есть · ' + Math.round(session.ping) + ' мс' : 'связь есть') : 'восстанавливаем связь';
   }
 }
 
@@ -7409,7 +7490,7 @@ function onSquareClick(sq) {
 
   if (st.flags.strategy) { strategyClick(sq); return; }
 
-  const legal = legalMoves(st, st.turn);
+  const legal = getUiLegalMoves(st);
   const p = st.board[sq];
 
   /* Повторный клик по уже выбранной фигуре ничего не меняет: не перерисовываем
@@ -7487,9 +7568,10 @@ function commitMove(m, opts = {}) {
   const legal = legalMoves(st, st.turn);
   const match = legal.find((x) => x.from === m.from && x.to === m.to
     && (x.promo || null) === (m.promo || null)
-    && !!x.castle === !!m.castle
-    && !!x.swap === !!m.swap);
+    && (m.castle == null || !!x.castle === !!m.castle)
+    && (m.swap == null || !!x.swap === !!m.swap));
   if (!match) return false;
+  if (ui.cancelDrag) ui.cancelDrag();
 
   /* Новый ход из отката: будущая история больше не существует. */
   if (ui.mode === 'local' && !ui.bot && ui.viewPly < ui.frames.length - 1) {
@@ -7587,6 +7669,9 @@ function commitMove(m, opts = {}) {
   /* Снимок делаем после updateStatus: в нём уже ХП короля от шаха и результат. */
   ui.frames.push(snap(st, { from: match.from, to: match.to }));
   ui.viewPly = ui.frames.length - 1;
+  if (ui.mode === 'online' && !opts.remote && !opts.silent) {
+    netPublish({ t: 'move', from: match.from, to: match.to, promo: match.promo || null, cw: ui.clocks.w, cb: ui.clocks.b });
+  }
 
   if (!opts.silent) {
     if (captured && spent > 0 && spent < 2000 && capInfo.some((c) => c.type === 'r')) {
@@ -7644,7 +7729,7 @@ function commitMove(m, opts = {}) {
     if (flippedNow) renderPlayers();
     if (st.flags.explode && explodedNow) explosionFx(st, match.to);
     if (st.flags.annihilate && annihilatedNow) {
-      annihilationFx(st, [match.from, match.to, ...undo.removed.map((r) => r.sq)]);
+      annihilationFx(st, undo.annihilationCells || [match.from, match.to, ...undo.removed.map((r) => r.sq)]);
     }
     if (capInfo.length) {
       captureFx(capInfo);
@@ -7681,15 +7766,13 @@ function commitMove(m, opts = {}) {
     saveCurrentGame();
   }
 
-  if (ui.mode === 'online' && !opts.remote && !opts.silent) {
-    netPublish({ t: 'move', from: match.from, to: match.to, promo: match.promo || null, cw: ui.clocks.w, cb: ui.clocks.b });
-  }
-
   if (res) {
     // Для обычного хода доска уже перерисована выше. Повторный renderAll
     // стирал бы только что запущенные анимации взятия/короля.
-    if (opts.silent || opts.remote) renderAll(false);
-    finishGame(res);
+    if (!ui.replaying) {
+      if (opts.silent || opts.remote) renderAll(false);
+      finishGame(res);
+    }
   } else if (!opts.silent) {
     maybePhase();
     maybeBotTurn();
@@ -7722,6 +7805,7 @@ function scoreGame(res, st) {
 }
 
 function finishGame(res, opts = {}) {
+  if (ui.cancelDrag) ui.cancelDrag();
   stopRaceClock();
   if (ui.st && ui.st.flags.zombie) showZombieIntro('outro', res);
   stopZombie(false);
@@ -8305,6 +8389,7 @@ function updateNav() {
 }
 
 function gotoPly(ply) {
+  if (ui.cancelDrag) ui.cancelDrag();
   const max = ui.frames.length - 1;
   const target = Math.max(0, Math.min(max, ply));
   const from = ui.viewPly;
@@ -8335,6 +8420,7 @@ function gotoPly(ply) {
     ui.st.capturedKing = f.capturedKing;
     ui.st.check = f.check;
     ui.st.checkSide = f.checkSide ? { ...f.checkSide } : { w: false, b: false };
+    ui.st.rngState = f.rngState;
     ui.st.plySeq = f.plySeq || 0;
     ui.st.checkDamagedSeq = f.checkDamagedSeq != null ? f.checkDamagedSeq : -1;
     ui.st.lastCheckDamage = null;
@@ -8393,6 +8479,7 @@ function frameViewAt(ply) {
     result: f.result,
     plySeq: f.plySeq || 0,
     checkDamagedSeq: f.checkDamagedSeq != null ? f.checkDamagedSeq : -1,
+    rngState: f.rngState,
   };
 }
 
@@ -8572,139 +8659,553 @@ const topicFor = (code) => TOPIC_PREFIX + code;
 class Relay {
   constructor() {
     this.ws = null;
+    this.sse = null;
+    this.bc = null;
     this.topic = '';
-    this.onMessage = null;
-    this.onClose = null;
-    this.onOpen = null;
-    this.closed = false;
+    this.onMessage = this.onClose = this.onOpen = null;
+    this.closed = true;
     this.seen = new Set();
-    this.pollOk = false;
-    this.pollTimer = 0;
+    this.fragments = new Map();
+    this.lastId = '';
+    this.remoteReady = this.localReady = false;
+    this.localUntil = 0;
+    this.retryDelay = 700;
+    this.queue = [];
+    this.sending = false;
+    this.generation = 0;
   }
 
   connect(code, rawTopic) {
+    this.close();
     this.topic = rawTopic || topicFor(code);
+    this.lastId = '';
+    this.lastPacketTime = 0;
+    this.seen.clear();
     this.closed = false;
-    /* Локальный канал между вкладками: работает даже без интернета
-       и не зависит от лимитов публичной службы. */
+    const generation = ++this.generation;
+    this.startedAt = Math.floor(Date.now() / 1000) - 15;
+    this.ready = new Promise((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
     try {
       this.bc = new BroadcastChannel('daymix-chess-' + this.topic);
       this.bc.onmessage = (event) => {
-        if (this.onMessage && typeof event.data === 'string') this.onMessage(event.data);
+        if (this.closed || generation !== this.generation || typeof event.data !== 'string') return;
+        const recovered = !this.hasLocalPeer();
+        this.localReady = true;
+        this.localUntil = Date.now() + 30000;
+        this.resolveReady();
+        if (recovered && this.onOpen) this.onOpen('local');
+        this.receiveText(event.data);
       };
+      // Локальные вкладки могут начать обмен сразу; это не подтверждение внешней сети.
+      this.resolveReady();
     } catch (error) { this.bc = null; }
-    this.startPolling();
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      /* Вкладки одного браузера общаются через BroadcastChannel сразу,
-         не дожидаясь внешней сети. */
-      if (this.bc) resolve();
-      const ws = new WebSocket(`${RELAY_WS}${this.topic}/ws`);
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        try { ws.close(); } catch (error) { /* уже закрыт */ }
-        if (this.pollOk) resolve();
-        else reject(new Error('служба связи не отвечает'));
-      }, 12000);
-      ws.onopen = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        this.ws = ws;
-        this.stopPolling();
-        if (this.onOpen) this.onOpen();
-        resolve();
-      };
-      ws.onmessage = (event) => {
-        let packet;
-        try { packet = JSON.parse(event.data); } catch (error) { return; }
-        if (packet && packet.event === 'message' && typeof packet.message === 'string' && this.onMessage) {
-          this.onMessage(packet.message);
-        }
-      };
-      ws.onclose = () => {
-        clearTimeout(timer);
-        this.ws = null;
-        if (!settled) {
-          if (this.pollOk) { settled = true; resolve(); }
-          return;
-        }
-        if (this.onClose) this.onClose();
-        if (!this.closed) this.startPolling();
-      };
-      ws.onerror = () => {
-        try { ws.close(); } catch (error) { /* уже закрыт */ }
-      };
-    });
+    this.connectSocket(generation);
+    this.watchdogTimer = setInterval(() => {
+      if (!this.closed && generation === this.generation) this.wake();
+    }, 1000);
+    this.fallbackTimer = setTimeout(() => {
+      if (!this.closed && generation === this.generation && !this.remoteReady) this.startEvents(generation);
+    }, 1400);
+    this.readyTimer = setTimeout(() => {
+      if (!this.closed && !this.remoteReady && !this.localReady && !this.bc) this.rejectReady(new Error('служба связи не отвечает'));
+    }, 14000);
+    return this.ready;
   }
 
+  cursor() { return encodeURIComponent(this.lastId || this.startedAt); }
+  markReady(generation) {
+    if (this.closed || generation !== this.generation) return;
+    const first = !this.remoteReady;
+    this.remoteReady = true;
+    this.retryDelay = 700;
+    clearTimeout(this.readyTimer);
+    this.stopPolling();
+    if (this.resolveReady) this.resolveReady();
+    if (first && this.onOpen) this.onOpen('remote');
+  }
+  connectSocket(generation = this.generation) {
+    if (this.closed || generation !== this.generation || this.ws) return;
+    let ws;
+    try { ws = new WebSocket(`${RELAY_WS}${this.topic}/ws?since=${this.cursor()}`); }
+    catch (error) { this.scheduleSocket(generation); this.startEvents(generation); return; }
+    // Сохраняем даже ещё не открытый сокет — leave закроет и его.
+    this.ws = ws;
+    const timeout = setTimeout(() => {
+      if (ws.readyState === WebSocket.CONNECTING) ws.close();
+    }, 8500);
+    this.socketTimeout = timeout;
+    ws.onopen = () => {
+      if (this.closed || generation !== this.generation || this.ws !== ws) { ws.close(); return; }
+      clearTimeout(timeout);
+      if (this.sse) { this.sse.close(); this.sse = null; }
+      this.markReady(generation);
+    };
+    ws.onmessage = (event) => {
+      if (this.closed || generation !== this.generation) return;
+      try { this.receivePacket(JSON.parse(event.data)); } catch (error) { /* некорректный пакет */ }
+    };
+    ws.onclose = () => {
+      clearTimeout(timeout);
+      if (this.ws === ws) this.ws = null;
+      if (this.closed || generation !== this.generation) return;
+      this.remoteReady = !!this.sse && this.sse.readyState === 1;
+      if (this.onClose) this.onClose();
+      this.startEvents(generation);
+      this.scheduleSocket(generation);
+    };
+    ws.onerror = () => { try { ws.close(); } catch (error) { /* уже закрыт */ } };
+  }
+  scheduleSocket(generation) {
+    if (this.closed || generation !== this.generation || this.reconnectTimer) return;
+    const delay = this.retryDelay + Math.random() * 250;
+    this.retryDelay = Math.min(12000, this.retryDelay * 1.65);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = 0;
+      this.connectSocket(generation);
+    }, delay);
+  }
+  startEvents(generation = this.generation) {
+    if (this.closed || generation !== this.generation || this.sse || (this.ws && this.ws.readyState === 1)) return;
+    if (typeof EventSource !== 'function') { this.startPolling(); return; }
+    let source;
+    try { source = new EventSource(`${RELAY_HTTP}${this.topic}/sse?since=${this.cursor()}`); }
+    catch (error) { this.startPolling(); return; }
+    this.sse = source;
+    source.addEventListener('open', () => this.markReady(generation));
+    source.onmessage = (event) => {
+      if (this.closed || generation !== this.generation) return;
+      try { this.receivePacket(JSON.parse(event.data)); } catch (error) { /* служебный пакет */ }
+    };
+    source.onerror = () => {
+      if (this.closed || generation !== this.generation) return;
+      this.remoteReady = !!this.ws && this.ws.readyState === 1;
+      source.close();
+      if (this.sse === source) this.sse = null;
+      if (!this.sseRetryTimer) this.sseRetryTimer = setTimeout(() => {
+        this.sseRetryTimer = 0;
+        if (!this.closed && generation === this.generation) this.startEvents(generation);
+      }, 2500);
+      this.startPolling();
+    };
+    this.startPolling();
+  }
+  receivePacket(packet) {
+    if (this.closed || !packet || packet.event !== 'message' || typeof packet.message !== 'string') return;
+    if (packet.id) {
+      if (this.seen.has(packet.id)) return;
+      this.seen.add(packet.id);
+      if (this.seen.size > 800) this.seen.delete(this.seen.values().next().value);
+      if (!packet.time || packet.time >= (this.lastPacketTime || 0)) {
+        this.lastId = packet.id;
+        this.lastPacketTime = packet.time || this.lastPacketTime || 0;
+      }
+    }
+    this.receiveText(packet.message);
+  }
+  receiveText(text) {
+    if (this.closed) return;
+    let part;
+    try { part = JSON.parse(text); } catch (error) { return; }
+    if (part.app !== 'daymix-chess-chunk') { if (this.onMessage) this.onMessage(text); return; }
+    if (typeof part.id !== 'string' || !Number.isInteger(part.i) || !Number.isInteger(part.n)
+      || part.i < 0 || part.n < 1 || part.n > 256 || part.i >= part.n || typeof part.text !== 'string') return;
+    const now = Date.now();
+    for (const [id, entry] of this.fragments) if (now - entry.at > 45000) this.fragments.delete(id);
+    if (this.fragments.size > 16) this.fragments.delete(this.fragments.keys().next().value);
+    let entry = this.fragments.get(part.id);
+    if (!entry) { entry = { at: now, parts: new Array(part.n), count: 0, bytes: 0 }; this.fragments.set(part.id, entry); }
+    if (entry.parts.length !== part.n || entry.parts[part.i] != null) return;
+    entry.parts[part.i] = part.text;
+    entry.count++;
+    entry.bytes += part.text.length;
+    if (entry.bytes > 512000) { this.fragments.delete(part.id); return; }
+    if (entry.count === part.n) {
+      this.fragments.delete(part.id);
+      if (this.onMessage) this.onMessage(entry.parts.join(''));
+    }
+  }
   startPolling() {
-    if (this.pollTimer) return;
+    if (this.closed || this.pollTimer || this.polling) return;
+    const generation = this.generation;
     const poll = async () => {
-      if (this.closed || !this.topic) return;
+      this.pollTimer = 0;
+      if (this.closed || generation !== this.generation || this.remoteReady) return;
+      this.polling = true;
+      const controller = new AbortController();
+      this.pollAbort = controller;
+      const timeout = setTimeout(() => controller.abort(), 7000);
+      let delay = 1200;
       try {
-        const res = await fetch(`${RELAY_HTTP}${this.topic}/json?poll=1&since=8s&limit=50`, { cache: 'no-store' });
-        if (!res.ok) return;
-        this.pollOk = true;
-        const text = await res.text();
-        for (const line of text.split('\n')) {
-          if (!line.trim()) continue;
-          let packet;
-          try { packet = JSON.parse(line); } catch (error) { continue; }
-          if (!packet || packet.event !== 'message' || typeof packet.message !== 'string') continue;
-          if (packet.id) {
-            if (this.seen.has(packet.id)) continue;
-            this.seen.add(packet.id);
-            if (this.seen.size > 400) this.seen.delete(this.seen.values().next().value);
+        const res = await fetch(`${RELAY_HTTP}${this.topic}/json?poll=1&since=${this.cursor()}`, {
+          cache: 'no-store', signal: controller.signal,
+        });
+        if (res.ok) {
+          const text = await res.text();
+          for (const line of text.split('\n')) {
+            if (!line.trim()) continue;
+            try { this.receivePacket(JSON.parse(line)); } catch (error) { /* пропускаем */ }
           }
-          if (this.onMessage) this.onMessage(packet.message);
-        }
-      } catch (error) { /* сеть моргнула */ }
+          if (this.resolveReady) this.resolveReady();
+        } else if (res.status === 429) delay = Math.max(15000, (Number(res.headers.get('Retry-After')) || 15) * 1000);
+        else delay = 3500;
+      } catch (error) { delay = 2500; }
+      finally { clearTimeout(timeout); this.polling = false; this.pollAbort = null; }
+      if (!this.closed && generation === this.generation && !this.remoteReady) this.pollTimer = setTimeout(poll, delay);
     };
     poll();
-    this.pollTimer = setInterval(poll, 3500);
   }
-
   stopPolling() {
-    if (this.pollTimer) clearInterval(this.pollTimer);
+    clearTimeout(this.pollTimer);
     this.pollTimer = 0;
+    if (this.pollAbort) this.pollAbort.abort();
   }
-
-  publish(payload) {
-    if (!this.topic) return Promise.resolve();
+  broadcast(payload) {
+    if (this.closed || !this.bc) return;
+    try { this.bc.postMessage(JSON.stringify(payload)); } catch (error) { /* вкладка закрыта */ }
+  }
+  hasLocalPeer() { return this.localReady && Date.now() < this.localUntil; }
+  publish(payload, opts = {}) {
+    if (this.closed || !this.topic) return Promise.resolve(false);
+    if (opts.local !== false) this.broadcast(payload);
     const body = JSON.stringify(payload);
-    try { if (this.bc) this.bc.postMessage(body); } catch (error) { /* канал закрыт */ }
-    return fetch(RELAY_HTTP + this.topic, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'content-type': 'text/plain;charset=UTF-8' },
-      body,
-    }).catch(() => { /* сеть моргнула */ });
+    const encoder = new TextEncoder();
+    const parts = [];
+    if (encoder.encode(body).length <= 3200) parts.push(body);
+    else {
+      let chunk = '', size = 0;
+      const texts = [];
+      for (const ch of body) {
+        const bytes = encoder.encode(ch).length;
+        if (size + bytes > 1500) { texts.push(chunk); chunk = ''; size = 0; }
+        chunk += ch; size += bytes;
+      }
+      if (chunk) texts.push(chunk);
+      const id = payload.mid || Math.random().toString(36).slice(2);
+      for (let i = 0; i < texts.length; i++) parts.push(JSON.stringify({ app: 'daymix-chess-chunk', id, i, n: texts.length, text: texts[i] }));
+    }
+    return new Promise((resolve) => {
+      if (this.queue.length >= 128) { resolve(false); return; }
+      this.queue.push({ parts, resolve, generation: this.generation });
+      this.flushQueue();
+    });
   }
-
+  async flushQueue() {
+    if (this.sending || this.closed) return;
+    this.sending = true;
+    while (this.queue.length && !this.closed) {
+      const task = this.queue.shift();
+      let ok = true;
+      for (const body of task.parts) {
+        if (this.closed || task.generation !== this.generation) { ok = false; break; }
+        const controller = new AbortController();
+        this.publishAbort = controller;
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        try {
+          const response = await fetch(RELAY_HTTP + this.topic, {
+            method: 'POST', headers: { 'content-type': 'text/plain;charset=UTF-8' },
+            body, signal: controller.signal,
+          });
+          ok = response.ok;
+          if (!ok) break;
+        } catch (error) { ok = false; break; }
+        finally { clearTimeout(timeout); this.publishAbort = null; }
+      }
+      task.resolve(ok);
+    }
+    this.sending = false;
+  }
+  wake() {
+    if (this.closed) return;
+    if (this.ws && this.ws.readyState > 1) {
+      const stale = this.ws;
+      stale.onopen = stale.onclose = stale.onmessage = stale.onerror = null;
+      try { stale.close(); } catch (error) { /* уже закрыт */ }
+      this.ws = null;
+      this.remoteReady = !!this.sse && this.sse.readyState === 1;
+    }
+    if (!this.ws && !this.reconnectTimer) this.connectSocket();
+    if (!this.remoteReady) this.startEvents();
+    this.flushQueue();
+  }
   close() {
     this.closed = true;
+    this.generation++;
+    clearInterval(this.watchdogTimer);
+    this.watchdogTimer = 0;
+    clearTimeout(this.readyTimer);
+    clearTimeout(this.fallbackTimer);
+    clearTimeout(this.socketTimeout);
+    clearTimeout(this.reconnectTimer);
+    clearTimeout(this.sseRetryTimer);
+    this.sseRetryTimer = 0;
+    this.reconnectTimer = 0;
     this.stopPolling();
-    try { if (this.ws) this.ws.close(); } catch (error) { /* уже закрыт */ }
-    try { if (this.bc) this.bc.close(); } catch (error) { /* уже закрыт */ }
-    this.ws = null;
-    this.bc = null;
+    if (this.publishAbort) this.publishAbort.abort();
+    if (this.ws) { this.ws.onopen = this.ws.onclose = this.ws.onmessage = this.ws.onerror = null; try { this.ws.close(); } catch (error) {} }
+    if (this.sse) this.sse.close();
+    if (this.bc) { this.bc.onmessage = null; this.bc.close(); }
+    this.ws = this.sse = this.bc = null;
+    this.remoteReady = this.localReady = false;
+    this.localUntil = 0;
+    for (const task of this.queue) task.resolve(false);
+    this.queue = [];
+    this.fragments.clear();
   }
 }
 
-function netPublish(payload) {
-  if (!ui.online || !ui.online.relay) return;
-  payload.app = 'daymix-chess';
-  payload.v = 2;
-  payload.sender = ui.online.role;
-  payload.sid = ui.online.sid || null;
-  payload.mid = Math.random().toString(36).slice(2, 10);
-  payload.ts = Date.now();
-  ui.online.relay.publish(payload);
-  if (ui.online.p2p) {
-    try { ui.online.p2p.publish(payload); } catch (error) { /* P2P не поднялся */ }
+// Доставка ходов подтверждается приложением. Повтор использует тот же mid,
+// поэтому ни резервный канал, ни дубликат не могут сделать ход дважды.
+const NET_RELIABLE_TYPES = new Set(['move', 'start', 'end', 'chat', 'draw-offer', 'imbo-state', 'imbo-start', 'imbo-chat']);
+function netSessionState() {
+  const session = ui.online;
+  if (!session) return null;
+  if (!session.pendingDelivery) session.pendingDelivery = new Map();
+  if (!session.moveBuffer) session.moveBuffer = new Map();
+  if (!session.pendingMoves) session.pendingMoves = [];
+  if (!session.clientId) {
+    const words = new Uint32Array(2);
+    if (globalThis.crypto && crypto.getRandomValues) crypto.getRandomValues(words);
+    else { words[0] = Math.random() * 0xffffffff; words[1] = Math.random() * 0xffffffff; }
+    session.clientId = [...words].map((x) => x.toString(36)).join('-');
   }
+  return session;
+}
+function wirePacket(payload, session) {
+  session.packetSeq = (session.packetSeq || 0) + 1;
+  return {
+    ...payload, app: 'daymix-chess', v: 3, sender: session.role,
+    sid: session.sid || null, client: session.clientId,
+    mid: session.clientId + '-' + session.packetSeq, ts: Date.now(),
+  };
+}
+function transmitPacket(packet, session, forceRelay = false) {
+  if (!session || ui.online !== session || !session.relay) return;
+  session.relay.broadcast(packet);
+  const p2p = session.p2p;
+  const direct = !!p2p && p2p.links.some((l) => l.peerId);
+  if (direct) {
+    try { p2p.publish(packet); } catch (error) { /* ниже остаётся HTTP-резерв */ }
+  }
+  // Во время нормальной P2P-партии не отправляем каждый клик и ACK через HTTP.
+  // Наблюдатели всё равно могут получить ход через резерв или восстановление.
+  if (forceRelay || ['start', 'sync-request', 'hello'].includes(packet.t)
+    || (!direct && !session.relay.hasLocalPeer())
+    || (session.hasSpectators && ['move', 'end'].includes(packet.t))) {
+    session.relay.publish(packet, { local: false }).catch(() => {});
+  }
+}
+function netPublish(payload) {
+  const session = netSessionState();
+  if (!session || !session.relay) return;
+  const packet = wirePacket(payload, session);
+  if (packet.t === 'move') {
+    packet.ply = ui.moves.length;
+    packet.hash = netPositionHash(ui.st);
+    const last = ui.moves[ui.moves.length - 1];
+    if (last) packet.color = last.color;
+  }
+  if (NET_RELIABLE_TYPES.has(packet.t) && session.role !== 'spectator') {
+    session.pendingDelivery.set(packet.mid, { packet, attempts: 0, next: Date.now() + 700 });
+    armDeliveryTimer(session);
+  }
+  transmitPacket(packet, session);
+  return packet.mid;
+}
+function armDeliveryTimer(session) {
+  if (session.deliveryTimer || !session.pendingDelivery.size) return;
+  session.deliveryTimer = setTimeout(() => {
+    session.deliveryTimer = 0;
+    if (ui.online !== session) return;
+    const now = Date.now();
+    for (const [mid, entry] of session.pendingDelivery) {
+      if (now < entry.next) continue;
+      if (entry.attempts === 9) requestNetworkSync(session, 'delivery');
+      if (session.peerVersion && session.peerVersion < 3 && entry.attempts >= 2) {
+        session.pendingDelivery.delete(mid);
+        continue;
+      }
+      entry.attempts++;
+      entry.next = now + Math.min(8000, 700 * Math.pow(1.65, entry.attempts));
+      transmitPacket(entry.packet, session, entry.attempts >= 2);
+    }
+    if (session.pendingDelivery.size) armDeliveryTimer(session);
+  }, 350);
+}
+function acknowledgePacket(msg, session) {
+  if (msg.v < 3 || !msg.mid) return;
+  const ack = wirePacket({ t: 'ack', ack: msg.mid, target: msg.client || null, ply: ui.moves.length }, session);
+  ack.sid = msg.sid; // первый ACK старта уже относится к хозяйскому sid
+  transmitPacket(ack, session);
+}
+function netPositionHash(st) {
+  if (!st) return '';
+  // id фигур отличается между браузерами, поэтому сравниваются только правила.
+  let value = st.modeId + '|' + st.W + 'x' + st.H + '|' + st.turn + '|' + st.ep + '|' + st.rngState;
+  for (const p of st.board) value += p ? p.c + p.t + ':' + (p.used || 0) + ':' + (p.hp ?? '') + ';' : '.;';
+  value += '|' + st.blocked.join(',');
+  const available = (side) => {
+    const id = st.castling[side].k;
+    const iq = st.castling[side].q;
+    return Number(id != null) + ':' + Number(iq != null) + ':' + st.mv[side].cross + ':' + st.mv[side].checks;
+  };
+  value += '|' + available('w') + '|' + available('b');
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+  return (hash >>> 0).toString(36);
+}
+function captureNetworkState(st = ui.st) {
+  if (!st) return null;
+  const copy = {};
+  for (const key of Object.keys(st)) {
+    if (key === 'mode' || key === 'flags') continue;
+    copy[key] = st[key];
+  }
+  return JSON.parse(JSON.stringify(copy));
+}
+function restoreNetworkState(data) {
+  if (!data || typeof data.modeId !== 'string') return null;
+  const mode = modeById(data.modeId);
+  if (mode.id !== data.modeId || !Array.isArray(data.board) || data.board.length !== mode.W * (data.square && mode.square ? mode.W : mode.H)) return null;
+  if (data.turn !== 'w' && data.turn !== 'b') return null;
+  const copy = JSON.parse(JSON.stringify(data));
+  if (copy.board.some((p) => p && (!PIECE_NAMES[p.t] || (p.c !== 'w' && p.c !== 'b') || !Number.isFinite(p.id)))) return null;
+  if (!copy.castling || !copy.mv || !copy.pawnStart || !Array.isArray(copy.blocked)) return null;
+  copy.mode = mode;
+  copy.flags = mode.flags;
+  copy.W = mode.W;
+  copy.H = copy.board.length / copy.W;
+  return copy;
+}
+function requestNetworkSync(session = ui.online, reason = '') {
+  if (!session || ui.online !== session || !ui.st) return;
+  const now = Date.now();
+  if (now - (session.lastSyncRequest || 0) < 1800) return;
+  session.lastSyncRequest = now;
+  if (session.role === 'host') publishOnlineStart({ recovery: true });
+  else netPublish({ t: 'sync-request', ply: ui.moves.length, hash: netPositionHash(ui.st), reason });
+}
+function applyIncomingMove(msg, session) {
+  if (session.started && msg.sid && msg.sid !== session.sid) return false;
+  if (session.peerClient && msg.client && msg.sender !== 'spectator' && msg.client !== session.peerClient) return false;
+  if (!ui.st || (session.initializing && !ui.replaying)) {
+    if (session.pendingMoves.length < 256 && !session.pendingMoves.some((p) => p.mid === msg.mid)) session.pendingMoves.push(msg);
+    return false;
+  }
+  if (Number.isInteger(msg.ply)) {
+    if (msg.ply <= ui.moves.length) {
+      const applied = ui.moves[msg.ply - 1];
+      if (applied && applied.from === msg.from && applied.to === msg.to && (applied.promo || null) === (msg.promo || null)) return true;
+      requestNetworkSync(session, 'duplicate-mismatch');
+      return false;
+    }
+    if (msg.ply > ui.moves.length + 1) {
+      if (session.moveBuffer.size < 128) session.moveBuffer.set(msg.ply, msg);
+      requestNetworkSync(session, 'gap');
+      return false;
+    }
+  }
+  if (!['host', 'guest'].includes(msg.sender) || !Number.isInteger(msg.from) || !Number.isInteger(msg.to)) return false;
+  const hostColor = session.hostColor || 'w';
+  const expected = msg.sender === 'host' ? hostColor : other(hostColor);
+  if (!session.coop && ui.st.turn !== expected) { requestNetworkSync(session, 'turn'); return false; }
+  const ok = commitMove({ from: msg.from, to: msg.to, promo: msg.promo || null }, { remote: true });
+  if (!ok) { requestNetworkSync(session, 'illegal'); return false; }
+  if (Number.isFinite(msg.cw)) ui.clocks.w = msg.cw;
+  if (Number.isFinite(msg.cb)) ui.clocks.b = msg.cb;
+  ui.turnStart = performance.now();
+  ui.running = ui.st.status === 'play';
+  updateClockEls();
+  if (msg.hash && msg.hash !== netPositionHash(ui.st)) requestNetworkSync(session, 'hash');
+  return true;
+}
+function drainIncomingMoves(session) {
+  if (ui.online !== session || !ui.st || session.initializing) return;
+  for (const [ply] of session.moveBuffer) if (ply <= ui.moves.length) session.moveBuffer.delete(ply);
+  const beforeStart = session.pendingMoves.splice(0);
+  beforeStart.sort((a, b) => (a.ply || 0) - (b.ply || 0));
+  for (const msg of beforeStart) {
+    if (applyIncomingMove(msg, session)) acknowledgePacket(msg, session);
+  }
+  let next;
+  while ((next = session.moveBuffer.get(ui.moves.length + 1))) {
+    session.moveBuffer.delete(next.ply);
+    if (!applyIncomingMove(next, session)) break;
+    acknowledgePacket(next, session);
+  }
+}
+function reconstructNetworkFrames(msg, finalState) {
+  const start = restoreNetworkState(msg.initial);
+  if (!start) return null;
+  const frames = [snap(start)];
+  const st = start;
+  for (const recorded of msg.history) {
+    const legal = legalMoves(st, st.turn);
+    const move = legal.find((m) => m.from === recorded.from && m.to === recorded.to
+      && (m.promo || null) === (recorded.promo || null));
+    if (!move) return null;
+    const mover = st.turn;
+    applyMove(st, move);
+    if (st.flags.blocks) maybeBlock(st);
+    if (st.flags.checksToWin && inCheck(st, st.turn)) st.mv[mover].checks++;
+    updateStatus(st);
+    if (st.flags.checksToWin && st.mv[mover].checks >= st.flags.checksToWin) {
+      st.status = 'over'; st.result = { winner: mover, reason: 'checks' };
+    }
+    frames.push(snap(st, { from: move.from, to: move.to }));
+  }
+  // Окончательное состояние содержит также таймеры/эффекты специальных режимов.
+  frames[frames.length - 1] = snap(finalState, msg.lastMove || null);
+  return frames;
+}
+function applyNetworkSnapshot(msg, session) {
+  const state = restoreNetworkState(msg.state);
+  if (!state || !Array.isArray(msg.history) || msg.history.length > 2048 || !Number.isInteger(msg.ply) || msg.history.length !== msg.ply) return false;
+  if (msg.ply < ui.moves.length || (session.role === 'host' && !session.coop)) return true;
+  if (msg.hash && msg.hash !== netPositionHash(state)) return false;
+  if (msg.ply === ui.moves.length && (!msg.hash || msg.hash === netPositionHash(ui.st))) return true;
+  const frames = reconstructNetworkFrames(msg, state);
+  if (!frames) return false; // некорректный журнал не подменяет историю
+  if (ui.cancelDrag) ui.cancelDrag();
+  ui.st = state;
+  idSeq = Math.max(idSeq, ...state.board.filter(Boolean).map((p) => p.id + 1));
+  ui.moves = msg.history.map((m) => ({ ...m }));
+  ui.frames = frames;
+  ui.viewPly = msg.ply;
+  ui.lastMove = msg.lastMove || null;
+  ui.selected = -1;
+  ui.hint = null;
+  ui.legalCache = null;
+  ui.endSquare = -1;
+  session.initialState = msg.initial;
+  for (const [ply] of session.moveBuffer) if (ply <= msg.ply) session.moveBuffer.delete(ply);
+  for (const [mid, entry] of session.pendingDelivery) {
+    if (entry.packet.t !== 'move' || entry.packet.ply > msg.ply) continue;
+    const m = msg.history[entry.packet.ply - 1];
+    if (m && m.from === entry.packet.from && m.to === entry.packet.to) session.pendingDelivery.delete(mid);
+  }
+  if (Number.isFinite(msg.cw)) ui.clocks.w = msg.cw;
+  if (Number.isFinite(msg.cb)) ui.clocks.b = msg.cb;
+  ui.turnStart = performance.now();
+  ui.running = state.status === 'play' && !!ui.moves.length;
+  renderAll(false);
+  renderMoves();
+  renderPlayers();
+  drainIncomingMoves(session);
+  if (state.status === 'over' && state.result && !ui.scored) finishGame(state.result);
+  return true;
+}
+function startNetHeartbeat(session = ui.online) {
+  if (!session || session.heartbeatTimer) return;
+  session.lastPeerAt = Date.now();
+  session.heartbeatTimer = setInterval(() => {
+    if (ui.online !== session || !session.started) return;
+    netPublish({ t: 'ping', at: Date.now(), ply: ui.moves.length, hash: netPositionHash(ui.st) });
+    if (Date.now() - session.lastPeerAt > 30000) {
+      session.connected = false;
+      updateLinkDots();
+      if (session.relay) session.relay.wake();
+    }
+  }, 12000);
 }
 
 function randomCode() {
@@ -8902,7 +9403,8 @@ function stopConnectHud() {
 
 const P2P_ROOM_CONFIG = {
   appId: 'daymix-chess-p2p-v1',
-  relayConfig: { warnOnRelayFailure: false },
+  relayConfig: { warnOnRelayFailure: false, redundancy: 2 },
+  maxReceiveBytes: 512 * 1024,
   rtcConfig: {
     iceServers: [
       { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
@@ -8919,19 +9421,22 @@ const P2P_ROOM_CONFIG = {
   },
 };
 const P2P_SOURCES = [
-  'https://esm.run/trystero',
-  'https://esm.run/@trystero-p2p/mqtt',
+  'https://cdn.jsdelivr.net/npm/@trystero-p2p/nostr@0.26.0/+esm',
+  'https://cdn.jsdelivr.net/npm/@trystero-p2p/mqtt@0.26.0/+esm',
 ];
 
 async function startP2PSource(url, code) {
+  const session = ui.online;
   const mod = await import(url);
-  if (!ui.online || ui.online.code !== code) return;
+  if (!session || ui.online !== session || session.code !== code) return;
   const room = mod.joinRoom(P2P_ROOM_CONFIG, 'room-' + code);
-  const action = room.makeAction('msg');
-  action.onMessage = (data) => {
+  const rawAction = room.makeAction('msg');
+  const action = Array.isArray(rawAction) ? { send: rawAction[0] } : rawAction;
+  const receive = (data) => {
     if (!ui.online || ui.online.code !== code) return;
-    handleNet(JSON.stringify(data));
+    if (ui.online === session) handleNet(typeof data === 'string' ? data : JSON.stringify(data));
   };
+  if (Array.isArray(rawAction)) rawAction[1](receive); else action.onMessage = receive;
   if (!ui.online.p2p) {
     const links = [];
     ui.online.p2p = {
@@ -8939,8 +9444,9 @@ async function startP2PSource(url, code) {
       best: null,
       publish: (payload) => {
         const target = ui.online.p2p.best || null;
-        for (const link of (target ? [target] : links)) {
-          try { link.action.send(payload); } catch (error) { /* канал отвалился */ }
+        for (const link of (target && target.peerId ? [target] : links.filter((l) => l.peerId))) {
+          try { Promise.resolve(link.action.send(payload)).catch(() => { link.peerId = null; }); }
+          catch (error) { link.peerId = null; }
         }
       },
       close: () => {
@@ -8953,10 +9459,11 @@ async function startP2PSource(url, code) {
   const link = { room, action, url, peerId: null, ping: null };
   ui.online.p2p.links.push(link);
   room.onPeerJoin = (peerId) => {
-    if (!ui.online || ui.online.code !== code) return;
+    if (ui.online !== session) return;
     link.peerId = peerId;
     connectHudStep(url.includes('mqtt') ? 'mqtt' : 'nostr', 'done');
     room.ping(peerId).then((ms) => {
+      if (ui.online !== session) return;
       link.ping = ms;
       scheduleP2PSelect();
     }).catch(() => scheduleP2PSelect());
@@ -8968,13 +9475,14 @@ async function startP2PSource(url, code) {
       announceRoom();
     }
   };
-  room.onPeerLeave = () => {
+  room.onPeerLeave = (peerId) => {
+    if (ui.online !== session || (link.peerId && peerId !== link.peerId)) return;
     link.peerId = null;
     link.ping = null;
     if (ui.online && ui.online.p2p) {
       if (ui.online.p2p.best === link) ui.online.p2p.best = null;
       scheduleP2PSelect();
-      if (!ui.online.started) updateLinkDots();
+      updateLinkDots();
     }
   };
 }
@@ -8989,12 +9497,11 @@ function scheduleP2PSelect() {
     links.sort((a, b) => a.ping - b.ping);
     ui.online.p2p.best = links[0];
     connectHudStep('ping', 'done', `Замер пинга: ${Math.round(links[0].ping)} мс`);
-  }, 1400);
+  }, 250);
 }
 
 async function startTrysteroRoom(code) {
   if (!ui.online || ui.online.role === 'spectator') return;
-  if (navigator.webdriver) return;
   for (const url of P2P_SOURCES) {
     startP2PSource(url, code).catch(() => { /* этот сигнальный канал недоступен */ });
   }
@@ -9008,8 +9515,7 @@ async function createRoom() {
   if (profile.modeId === 'random') {
     const pick = randomRealMode();
     ui.online.modeId = pick.id;
-    profile.modeId = pick.id;
-    saveProfile();
+    ui.online.modePick = 'random';
     renderModeCard();
     toast('Случайный режим: ' + pick.name);
   } else {
@@ -9027,28 +9533,37 @@ async function createRoom() {
   $('#roomCode').textContent = code;
   $('#roomRow').classList.remove('hidden');
   setLobby('Код готов. Передайте его другу — он введёт код и присоединится.');
-  profile.lastRoom = { code, ts: Date.now(), role: 'guest' };
-  saveProfile(true);
   startConnectHud('host');
-  ui.online.relay = new Relay();
-  ui.online.relay.onMessage = (text) => handleNet(text);
-  ui.online.relay.onClose = () => {
-    if (!ui.online) return;
+  const session = netSessionState();
+  ui.st = null;
+  session.relay = new Relay();
+  session.relay.onMessage = (text) => { if (ui.online === session) handleNet(text); };
+  session.relay.onOpen = () => {
+    if (ui.online !== session) return;
+    session.connected = true;
+    connectHudStep('net', 'done');
+    updateLinkDots();
+    if (session.started) requestNetworkSync(session, 'channel-open');
+  };
+  session.relay.onClose = () => {
+    if (ui.online !== session) return;
     ui.online.connected = false;
     updateLinkDots();
     if (ui.online.sid) scheduleReconnect();
   };
   try {
-    await ui.online.relay.connect(code);
+    const opening = session.relay.connect(code);
+    if (session.role !== 'spectator') startTrysteroRoom(code);
+    await opening;
+    if (ui.online !== session) return;
   } catch (error) {
     setLobby('Не удалось связаться со службой. Проверьте интернет и попробуйте снова.');
     stopConnectHud();
-    ui.online = null;
+    if (ui.online === session) { session.relay.close(); ui.online = null; }
     return;
   }
-  ui.online.connected = true;
+  session.connected = !!session.relay.remoteReady || !!session.relay.localReady;
   connectHudStep('net', 'done');
-  startTrysteroRoom(code);
   setTimeout(() => {
     if (!ui.online || !ui.online.started) stopConnectHud();
   }, 1600);
@@ -9076,7 +9591,7 @@ function announceRoom() {
   if (!ui.online || ui.online.role !== 'host') return;
   netPublish({
     t: 'room',
-    modeId: ui.st ? ui.st.modeId : profile.modeId,
+    modeId: ui.st ? ui.st.modeId : (ui.online.modeId || profile.modeId),
     square: !!profile.square,
     timeMs: ui.st ? ui.timeMs : profile.timeMs,
     timeLabel: profile.timeLabel,
@@ -9102,31 +9617,42 @@ async function joinRoom(code, opts = {}) {
     avatars: spectate ? { w: 'k', b: 'k' } : { w: 'k', b: profile.avatar },
   };
   startConnectHud(spectate ? 'spectator' : 'guest');
-  ui.online.relay = new Relay();
-  ui.online.relay.onMessage = (text) => handleNet(text);
-  ui.online.relay.onClose = () => {
-    if (!ui.online) return;
+  const session = netSessionState();
+  ui.st = null;
+  session.relay = new Relay();
+  session.relay.onMessage = (text) => { if (ui.online === session) handleNet(text); };
+  session.relay.onOpen = () => {
+    if (ui.online !== session) return;
+    session.connected = true;
+    connectHudStep('net', 'done');
+    updateLinkDots();
+    if (session.started) requestNetworkSync(session, 'channel-open');
+  };
+  session.relay.onClose = () => {
+    if (ui.online !== session) return;
     ui.online.connected = false;
     updateLinkDots();
     if (ui.st) scheduleReconnect();
   };
   try {
-    await ui.online.relay.connect(code);
+    const opening = session.relay.connect(code);
+    if (session.role !== 'spectator') startTrysteroRoom(code);
+    await opening;
+    if (ui.online !== session) return;
   } catch (error) {
     setLobby('Комната не отвечает. Проверьте код и интернет.');
     stopConnectHud();
-    ui.online = null;
+    if (ui.online === session) { session.relay.close(); ui.online = null; }
     return;
   }
-  ui.online.connected = true;
-  if (!spectate) startTrysteroRoom(code);
+  session.connected = !!session.relay.remoteReady || !!session.relay.localReady;
   setLobby(spectate ? 'Подключаемся к наблюдению за комнатой ' + code + '…' : 'Подключаемся к комнате ' + code + '…');
   netPublish(spectate ? { t: 'watch', name: profile.name } : { t: 'join', name: profile.name, avatar: profile.avatar, side: profile.side });
   clearInterval(ui.online.joinTimer);
   let tries = 0;
   ui.online.joinTimer = setInterval(() => {
     tries += 1;
-    if (!ui.online || ui.online.started) { clearInterval(ui.online.joinTimer); return; }
+    if (ui.online !== session || session.started) { clearInterval(session.joinTimer); return; }
     if (tries > 24) {
       clearInterval(ui.online.joinTimer);
       setLobby('Комната не отвечает: служба связи перегружена. Нажмите «Присоединиться» ещё раз через минуту.');
@@ -9134,59 +9660,74 @@ async function joinRoom(code, opts = {}) {
     }
     if (tries % 5 === 0) setLobby('Ждём ответа комнаты ' + code + '… попытка ' + (tries + 1));
     netPublish(spectate ? { t: 'watch', name: profile.name } : { t: 'join', name: profile.name, avatar: profile.avatar, side: profile.side });
-  }, 4000);
+  }, 2500);
 }
 
 function scheduleReconnect() {
-  if (!ui.online || ui.online.reconnecting) return;
-  ui.online.reconnecting = true;
-  let delay = 1500;
-  const attempt = async () => {
-    if (!ui.online) return;
-    const relay = new Relay();
-    relay.onMessage = (text) => handleNet(text);
-    relay.onClose = () => {
-      if (!ui.online) return;
-      ui.online.connected = false;
-      updateLinkDots();
-      delay = Math.min(delay * 1.6, 12000);
-      setTimeout(attempt, delay);
-    };
-    relay.onOpen = () => {
-      ui.online.connected = true;
-      updateLinkDots();
-      netPublish({ t: 'hello' });
-    };
-    try {
-      await relay.connect(ui.online.code);
-      ui.online.relay = relay;
-    } catch (error) {
-      setTimeout(attempt, delay);
-    }
-  };
-  setTimeout(attempt, delay);
+  const session = ui.online;
+  if (!session || !session.relay) return;
+  session.relay.wake();
+  if (session.started) requestNetworkSync(session, 'reconnect');
 }
 
 function handleNet(text) {
+  const session = netSessionState();
+  if (!session || typeof text !== 'string' || text.length > 512000) return;
   let msg;
   try { msg = JSON.parse(text); } catch (error) { return; }
-  if (!msg || msg.app !== 'daymix-chess') return;
-  /* Одно и то же сообщение может прийти и по BroadcastChannel, и по WebSocket. */
-  if (msg.mid) {
-    if (!ui.online.seen) ui.online.seen = new Set();
-    if (ui.online.seen.has(msg.mid)) return;
-    ui.online.seen.add(msg.mid);
-    if (ui.online.seen.size > 500) ui.online.seen.delete(ui.online.seen.values().next().value);
-  }
-  if (msg.sender === ui.online.role) return;
-  if (msg.t && String(msg.t).startsWith('imbo-')) {
-    handleImboNet(msg);
+  if (!msg || msg.app !== 'daymix-chess' || msg.sender === session.role
+    || !['host', 'guest', 'spectator'].includes(msg.sender)) return;
+  if (msg.spectator && session.role !== 'spectator') return;
+  if (msg.sender === 'spectator' && ['move', 'end', 'draw-offer'].includes(msg.t)) return;
+  if (msg.target && msg.target !== session.clientId) return;
+  const handshake = ['room', 'join', 'watch', 'watch-empty', 'start', 'imbo-room', 'imbo-join', 'imbo-start'].includes(msg.t);
+  if (!handshake && session.started && msg.sid && msg.sid !== session.sid) return;
+  if (msg.t === 'start' && session.started && msg.sid !== session.sid) return;
+  session.lastPeerAt = Date.now();
+  session.connected = true;
+  if (session.started && session.peerClient && msg.client && msg.sender !== 'spectator' && msg.client !== session.peerClient) return;
+  if (msg.client && msg.sender !== 'spectator') { session.peerClient = msg.client; session.peerVersion = msg.v || 2; }
+  if (msg.t === 'ack') {
+    const sent = session.pendingDelivery.get(msg.ack);
+    if (sent && (msg.sender !== 'spectator' || !msg.target || msg.target === session.clientId)) session.pendingDelivery.delete(msg.ack);
     return;
   }
-  /* Идентификатор партии не фильтруем: у гостя он свой до старта, а после
-     старта совпадает с хозяйским. Комната и так уникальна по коду. */
+  if (msg.mid) {
+    if (!session.seen) session.seen = new Set();
+    if (session.seen.has(msg.mid)) {
+      if (NET_RELIABLE_TYPES.has(msg.t) && (msg.t !== 'start' || (session.started && session.sid === msg.sid))) acknowledgePacket(msg, session);
+      return;
+    }
+    session.seen.add(msg.mid);
+    if (session.seen.size > 1200) session.seen.delete(session.seen.values().next().value);
+  }
+  if (msg.t === 'move') {
+    if (applyIncomingMove(msg, session)) {
+      acknowledgePacket(msg, session);
+      drainIncomingMoves(session);
+    } else if (msg.mid) session.seen.delete(msg.mid);
+    return;
+  }
+  if (NET_RELIABLE_TYPES.has(msg.t) && msg.t !== 'start') acknowledgePacket(msg, session);
+  if (msg.t === 'sync-request' || msg.t === 'hello') {
+    if (session.role === 'host' && ui.st) publishOnlineStart({ recovery: true, target: msg.client || null, spectator: msg.sender === 'spectator' });
+    return;
+  }
+  if (msg.t === 'ping') {
+    netPublish({ t: 'pong', at: msg.at, ply: ui.moves.length, hash: netPositionHash(ui.st), target: msg.client || null });
+    if (msg.ply > ui.moves.length || (msg.ply === ui.moves.length && msg.hash && msg.hash !== netPositionHash(ui.st))) requestNetworkSync(session, 'heartbeat');
+    return;
+  }
+  if (msg.t === 'pong') {
+    session.ping = Math.max(0, Date.now() - Number(msg.at || Date.now()));
+    updateLinkDots();
+    if (msg.ply > ui.moves.length) requestNetworkSync(session, 'heartbeat');
+    return;
+  }
+  if (msg.t && String(msg.t).startsWith('imbo-')) { handleImboNet(msg); return; }
 
   if (msg.t === 'room' && ui.online.role === 'guest') {
+    if (ui.online.started) return;
     if (!ui.online.started) setLobby(`Комната ${ui.online.code}: ${msg.name || 'соперник'} ждёт. Подключаемся…`);
     netPublish({ t: 'join', name: profile.name, avatar: profile.avatar, side: profile.side });
     return;
@@ -9199,29 +9740,14 @@ function handleNet(text) {
   }
 
   if (msg.t === 'watch' && ui.online.role === 'host') {
-    if (!ui.st || ui.st.status !== 'play') {
-      netPublish({ t: 'watch-empty' });
-      return;
-    }
-    netPublish({
-      t: 'start',
-      spectator: true,
-      modeId: ui.st.modeId,
-      square: !!ui.st.square,
-      timeMs: ui.timeMs,
-      timeLabel: profile.timeLabel,
-      raceMs: ui.race ? ui.race.duration : null,
-      seed: ui.st.seed,
-      moves: ui.moves.map((m) => ({ from: m.from, to: m.to, promo: m.promo || null })),
-      cw: ui.clocks.w, cb: ui.clocks.b,
-      names: ui.names || { w: { name: profile.name, avatar: profile.avatar }, b: { name: ui.online.guestName || 'Соперник', avatar: 'k' } },
-      name: profile.name,
-      guestName: ui.online.guestName || 'Соперник',
-    });
+    session.hasSpectators = true;
+    if (!ui.st) { netPublish({ t: 'watch-empty', target: msg.client || null }); return; }
+    publishOnlineStart({ target: msg.client || null, spectator: true });
     return;
   }
 
   if (msg.t === 'join' && ui.online.role === 'host') {
+    if (session.started && session.guestName !== msg.name) return;
     if (ui.online.guestName === msg.name && ui.st) {
       // Повторный join — это ещё и повторная доставка старта, если первый пакет потерялся.
       publishOnlineStart();
@@ -9253,15 +9779,17 @@ function handleNet(text) {
     setLobby('');
     $('#roomRow').classList.add('hidden');
     const beginHost = () => {
+      if (ui.online !== session) return;
       ui.online.starting = false;
       if (!ui.st) {
         newGame({
-          mode: 'online', role: 'host', modeId: ultra ? 'ultraBalance' : profile.modeId,
+          mode: 'online', role: 'host', modeId: ultra ? 'ultraBalance' : (ui.online.modeId || profile.modeId),
           timeMs: profile.timeMs, side: hostColor, orientation: hostColor, splash: true,
           bot: ultra ? { level: 'gm', color: 'b' } : null,
         });
       }
       ui.online.started = true;
+      startNetHeartbeat(session);
       // Имена после newGame: хозяин и гость могут играть любым цветом.
       ui.names = ultra
         ? { w: { name: profile.name, avatar: profile.avatar }, b: { name: 'Бот · ' + botLabel('gm'), avatar: 'k' } }
@@ -9288,6 +9816,13 @@ function handleNet(text) {
   }
 
   if (msg.t === 'start' && ui.online.role === 'spectator') {
+    if (session.started && ui.st) {
+      if (applyNetworkSnapshot(msg, session)) acknowledgePacket(msg, session);
+      return;
+    }
+    session.sid = msg.sid || session.sid;
+    session.hostColor = msg.hostColor || 'w';
+    acknowledgePacket(msg, session);
     clearInterval(ui.online.joinTimer);
     ui.online.started = true;
     ui.online.names = msg.names || { w: msg.name || 'Белые', b: msg.guestName || 'Чёрные' };
@@ -9298,8 +9833,11 @@ function handleNet(text) {
       modeId: msg.modeId, square: !!msg.square, timeMs: msg.timeMs,
       raceMs: msg.raceMs, seed: msg.seed, orientation: 'w', splash: false,
     });
+    const initial = restoreNetworkState(msg.initial);
+    if (initial) { ui.st = initial; ui.frames = [snap(initial)]; }
     for (const mv of (msg.moves || [])) commitMove(mv, { remote: true, silent: true });
     ui.replaying = false;
+    startNetHeartbeat(session);
     ui.running = false;
     ui.gameLocked = false;
     ui.viewPly = ui.frames.length - 1;
@@ -9319,10 +9857,16 @@ function handleNet(text) {
   }
 
   if (msg.t === 'start' && ui.online.role === 'guest') {
-    if (ui.st && ui.online.started) return;
+    if (ui.st && ui.online.started && !ui.online.initializing) {
+      if (applyNetworkSnapshot(msg, session)) acknowledgePacket(msg, session);
+      return;
+    }
+    if (ui.online.initializing) return;
+    ui.online.initializing = true;
     clearInterval(ui.online.joinTimer);
     ui.online.started = true;
     ui.online.sid = msg.sid || ui.online.sid;
+    acknowledgePacket(msg, session);
     ui.online.coop = !!msg.coop;
     const hostColor = msg.hostColor === 'b' ? 'b' : 'w';
     const mySide = msg.coop ? 'w' : other(hostColor);
@@ -9335,6 +9879,7 @@ function handleNet(text) {
       b: (ui.online.names.b && ui.online.names.b.avatar) || 'k',
     };
     const beginGuest = () => {
+      if (ui.online !== session) return;
       ui.replaying = true;
       newGame({
         mode: 'online', role: 'guest', modeId: msg.modeId, square: !!msg.square,
@@ -9342,15 +9887,17 @@ function handleNet(text) {
         side: mySide, orientation: mySide, splash: false,
         bot: msg.coop ? (msg.bot || { level: 'gm', color: 'b' }) : null,
       });
+      const initial = restoreNetworkState(msg.initial);
+      if (initial) { ui.st = initial; ui.frames = [snap(initial)]; idSeq = Math.max(idSeq, ...initial.board.filter(Boolean).map((p) => p.id + 1)); }
       if (msg.names) ui.names = msg.names;
       for (const mv of (msg.moves || [])) commitMove(mv, { remote: true, silent: true });
-      const pending = ui.online.pendingMoves || [];
-      ui.online.pendingMoves = [];
-      for (const pm of pending) {
-        if (ui.st) commitMove({ from: pm.from, to: pm.to, promo: pm.promo || null }, { remote: true });
-      }
+      session.initialState = msg.initial || captureNetworkState(ui.st);
+      if (msg.state && msg.hash && netPositionHash(ui.st) !== msg.hash) applyNetworkSnapshot(msg, session);
+      if (Number.isFinite(msg.cw)) ui.clocks = { w: msg.cw, b: msg.cb };
+      ui.online.initializing = false;
+      drainIncomingMoves(session);
+      startNetHeartbeat(session);
       ui.replaying = false;
-      if (msg.cw != null) ui.clocks = { w: msg.cw, b: msg.cb };
       ui.turnStart = performance.now();
       if (ui.moves.length) ui.running = true;
       renderAll(false);
@@ -9365,24 +9912,6 @@ function handleNet(text) {
     };
     if (msg.randomSide && !msg.coop) showSideRoulette(mySide, beginGuest, { mirror: true });
     else beginGuest();
-    return;
-  }
-
-  if (msg.t === 'move' && !ui.st && ui.online) {
-    // Гость может ещё смотреть жеребьёвку, когда хозяин уже пошёл.
-    if (!ui.online.pendingMoves) ui.online.pendingMoves = [];
-    ui.online.pendingMoves.push(msg);
-    return;
-  }
-
-  if (msg.t === 'move' && ui.st) {
-    if (ui.clocks) {
-      if (msg.cw != null) ui.clocks.w = msg.cw;
-      if (msg.cb != null) ui.clocks.b = msg.cb;
-    }
-    ui.turnStart = performance.now();
-    ui.running = true;
-    commitMove({ from: msg.from, to: msg.to, promo: msg.promo || null }, { remote: true });
     return;
   }
 
@@ -9414,8 +9943,9 @@ function handleNet(text) {
     return;
   }
 
-  if (msg.t === 'hello' && ui.online.role === 'host' && ui.st) {
-    publishOnlineStart();
+  if (msg.t === 'bye') {
+    if (msg.sender !== 'spectator') { session.connected = false; session.lastPeerAt = 0; updateLinkDots(); }
+    return;
   }
 }
 
@@ -9424,6 +9954,11 @@ function publishOnlineStart(extra = {}) {
   if (!ui.st || !ui.online) return;
   netPublish({
     t: 'start',
+    initial: ui.online.initialState || null,
+    state: captureNetworkState(),
+    ply: ui.moves.length, hash: netPositionHash(ui.st),
+    history: ui.moves.map((m) => ({ ...m })), lastMove: ui.lastMove ? { ...ui.lastMove } : null,
+    recovery: !!extra.recovery, target: extra.target || null, spectator: !!extra.spectator,
     modeId: ui.st.modeId,
     square: !!ui.st.square,
     timeMs: ui.timeMs,
@@ -9462,6 +9997,9 @@ function leaveOnline(silent) {
   if (ui.online) {
     clearInterval(ui.online.announce);
     clearInterval(ui.online.joinTimer);
+    clearInterval(ui.online.heartbeatTimer);
+    clearTimeout(ui.online.deliveryTimer);
+    if (ui.online.pendingDelivery) ui.online.pendingDelivery.clear();
     if (!silent) netPublish({ t: 'bye' });
     if (ui.online.relay) ui.online.relay.close();
     if (ui.online.p2p) { try { ui.online.p2p.close(); } catch (error) { /* уже закрыт */ } }
@@ -9508,6 +10046,7 @@ function abortGame() {
 }
 
 function togglePause(force) {
+  if (ui.cancelDrag) ui.cancelDrag();
   if (!ui.st || ui.st.status !== 'play') return;
   if (ui.mode !== 'local') { toast('Пауза доступна в игре на одном устройстве'); return; }
   const next = force != null ? force : !ui.paused;
@@ -9653,6 +10192,8 @@ function updateResumeFloat() {
 }
 
 function leaveGame() {
+  if (ui.cancelDrag) ui.cancelDrag();
+  stopBotWorker();
   clearTimeout(ui.endTimer);
   ui.endTimer = 0;
   ui.endSquare = -1;
@@ -10145,112 +10686,159 @@ function bindEvents() {
     toast('Статистика сброшена');
   });
 
+  // Последнее положение пальца применяется один раз за кадр. Геометрия и
+  // допустимые поля кешируются до начала drag, а не пересчитываются на каждом событии.
   let dragState = null;
-  const clearDragHover = () => {
-    document.querySelectorAll('.sq.drag-over').forEach((el) => el.classList.remove('drag-over'));
+  const clearDragHover = (d = dragState) => {
+    if (d && d.hoverEl) d.hoverEl.classList.remove('drag-over');
+    if (ui.dragHoverEl === (d && d.hoverEl)) ui.dragHoverEl = null;
+    if (d) d.hoverEl = null;
   };
-  const finishDrag = (e) => {
-    if (!dragState) return;
-    const d = dragState;
-    dragState = null;
-    window.removeEventListener('pointermove', onDragMove);
-    window.removeEventListener('pointerup', finishDrag);
-    window.removeEventListener('pointercancel', finishDrag);
-    clearDragHover();
-    if (!d.active) return;
-    e.preventDefault();
-    d.el.classList.remove('dragging');
-    const piecesLayer = $('#pieces');
-    if (piecesLayer) piecesLayer.classList.remove('raise');
-    d.el.style.zIndex = '';
-    if (d.target != null) {
-      ui.suppressClick = true;
-      d.el.style.transition = '';
-      onSquareClick(d.target);
-    } else {
-      d.el.style.transition = 'transform .18s cubic-bezier(.2,.8,.3,1)';
-      d.el.style.transform = `translate(${d.baseX}px, ${d.baseY}px)`;
-      setTimeout(() => {
-        d.el.style.transition = '';
-        d.el.style.transform = `translate(${d.baseX}px, ${d.baseY}px)`;
-      }, 200);
-      ui.selected = -1;
-      renderSquares();
-      renderHints();
-      ui.suppressClick = true;
+  const locateDragTarget = (d, x, y) => {
+    const r = d.rect;
+    let target = -1;
+    if (x >= r.left - 8 && x <= r.right + 8 && y >= r.top - 8 && y <= r.bottom + 8) {
+      let dx = Math.max(0, Math.min(d.W - 1, Math.floor((x - r.left) * d.W / r.width)));
+      let dy = Math.max(0, Math.min(d.H - 1, Math.floor((y - r.top) * d.H / r.height)));
+      if (d.flipped) { dx = d.W - 1 - dx; dy = d.H - 1 - dy; }
+      const file = d.orientation === 'w' ? dx : d.W - 1 - dx;
+      const rank = d.orientation === 'w' ? d.H - 1 - dy : dy;
+      target = rank * d.W + file;
     }
-  };
-  const onDragMove = (e) => {
-    if (!dragState) return;
-    const d = dragState;
-    const dx = e.clientX - d.x;
-    const dy = e.clientY - d.y;
-    if (!d.active && Math.hypot(dx, dy) < 6) return;
-    /* На тач-экране фигура «берётся в руку» только после 0,2 с удержания.
-       Быстрый свайп/отпускание до этого срока не превращается в перетаскивание. */
-    if (!d.active && d.touch && performance.now() < d.readyAt) return;
-    if (!d.active) {
-      d.active = true;
-      suppressNextClick();
-      d.el.classList.add('dragging');
-      const piecesLayer = $('#pieces');
-      if (piecesLayer) piecesLayer.classList.add('raise');
-      d.el.style.transition = 'none';
-    }
-    const tilt = Math.max(-11, Math.min(11, dx * 0.09));
-    d.el.style.transform = `translate(${d.baseX + dx}px, ${d.baseY + dy}px) scale(1.12) rotate(${tilt}deg)`;
-    d.el.style.zIndex = '9999';
-    clearDragHover();
-    d.target = null;
-    const to = squareAtPoint(ui.st, e.clientX, e.clientY);
-    if (to >= 0) {
-      const legal = legalMoves(ui.st, ui.st.turn);
-      if (legal.some((m) => m.from === d.from && m.to === to)) {
-        d.target = to;
-        const sqEl = ui.squareEls[to];
-        if (sqEl) sqEl.classList.add('drag-over');
+    const allowed = d.targets.has(target) ? target : null;
+    if (allowed !== d.target) {
+      clearDragHover(d);
+      d.target = allowed;
+      if (allowed != null) {
+        d.hoverEl = ui.squareEls[allowed];
+        ui.dragHoverEl = d.hoverEl;
+        if (d.hoverEl) d.hoverEl.classList.add('drag-over');
       }
     }
+  };
+  const paintDrag = (d) => {
+    d.raf = 0;
+    if (dragState !== d || !d.active || ui.st !== d.state || ui.st.plySeq !== d.ply) return;
+    const dx = (d.clientX - d.x) * d.scaleX * d.sign;
+    const dy = (d.clientY - d.y) * d.scaleY * d.sign;
+    const tilt = Math.max(-11, Math.min(11, (d.clientX - d.x) * 0.09));
+    d.el.style.transform = `translate(${d.baseX + dx}px, ${d.baseY + dy}px) scale(1.12) rotate(${tilt}deg)`;
+    locateDragTarget(d, d.clientX, d.clientY);
   };
   const suppressNextClick = () => {
     ui.suppressClick = true;
     clearTimeout(suppressNextClick.timer);
     suppressNextClick.timer = setTimeout(() => { ui.suppressClick = false; }, 320);
   };
+  const finishDrag = (e) => {
+    if (!dragState || (e.pointerId != null && e.pointerId !== dragState.pointerId)) return;
+    const d = dragState;
+    const cancelled = e.type === 'pointercancel' || e.type === 'blur'
+      || ui.st !== d.state || ui.st.plySeq !== d.ply || ui.st.status !== 'play' || ui.paused || ui.screen !== 'game';
+    if (d.raf) { cancelAnimationFrame(d.raf); d.raf = 0; }
+    if (d.active && !cancelled && Number.isFinite(e.clientX)) {
+      d.clientX = e.clientX; d.clientY = e.clientY;
+      paintDrag(d); // последнее pointermove могло ещё ожидать кадр
+    }
+    if (d.raf) cancelAnimationFrame(d.raf);
+    dragState = null;
+    ui.dragging = false;
+    ui.dragNode = null;
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', finishDrag);
+    window.removeEventListener('pointercancel', finishDrag);
+    clearDragHover(d);
+    try { if (d.capture.hasPointerCapture(d.pointerId)) d.capture.releasePointerCapture(d.pointerId); } catch (error) { /* палец уже отпущен */ }
+    if (!d.active) return;
+    if (e.cancelable) e.preventDefault();
+    d.el.classList.remove('dragging');
+    d.layer.classList.remove('raise');
+    d.el.style.zIndex = d.zIndex;
+    d.el.style.willChange = '';
+    suppressNextClick();
+    if (!cancelled && d.target != null) {
+      d.el.style.transition = '';
+      onSquareClick(d.target);
+    } else {
+      d.el.style.transition = 'transform .18s cubic-bezier(.2,.8,.3,1)';
+      d.el.style.transform = `translate(${d.baseX}px, ${d.baseY}px)`;
+      setTimeout(() => {
+        if (!d.el.isConnected || ui.st !== d.state || ui.st.plySeq !== d.ply) return;
+        d.el.style.transition = '';
+      }, 200);
+      ui.selected = -1;
+      renderSquares();
+      renderHints();
+    }
+  };
+  const onDragMove = (e) => {
+    const d = dragState;
+    if (!d || e.pointerId !== d.pointerId) return;
+    d.clientX = e.clientX; d.clientY = e.clientY;
+    if (!d.active) {
+      const dx = e.clientX - d.x, dy = e.clientY - d.y;
+      if (dx * dx + dy * dy < 36 || (d.touch && performance.now() < d.readyAt)) return;
+      d.active = true;
+      ui.dragging = true;
+      ui.dragNode = d.el;
+      suppressNextClick();
+      d.el.classList.add('dragging');
+      d.layer.classList.add('raise');
+      d.el.style.transition = 'none';
+      d.el.style.willChange = 'transform';
+      d.el.style.zIndex = '9999';
+    }
+    if (e.cancelable) e.preventDefault();
+    if (!d.raf) d.raf = requestAnimationFrame(() => paintDrag(d));
+  };
+  ui.cancelDrag = () => { if (dragState) finishDrag({ type: 'blur' }); };
+  window.addEventListener('blur', ui.cancelDrag);
+  $('#squares').addEventListener('lostpointercapture', (e) => {
+    if (dragState && dragState.pointerId === e.pointerId) finishDrag({ type: 'pointercancel', pointerId: e.pointerId });
+  });
   $('#squares').addEventListener('pointerdown', (e) => {
-    if (e.button !== undefined && e.button !== 0) return;
+    if (dragState || (e.button !== undefined && e.button !== 0)) return;
     const sqEl = e.target.closest('.sq');
-    if (ui.spectator) return;
-    if (ui.reviewOnly) return;
+    if (ui.spectator || ui.reviewOnly) return;
     if (!sqEl || !ui.st || ui.st.status !== 'play' || ui.gameLocked || ui.paused || ui.imported) return;
     if (ui.viewPly !== ui.frames.length - 1 && !canBranchHere()) return;
     if (ui.bot && ui.st.turn === ui.bot.color) return;
-    if (!onlineCoachMayMove()) return;
-    if (ui.mode === 'online' && ui.st.turn !== myColor()) return;
+    if (!onlineCoachMayMove() || (ui.mode === 'online' && ui.st.turn !== myColor())) return;
     if (ui.mode !== 'local' && ui.st.turn !== myColor()) return;
     const sq = Number(sqEl.dataset.sq);
     const p = ui.st.board[sq];
     if (!p || p.c !== ui.st.turn) return;
+    const allLegal = getUiLegalMoves(ui.st);
     if (ui.st.flags.touchMove && ui.selected >= 0) {
-      const selectedMoves = legalMoves(ui.st, ui.st.turn).filter((m) => m.from === ui.selected);
+      const selectedMoves = allLegal.filter((m) => m.from === ui.selected);
       if (selectedMoves.length && sq !== ui.selected) return;
+      if (!selectedMoves.length) return;
     }
-    if (ui.st.flags.touchMove && ui.selected >= 0 && !legalMoves(ui.st, ui.st.turn).some((m) => m.from === ui.selected)) return;
-    /* Выделяем фигуру сразу на pointerdown: её можно тащить, не делая
-       предварительный клик. Для touchMove это и есть «одно касание». */
+    const targets = new Set(allLegal.filter((m) => m.from === sq).map((m) => m.to));
     ui.selected = sq;
     renderSquares();
     renderHints();
     const el = ui.pieceNodes.get(p.id);
     if (!el) return;
+    // Единственный layout-read происходит до покадровых записей transform.
+    const board = $('#board');
+    const rect = board.getBoundingClientRect();
+    const layer = $('#pieces');
     const { dx, dy } = disp(ui.st, sq);
     const touch = e.pointerType === 'touch' || e.pointerType === 'pen';
+    const flipped = !!(ui.rotated || ui.tableRotated);
     dragState = {
-      from: sq, x: e.clientX, y: e.clientY, active: false, el,
-      baseX: dx * ui.sq, baseY: dy * ui.sq, target: null,
-      touch, readyAt: performance.now() + (touch ? 200 : 0),
+      from: sq, x: e.clientX, y: e.clientY, clientX: e.clientX, clientY: e.clientY,
+      pointerId: e.pointerId, active: false, el, layer, capture: e.currentTarget,
+      baseX: dx * ui.sq, baseY: dy * ui.sq, target: null, targets, hoverEl: null,
+      touch, readyAt: performance.now() + (touch ? 200 : 0), raf: 0,
+      state: ui.st, ply: ui.st.plySeq, W: ui.st.W, H: ui.st.H, rect,
+      orientation: ui.orientation, flipped, sign: flipped ? -1 : 1,
+      scaleX: ui.sq * ui.st.W / rect.width, scaleY: ui.sq * ui.st.H / rect.height,
+      zIndex: el.style.zIndex,
     };
-    window.addEventListener('pointermove', onDragMove);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (error) { /* старый браузер */ }
+    window.addEventListener('pointermove', onDragMove, { passive: false });
     window.addEventListener('pointerup', finishDrag);
     window.addEventListener('pointercancel', finishDrag);
   });
@@ -10280,7 +10868,16 @@ function bindEvents() {
     }
   });
 
+  const wakeNetwork = () => {
+    const session = netSessionState();
+    if (!session || !session.relay) return;
+    session.relay.wake();
+    if (session.started) requestNetworkSync(session, 'resume');
+  };
+  window.addEventListener('online', wakeNetwork);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wakeNetwork(); });
   window.addEventListener('resize', () => {
+    if (ui.cancelDrag) ui.cancelDrag();
     updateScrim();
     if (!ui.st) return;
     renderBoard(false);

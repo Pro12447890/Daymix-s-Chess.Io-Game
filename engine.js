@@ -99,7 +99,7 @@ const MODES = [
   },
   {
     id: 'annihilation', n: 62, name: 'Аннигиляция', icon: '☢️',
-    desc: 'Каждое взятие стирает обе фигуры и все четыре соседние клетки по кресту — и у места удара, и у места, откуда пришла фигура. Короли не исчезают.',
+    desc: 'При взятии исчезают обе фигуры и все соседние фигуры в полных квадратах 3×3 — вокруг места удара и исходной клетки. Диагонали тоже задеваются; короли выживают.',
     W: 8, H: 8, flags: { classic: true, annihilate: true },
   },
   {
@@ -391,20 +391,30 @@ const BACK_RANKS = {
   14: 'rrgnjbqkbjngrr',
 };
 
+/* Один и тот же seed даёт двум клиентам одинаковую расстановку и случайные события. */
+function stateRandom(st) {
+  let value = st.rngState >>> 0;
+  value = (value + 0x6d2b79f5) >>> 0;
+  st.rngState = value;
+  let bits = Math.imul(value ^ (value >>> 15), value | 1);
+  bits ^= bits + Math.imul(bits ^ (bits >>> 7), bits | 61);
+  return ((bits ^ (bits >>> 14)) >>> 0) / 4294967296;
+}
+
 /** Случайная расстановка 960: слоны на разных цветах, король между ладьями. */
-function shuffleBackRank() {
+function shuffleBackRank(rng = Math.random) {
   const pieces = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
   for (let i = pieces.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [pieces[i], pieces[j]] = [pieces[j], pieces[i]];
   }
   return pieces.join('');
 }
 
-function fischerRank() {
+function fischerRank(rng = Math.random) {
   const files = new Array(8).fill(null);
   const free = () => [0, 1, 2, 3, 4, 5, 6, 7].filter((i) => !files[i]);
-  const pick = (arr) => arr.splice(Math.floor(Math.random() * arr.length), 1)[0];
+  const pick = (arr) => arr.splice(Math.floor(rng() * arr.length), 1)[0];
   files[pick([1, 3, 5, 7])] = 'b';           // светлые поля
   files[pick([0, 2, 4, 6])] = 'b';           // тёмные поля
   files[pick(free())] = 'q';
@@ -454,8 +464,9 @@ function createState(modeId, opts = {}) {
     lastCheckDamage: null,
     plySeq: 0,
     checkDamagedSeq: -1,
-    seed: opts.seed || Math.floor(Math.random() * 1e9),
+    seed: opts.seed != null ? (Number(opts.seed) >>> 0) : Math.floor(Math.random() * 1e9),
   };
+  st.rngState = st.seed >>> 0;
   setupBoard(st);
   if (st.flags.damage || st.flags.damageKing) initDamageHp(st);
   return st;
@@ -463,6 +474,7 @@ function createState(modeId, opts = {}) {
 
 function setupBoard(st) {
   const { W, H, board, flags } = st;
+  const rng = () => stateRandom(st);
 
   if (flags.race) return setupRace(st);
   if (flags.only) return setupOnlyPiece(st, flags.only);
@@ -520,13 +532,13 @@ function setupBoard(st) {
       board[(H - 1) * W + x] = newPiece(back[x], 'b');
     }
   } else if (flags.chess960) {
-    const back = fischerRank();
+    const back = fischerRank(rng);
     for (let x = 0; x < 8; x++) {
       board[x] = newPiece(back[x], 'w');
       board[(H - 1) * W + x] = newPiece(back[x], 'b');
     }
   } else if (flags.fischerLoose) {
-    const back = shuffleBackRank();
+    const back = shuffleBackRank(rng);
     for (let x = 0; x < 8; x++) {
       board[x] = newPiece(back[x], 'w');
       board[(H - 1) * W + x] = newPiece(back[x], 'b');
@@ -584,11 +596,11 @@ function setupBoard(st) {
         const q = board[i];
         if (q && q.c === color && q.t !== 'k') candidates.push(i);
       }
-      const count = 1 + Math.floor(Math.random() * 3);
+      const count = 1 + Math.floor(rng() * 3);
       const pool = ['q', 'r', 'b', 'n'];
       for (let k = 0; k < count && candidates.length; k++) {
-        const idx = candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
-        board[idx] = newPiece(pool[Math.floor(Math.random() * pool.length)], color);
+        const idx = candidates.splice(Math.floor(rng() * candidates.length), 1)[0];
+        board[idx] = newPiece(pool[Math.floor(rng() * pool.length)], color);
       }
     }
   }
@@ -1200,6 +1212,7 @@ function applyMove(st, m) {
     converted: st.converted,
     exploded: st.exploded,
     annihilated: st.annihilated,
+    rngState: st.rngState,
     plySeq: st.plySeq,
     checkDamagedSeq: st.checkDamagedSeq,
     capsBefore: null,
@@ -1309,7 +1322,7 @@ function applyMove(st, m) {
     }
   }
 
-  /* Аннигиляция: гибнут оба участника взятия и крест вокруг обоих полей. */
+  /* Аннигиляция: оба участника и полные квадраты 3×3 вокруг обоих полей. */
   let annihilated = false;
   if (st.flags.annihilate && (capturedColor || (m.caps && m.caps.length))) {
     annihilated = true;
@@ -1317,12 +1330,14 @@ function applyMove(st, m) {
     for (const center of [m.from, m.to]) {
       const x = fileOf(st, center);
       const y = rankOf(st, center);
-      cells.add(center);
-      for (const [dx, dy] of ROOK_DIRS) {
-        const nx = x + dx, ny = y + dy;
-        if (inside(st, nx, ny)) cells.add(sqAt(st, nx, ny));
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const nx = x + dx, ny = y + dy;
+          if (inside(st, nx, ny)) cells.add(sqAt(st, nx, ny));
+        }
       }
     }
+    undo.annihilationCells = [...cells];
     for (const s of cells) {
       const q = board[s];
       if (!q || q.t === 'k') continue;           // короли переживают аннигиляцию
@@ -1338,13 +1353,13 @@ function applyMove(st, m) {
   }
 
   /* Перебежчик: с шансом 20% съеденная фигура переходит на сторону победителя. */
-  if (st.flags.convert20 && undo.removed.length && Math.random() < 0.2) {
+  if (st.flags.convert20 && undo.removed.length && stateRandom(st) < 0.2) {
     const victim = undo.removed[undo.removed.length - 1].piece;
     if (victim && victim.t !== 'k') {
       const empties = [];
       for (let i = 0; i < board.length; i++) if (!board[i]) empties.push(i);
       if (empties.length) {
-        const target = empties[Math.floor(Math.random() * empties.length)];
+        const target = empties[Math.floor(stateRandom(st) * empties.length)];
         board[target] = { ...victim, c: p.c, used: 0 };
         st.converted = target;
         undo.convertedPiece = { sq: target, piece: board[target] };
@@ -1399,6 +1414,7 @@ function undoMove(st, undo) {
   st.converted = undo.converted;
   st.exploded = undo.exploded;
   st.annihilated = undo.annihilated;
+  st.rngState = undo.rngState;
   board[undo.to] = null;                                   // убрать фигуру с места приземления
   if (undo.damaged) board[undo.damaged.sq] = undo.damaged.piece;  // вернуть раненую фигуру целой
   if (undo.swapPiece) board[undo.to] = undo.swapPiece;     // вернуть обменянную фигуру
@@ -1738,7 +1754,7 @@ function moveToSan(st, m, legal) {
 
 /* ══════════════════════════════ БЛОКИ ═════════════════════════════════ */
 
-function maybeBlock(st, rng = Math.random) {
+function maybeBlock(st, rng = () => stateRandom(st)) {
   if (!st.flags.blocks) return -1;
   if (st.full % 3 !== 0) return -1;
   if (rng() > 0.2) return -1;

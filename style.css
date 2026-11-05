@@ -5276,3 +5276,20 @@ html[data-glass]:not([data-glass="0"]) .sb-btn {
   }
 }
 
+
+/* Сохраняем большие области нажатия, но стрелки спокойнее в состоянии покоя. */
+.history-nav button {
+  color: rgba(232, 235, 240, .62);
+  border-color: rgba(232, 235, 240, .14);
+  transition: color .16s ease, border-color .16s ease, background .16s ease;
+}
+.history-nav button path { stroke-width: 5.2; }
+.history-nav button:hover:not(:disabled),
+.history-nav button:focus-visible:not(:disabled) {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .38);
+  background: rgba(255, 255, 255, .045);
+}
+.history-nav button:disabled { opacity: .46; }
+/* Композитный слой держим только у фигуры в руке, а не у всей армии. */
+.piece.dragging { will-change: transform; }
