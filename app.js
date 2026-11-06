@@ -410,7 +410,7 @@ function chooseBotMoveOffThread(st, level, persona) {
   if (typeof Worker !== 'function') return Promise.resolve(chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261106-84.3', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261106-84.4', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -453,6 +453,7 @@ function maybeBotTurn() {
   const coopHost = ui.mode === 'online' && ui.online && ui.online.coop && ui.role === 'host';
   if (!ui.bot || !ui.st || ui.st.status !== 'play' || (ui.mode !== 'local' && !coopHost)) return;
   if (ui.st.turn !== ui.bot.color || ui.bot.busy) return;
+  if (refreshClassicStatus()) return;
   const bot = ui.bot;
   const state = ui.st;
   const ply = state.plySeq;
@@ -468,6 +469,7 @@ function maybeBotTurn() {
     const move = await chooseBotMoveOffThread(state, level, ui.persona);
     bot.busy = false;
     if (valid() && move) { ui.botThinking = false; commitMove(move, { bot: true }); }
+    else if (valid() && !move) refreshClassicStatus(state);
     if (ui.bot === bot) { ui.botThinking = false; renderStatus(); }
   }, bot.fake ? 300 + Math.random() * 500 : (ui.persona ? personaDelay(level) : (BOT_DELAY[level] || 600)));
 }
@@ -4980,21 +4982,9 @@ function renderPieces(animate) {
   }
 }
 
-/* Одинаковые кружки не пересобираются чаще 0,2 с: иначе клик по уже
-   выбранной фигуре заново запускает анимацию их появления. */
-const HINT_REDRAW_MS = 200;
-
-/* Правила считаем один раз на позицию, а не на каждое движение пальца.
-   ХП и лимиты ходов входят в ключ: специальные режимы не получают устаревший кеш. */
+/* Без кеша допустимых ходов и без отложенной проверки правил. */
 function getUiLegalMoves(st) {
-  let key = positionKey(st) + '|' + st.full;
-  for (const p of st.board) if (p) key += '|' + p.id + ':' + (p.used || 0) + ':' + (p.hp ?? '');
-  key += '|' + st.mv.w.cross + ':' + st.mv.b.cross;
-  const cache = ui.legalCache;
-  if (cache && cache.state === st && cache.key === key) return cache.moves;
-  const moves = legalMoves(st, st.turn);
-  ui.legalCache = { state: st, key, moves };
-  return moves;
+  return legalMoves(st, st.turn);
 }
 
 function renderHints() {
@@ -5015,7 +5005,6 @@ function renderHints() {
   const key = [ui.selected, ui.st.turn, ui.st.full, ui.viewPly, ui.sq,
     ui.orientation, ui.rotated ? 1 : 0, ui.tableRotated ? 1 : 0, marks].join('|');
   const now = performance.now();
-  if (key === ui.hintKey && now - ui.hintAt < HINT_REDRAW_MS) return;
   layer.innerHTML = '';
   const sq = ui.sq;
   moves.forEach((m, index) => {
@@ -6890,8 +6879,27 @@ function renderCaptured() {
   if (bottomEl) bottomEl.textContent = diffBottom > 0 ? `+${diffBottom}` : '';
 }
 
+function refreshClassicStatus(st = ui.st) {
+  if (!st || st.modeId !== 'classic' || st.status !== 'play' || ui.replaying
+      || ui.reviewOnly || ui.imported || ui.viewPly !== ui.frames.length - 1) return null;
+  const result = updateStatus(st);
+  if (result && st === ui.st) {
+    const frame = snap(st, ui.lastMove);
+    ui.frames[ui.frames.length - 1] = frame;
+    if (!ui.classicEndPending) {
+      ui.classicEndPending = st;
+      setTimeout(() => {
+        if (ui.classicEndPending === st) ui.classicEndPending = null;
+        if (ui.st === st && st.status === 'over' && !ui.scored) finishGame(st.result);
+      }, 0);
+    }
+  }
+  return result;
+}
+
 function renderAll(animate) {
   if (!ui.st) return;
+  refreshClassicStatus();
   renderBoard(animate);
   updateClockEls();
   updateEval();
@@ -7054,10 +7062,6 @@ function onSquareClick(sq) {
   const legal = getUiLegalMoves(st);
   const p = st.board[sq];
 
-  /* Повторный клик по уже выбранной фигуре ничего не меняет: не перерисовываем
-     доску и кружки, иначе анимация подсказок начинается заново. */
-  if (p && p.c === st.turn && ui.selected === sq) return;
-
   // «Взялся — ходи»: выбор фигуры с ходами отменить нельзя
   if (st.flags.touchMove && ui.selected >= 0) {
     const currentLegal = legal.filter((m) => m.from === ui.selected);
@@ -7133,7 +7137,7 @@ function commitMove(m, opts = {}) {
     && (x.promo || null) === (m.promo || null)
     && (m.castle == null || !!x.castle === !!m.castle)
     && (m.swap == null || !!x.swap === !!m.swap));
-  if (!match) return false;
+  if (!match) { refreshClassicStatus(st); return false; }
   if (ui.cancelDrag) ui.cancelDrag();
 
   /* Новый ход из отката: будущая история больше не существует. */
@@ -8756,7 +8760,6 @@ function applyNetworkSnapshot(msg, session) {
   ui.lastMove = msg.lastMove || null;
   ui.selected = -1;
   ui.hint = null;
-  ui.legalCache = null;
   ui.endSquare = -1;
   session.initialState = msg.initial;
   for (const [ply] of session.moveBuffer) if (ply <= msg.ply) session.moveBuffer.delete(ply);
@@ -10254,8 +10257,7 @@ function bindEvents() {
     toast('Статистика сброшена');
   });
 
-  // Последнее положение пальца применяется один раз за кадр. Геометрия и
-  // допустимые поля кешируются до начала drag, а не пересчитываются на каждом событии.
+  // Движение рисуется один раз за кадр; допустимость назначения пересчитывается заново.
   let dragState = null;
   const clearDragHover = (d = dragState) => {
     if (d && d.hoverEl) d.hoverEl.classList.remove('drag-over');
@@ -10273,7 +10275,7 @@ function bindEvents() {
       const rank = d.orientation === 'w' ? d.H - 1 - dy : dy;
       target = rank * d.W + file;
     }
-    const allowed = d.targets.has(target) ? target : null;
+    const allowed = legalMoves(d.state, d.state.turn).some(m => m.from === d.from && m.to === target) ? target : null;
     if (allowed !== d.target) {
       clearDragHover(d);
       d.target = allowed;
@@ -10384,7 +10386,6 @@ function bindEvents() {
       if (selectedMoves.length && sq !== ui.selected) return;
       if (!selectedMoves.length) return;
     }
-    const targets = new Set(allLegal.filter((m) => m.from === sq).map((m) => m.to));
     ui.selected = sq;
     renderSquares();
     renderHints();
@@ -10400,7 +10401,7 @@ function bindEvents() {
     dragState = {
       from: sq, x: e.clientX, y: e.clientY, clientX: e.clientX, clientY: e.clientY,
       pointerId: e.pointerId, active: false, el, layer, capture: e.currentTarget,
-      baseX: dx * ui.sq, baseY: dy * ui.sq, target: null, targets, hoverEl: null,
+      baseX: dx * ui.sq, baseY: dy * ui.sq, target: null, hoverEl: null,
       touch, readyAt: performance.now() + (touch ? 200 : 0), raf: 0,
       state: ui.st, ply: ui.st.plySeq, W: ui.st.W, H: ui.st.H, rect,
       orientation: ui.orientation, flipped, sign: flipped ? -1 : 1,

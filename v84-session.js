@@ -4,7 +4,6 @@ function bindSpecialState(st=ui.st){
  if(!st)return;
  if(st.flags.strategy){strategyBindState(st);document.documentElement.dataset.strategy='1';$('#strategyBar')?.classList.remove('hidden');$('#stratInfoPanel')?.classList.remove('hidden');}
  if(st.flags.clashBrawl){brawlBindState(st);document.documentElement.dataset.brawl='1';$('#brawlPanel')?.classList.remove('hidden');}
- ui.legalCache=null;
 }
 function reduceSpecialAction(st,action){
  if(!action||typeof action!=='object')return {ok:false};
@@ -34,7 +33,7 @@ function specialActionCommitted(kind,r,opts={}){
  const captured=!!r.record?.captured||r.events?.some(e=>['destroy','death','capture'].includes(e.type));
  const rec={san:specialLabel(kind,r),from,to,color:mover,action:JSON.parse(JSON.stringify(a)),special:kind,spent,at:Date.now(),clock:ui.clocks[mover],captured:!!captured};
  ui.moves.push(rec);ui.lastMove=from>=0&&to>=0?{from,to}:null;ui.frames.push(snap(st,ui.lastMove));ui.viewPly=ui.frames.length-1;
- ui.turnStart=now;ui.running=st.status==='play';ui.selected=-1;ui.hint=null;ui.legalCache=null;
+ ui.turnStart=now;ui.running=st.status==='play';ui.selected=-1;ui.hint=null;
  if(!opts.silent){renderAll(false);renderMoves();renderPgnBox();updateNav();
   if(kind==='strategy')strategyAnimateEvents(r.events||[]);
   else for(const e of r.events||[]){if(e.damage)damageFx(e.to,e.damage.dmg,e.damage.survived,e.damage.type);if(e.type==='deploy')brawlTrail(-1,e.to);if(e.type==='king-explosion'){const dead=(r.events||[]).find(x=>x.victim?.t==='k');if(dead)kingDeathFx({type:'k',color:e.color,square:dead.to});}}
