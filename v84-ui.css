@@ -1,0 +1,40 @@
+/* v84: viewport-centered chess, adaptive auxiliaries and playful feedback. */
+#boardWrap { flex-shrink:0; }
+#stage > .player-capsule { flex-shrink:0; }
+@media (min-width:1000px) {
+  #gameShell.v84-centered { display:block !important; position:relative; padding:0 !important; overflow:hidden; }
+  #gameShell.v84-centered #stage { position:absolute; top:8px; transform:translateX(-50%); width:var(--v84-board-w); justify-content:center; }
+  #gameShell.v84-centered #sidePanel { position:absolute; right:12px; top:50%; transform:translateY(-50%); max-height:calc(100% - 24px); max-width:none; }
+  #gameShell.v84-centered #stratInfoPanel { position:absolute; left:max(12px, calc(var(--v84-center) - var(--v84-board-w)/2 - 226px)); top:50%; transform:translateY(-50%); width:210px; overflow:auto; }
+  #gameShell.v84-panel-below #sidePanel { top:auto; bottom:8px; left:var(--v84-center); right:auto; transform:translateX(-50%); display:flex; flex-direction:column; }
+  #gameShell.v84-panel-below #sidePanel .side-panel-header { padding:5px 10px; min-height:0; display:flex; gap:10px; flex-wrap:wrap; }
+  #gameShell.v84-panel-below #sidePanel .eval-bar-inline { display:none; }
+  #gameShell.v84-panel-below #sidePanel .tabs { position:absolute; right:6px; top:4px; width:auto; }
+  #gameShell.v84-panel-below #sidePanel .game-status-wrap { max-width:42%; }
+  #gameShell.v84-panel-below #sidePanel .side-body { min-height:32px; flex:1; }
+  #gameShell.v84-panel-below #sidePanel .game-controls-bar { padding:4px; }
+  #gameShell.v84-panel-below #sidePanel .moves { min-height:20px; max-height:55px; }
+  #gameShell.v84-panel-below #sidePanel .nav-row { display:none; }
+  #gameShell.v84-panel-below #stratInfoPanel { left:12px; top:auto; bottom:8px; transform:none; width:190px; z-index:3; }
+  #gameShell.v84-panel-below:has(#stratInfoPanel:not(.hidden)) #sidePanel { left:auto; right:12px; transform:none; max-width:calc(100% - 218px); }
+  #gameShell.v84-panel-below #stratInfoPanel .sip-glyph { width:30px;height:30px; }
+  #gameShell.v84-panel-below #stratInfoPanel .sip-card { padding:4px; }
+}
+.v84-reactions { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+.v84-reactions button { min-width:30px; min-height:30px; border:1px solid var(--line); background:var(--panel-card); border-radius:8px; padding:2px; font-size:19px; }
+.v84-reactions button:hover { background:var(--panel-card-hover); transform:translateY(-2px); }
+.v84-reaction { position:fixed; left:50%; top:19%; transform:translateX(-50%); z-index:160; font-size:clamp(48px,8vw,90px); pointer-events:none; filter:drop-shadow(0 4px 10px #0008); animation:v84-react 2.3s both; }
+@keyframes v84-react { 0%{opacity:0;scale:.3} 12%{opacity:1;scale:1.15} 22%,72%{opacity:1;scale:1} 100%{opacity:0;translate:0 -45px} }
+.piece.v84-king-scared > svg { filter:sepia(1) saturate(4) hue-rotate(160deg); animation:v84-shiver .14s infinite; }
+.piece.v84-king-angry > svg { filter:sepia(1) saturate(8) hue-rotate(320deg); animation:v84-shiver .1s infinite; }
+.piece[data-mood]::before { content:attr(data-mood); position:absolute; right:-10%; top:3%; font-size:calc(var(--sq)*.38); z-index:5; filter:drop-shadow(0 2px 2px #0008); }
+@keyframes v84-shiver { 0%,100%{translate:-1px 0;rotate:-2deg}50%{translate:1px 0;rotate:2deg} }
+.v84-comic-piece { position:absolute; display:block; pointer-events:none; z-index:100; transform-origin:center; animation:v84-throw .95s cubic-bezier(.2,.7,.5,1) both; }
+.v84-comic-piece svg { width:100%;height:100%; }
+.v84-comic-piece.comic-1 { animation-name:v84-splat; }
+.v84-comic-piece.comic-2 { animation-name:v84-shatter; }
+@keyframes v84-throw { 0%{transform:scale(1.2,.7)}20%{transform:translateY(-18px) scale(.8,1.2)}70%{opacity:1}100%{transform:translate(var(--throw-x),180px) rotate(280deg) scale(.5);opacity:0} }
+@keyframes v84-splat { 0%{transform:scale(1)}30%{transform:scale(1.5,.25) rotate(-10deg)}55%{transform:scale(.5,1.4)}100%{transform:translate(var(--throw-x),50px) rotate(-180deg) scale(.1);opacity:0} }
+@keyframes v84-shatter { 0%{transform:scale(1)}20%{transform:scale(1.12)}100%{transform:translate(var(--throw-x),var(--throw-y)) rotate(180deg);opacity:0} }
+.v84-funny-option { display:flex; gap:8px; align-items:center; font-size:13px; padding:12px; border:1px solid var(--line); border-radius:10px; }
+@media(prefers-reduced-motion:reduce) { .v84-comic-piece,.v84-reaction,.piece.v84-king-scared>svg,.piece.v84-king-angry>svg { animation:none !important; } }

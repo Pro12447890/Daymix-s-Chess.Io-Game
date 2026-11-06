@@ -410,7 +410,7 @@ function chooseBotMoveOffThread(st, level, persona) {
   if (typeof Worker !== 'function') return Promise.resolve(chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261105-83', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261105-84', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -447,7 +447,9 @@ function chooseBotMoveOffThread(st, level, persona) {
   }
 }
 function maybeBotTurn() {
-  if (ui.paused || ui.away || (ui.brawl && ui.brawl.draft)) return;
+  if (ui.paused || ui.away || ui.gameLocked) return;
+  if (ui.st?.flags.strategy) { strategyMaybeBot(); return; }
+  if (ui.st?.flags.clashBrawl) { brawlMaybeBot(); return; }
   const coopHost = ui.mode === 'online' && ui.online && ui.online.coop && ui.role === 'host';
   if (!ui.bot || !ui.st || ui.st.status !== 'play' || (ui.mode !== 'local' && !coopHost)) return;
   if (ui.st.turn !== ui.bot.color || ui.bot.busy) return;
@@ -478,7 +480,9 @@ function buildGameJson() {
   const names = ui.names || {};
   return {
     app: 'daymix-chess',
-    version: 2,
+    version: 3,
+    initial: specialMode(st) ? (ui.initialState || ui.frames[0]?.specialState) : undefined,
+    state: specialMode(st) ? captureNetworkState(st) : undefined,
     exportedAt: new Date().toISOString(),
     mode: { id: st.modeId, name: st.mode.name, W: st.W, H: st.H, square: !!st.square, seed: st.seed },
     time: { ms: ui.timeMs, label: ui.timeMs ? profile.timeLabel : 'без ограничений' },
@@ -495,8 +499,9 @@ function buildGameJson() {
       n: i + 1,
       side: m.color,
       san: m.san,
-      from: sqName(st, m.from),
-      to: sqName(st, m.to),
+      from: m.from>=0 ? sqName(st, m.from) : null,
+      to: m.to>=0 ? sqName(st, m.to) : null,
+      action: m.action || null, special: m.special || null,
       promo: m.promo || null,
       at: m.at ? new Date(m.at).toISOString() : null,
       ms: Math.round(m.spent || 0),
@@ -777,7 +782,9 @@ function importGameData(data, opts = {}) {
   ui.startedAt = data.startedAt ? Date.parse(data.startedAt) : Date.now();
   if (Number.isNaN(ui.startedAt)) ui.startedAt = Date.now();
   const list = Array.isArray(data.moves) ? data.moves : [];
+  if(specialMode(ui.st)) { const initial=restoreNetworkState(data.initial); if(!initial){toast('Для этого режима нужен JSON с полным начальным состоянием');return false;} ui.st=initial;ui.initialState=captureNetworkState(initial);bindSpecialState(initial);ui.frames=[snap(initial)]; }
   for (const rec of list) {
+    if(specialMode(ui.st)){ if(!replayRecordedMove(rec,true)){toast('Повреждён журнал действий');return false;} continue; }
     const legal = legalMoves(ui.st, ui.st.turn);
     const from = parseSquare(ui.st, rec.from);
     const to = parseSquare(ui.st, rec.to);
@@ -797,6 +804,7 @@ function importGameData(data, opts = {}) {
     });
     ui.lastMove = { from, to };
   }
+  if(specialMode(ui.st)) bindSpecialState(ui.st);
   ui.viewPly = review ? 0 : ui.frames.length - 1;
   updateStatus(ui.st);
   if (data.result) {
@@ -1011,7 +1019,7 @@ function infernalJoke() {
 
 function saveCurrentGame() {
   try {
-    if (!ui.st || ui.imported || ui.mode === 'online' || ui.st.status === 'over' || ui.anim || ui.st.flags.clashBrawl) {
+    if (!ui.st || ui.imported || ui.mode === 'online' || ui.st.status === 'over' || ui.anim) {
       localStorage.removeItem(CURRENT_KEY);
       return;
     }
@@ -1394,6 +1402,7 @@ function kingDeathFx(item) {
 function captureFx(list) {
   if (profile.calm) return;
   if (!list || !list.length || !ui.st) return;
+  if (typeof v84FunnyCapture === 'function' && v84FunnyCapture(list)) return;
   const st = ui.st;
   const sq = ui.sq;
   const layer = $('#hints');
@@ -2440,10 +2449,13 @@ function renderModeCard() {
   renderPreview();
 }
 
-const REAL_MODES = () => MODES.filter((m) => !m.flags.randomPick);
+function modeAllowedForTime(mode, ms = profile.timeMs) {
+  return !(mode.flags.clashBrawl || mode.flags.strategy) || !ms || ms >= 180000;
+}
+const REAL_MODES = (ms = profile.timeMs) => MODES.filter((m) => !m.flags.randomPick && modeAllowedForTime(m, ms));
 
-function randomRealMode() {
-  const list = REAL_MODES();
+function randomRealMode(ms = profile.timeMs) {
+  const list = REAL_MODES(ms);
   return list[Math.floor(Math.random() * list.length)];
 }
 
@@ -3056,13 +3068,7 @@ function imboBgRender() {
     pass.textContent = 'Передать ход';
     pass.addEventListener('click', () => {
       if (!imboCanAct()) { imboTurnWarn(); return; }
-      const mover = g.turn;
-      if (VariantEngine.pass(g)) {
-        imboPushText('нет ходов — передача', false);
-        imboRenderAll();
-        imboSyncState();
-        if (ui.imboMode === 'bot' && g.turn === ui.imboBot.color) setTimeout(imboMaybeBot, 350);
-      }
+      imboSubmit({kind:'pass'});
     });
     bar.appendChild(pass);
   }
@@ -3073,12 +3079,7 @@ function imboBgRender() {
   roll.disabled = g.dice.length > 0 || g.over || !imboCanAct();
   roll.addEventListener('click', () => {
     if (!imboCanAct()) { imboTurnWarn(); return; }
-    if (VariantEngine.roll(g)) {
-      imboPushText('зары ' + g.dice.join(' · '), false);
-      imboRenderAll();
-      imboSyncState();
-      if (ui.imboMode === 'bot' && g.turn === ui.imboBot.color) setTimeout(imboMaybeBot, 350);
-    }
+    imboSubmit({kind:'roll'});
   });
   bar.appendChild(roll);
   wrap.appendChild(bar);
@@ -3168,12 +3169,7 @@ function imboDodgeHud() {
       b.textContent = String(n);
       b.addEventListener('click', () => {
         if (!imboCanAct()) { imboTurnWarn(); return; }
-        if (VariantEngine.setCount(g, n)) {
-          g.canvas = null;
-          g.setupSel = null;
-          $('#imboGameTitle').textContent = imboTitle(g);
-          imboDodgeRender();
-        }
+        imboSubmit({kind:'count',count:n});
       });
       panel.appendChild(b);
     }
@@ -3182,11 +3178,7 @@ function imboDodgeHud() {
     ready.className = 'btn btn-sm';
     ready.textContent = 'Готов';
     ready.addEventListener('click', () => {
-      if (VariantEngine.ready(g, Date.now())) {
-        imboRenderAll();
-        imboSyncState();
-        if (ui.imboMode === 'bot' && g.turn === ui.imboBot.color) setTimeout(imboMaybeBot, 500);
-      }
+      imboSubmit({kind:'ready'});
     });
     panel.appendChild(ready);
     wrap.appendChild(panel);
@@ -3534,7 +3526,9 @@ async function imboOnlineHost() {
     avatars: { w: profile.avatar, b: 'k' },
   };
   ui.online.relay = new Relay();
-  ui.online.relay.onMessage = (text) => handleNet(text);
+  const session=netSessionState();
+  ui.online.relay.onMessage = (text) => {if(ui.online===session)handleNet(text);};
+  ui.online.relay.onOpen=()=>{if(ui.online===session&&session.started)requestNetworkSync(session,'imbo-open');};
   ui.online.relay.onClose = () => {
     if (ui.online && ui.online.imbo) imboOnlineLine('Связь пропала — переподключаемся…');
   };
@@ -3585,7 +3579,9 @@ async function imboOnlineJoin() {
     avatars: { w: 'k', b: profile.avatar },
   };
   ui.online.relay = new Relay();
-  ui.online.relay.onMessage = (text) => handleNet(text);
+  const session=netSessionState();
+  ui.online.relay.onMessage = (text) => {if(ui.online===session)handleNet(text);};
+  ui.online.relay.onOpen=()=>{if(ui.online===session&&session.started)requestNetworkSync(session,'imbo-open');};
   ui.online.relay.onClose = () => {
     if (ui.online && ui.online.imbo) imboOnlineLine('Связь пропала — переподключаемся…');
   };
@@ -3908,6 +3904,9 @@ function normalizeBot(bot, side) {
 
 function startGameWithMode(opts = {}) {
   const pickedId = opts.modeId || profile.modeId;
+  if (!modeAllowedForTime(modeById(pickedId), opts.timeMs != null ? opts.timeMs : profile.timeMs)) {
+    toast('Этот режим доступен с контролем от 3 минут или без ограничения.'); return false;
+  }
   if (pickedId === 'ultraBalance' && opts.mode !== 'online') {
     newGame({
       ...opts,
@@ -4153,7 +4152,8 @@ function openScreen(name) {
 }
 
 function backFromScreen() {
-  showScreen(ui.prevScreen === 'game' && ui.st ? 'game' : 'home');
+  showScreen(ui.prevScreen === 'imbo' && ui.imbo ? 'imbo' : ui.prevScreen === 'game' && ui.st ? 'game' : 'home');
+  if (ui.screen === 'imbo' && ui.imbo?.kind === 'dodgeball') imboDodgeLoop();
 }
 
 function closeDrawer() {
@@ -4601,8 +4601,10 @@ function showScreen(name) {
   if (name === 'home') { renderProfile(); }
   if (name === 'modes') renderModesGrid();
   if (name === 'settings') requestAnimationFrame(() => renderThemePreview());
-  if (name === 'imbo') openImboHub();
-  else if (ui.imbo) stopImboGame();
+  if (name === 'imbo') {
+    if (!ui.imbo) openImboHub();
+    else { imboResetView(imboTitle(ui.imbo)); imboModeUi(); imboRenderAll(); }
+  } else if (ui.imbo) stopImboGame();
   if (changed && name !== 'game') {
     menuIntroFx(name);
     markScreenSheen();
@@ -4652,6 +4654,7 @@ function viewState() {
   const f = ui.frames[ui.viewPly];
   return {
     ...ui.st,
+    ...(f.specialState ? restoreNetworkState(f.specialState) : {}),
     board: f.board,
     lastMove: f.lastMove || null,
     turn: f.turn,
@@ -4700,6 +4703,11 @@ function squareAtPoint(st, clientX, clientY) {
 }
 
 function layoutBoard() {
+  if (typeof v84LayoutBoard === 'function' && v84LayoutBoard()) return;
+  const shellReset = $('#gameShell');
+  if (shellReset) shellReset.classList.remove('v84-centered', 'v84-panel-below');
+  const stageReset = $('#stage');
+  if (stageReset) { stageReset.style.left = ''; stageReset.style.height = ''; }
   const st = ui.st;
   if (!st) return;
   const stage = $('#stage');
@@ -4843,7 +4851,12 @@ function renderSquares() {
     if (ui.brawl && brawlCanDeploy(i, st.turn)) cls.push('brawl-deploy');
     if (ui.zombie && ui.zombie.infect[i]) cls.push('zombie-threat');
     if (ui.strategy) {
-      const terr = ui.strategy.territory || {};
+      const terr = st.strategy?.territory || {};
+      const influence = st.strategy?.influence?.[i];
+      if (influence != null) el.style.setProperty('--claim', Math.abs(influence)/3);
+      const object = st.strategy?.objects?.find(o=>o.sq===i);
+      if(object) { el.dataset.object = '⚑'; el.title=object.name+' · +'+object.income+' золота/раунд'; } else delete el.dataset.object;
+      if(ui.strategy.recruit && terr[i]===st.turn && !st.board[i]) cls.push('brawl-deploy');
       if (terr[i] === 'w') cls.push('strat-w');
       else if (terr[i] === 'b') cls.push('strat-b');
       if (ui.strategy.aim && ui.strategy.aim.has(i)) cls.push('strat-aim');
@@ -4852,7 +4865,7 @@ function renderSquares() {
       if ((ui.strategy.rad || []).some((z) => {
         const zx = z.sq % st.W, zy = Math.floor(z.sq / st.W);
         const nx = i % st.W, ny = Math.floor(i / st.W);
-        return Math.max(Math.abs(nx - zx), Math.abs(ny - zy)) <= 1 && performance.now() < z.until;
+        return Math.max(Math.abs(nx - zx), Math.abs(ny - zy)) <= 1 && z.rounds > 0;
       })) cls.push('strat-rad');
     }
     if (ui.royal) {
@@ -4910,10 +4923,13 @@ function renderPieces(animate) {
       if (ui.persona.id === 'tilter' && performance.now() < ui.persona.cryUntil) el.classList.add('bot-king-cry');
     }
     if (st.flags.strategy) {
-      const hp = strategyHp(p);
+      const hp = st.strategy.hp[p.id] ?? STRAT[p.t].hp;
       const max = strategyMaxHp(p);
       el.dataset.hp = `${hp}${st.strategy.shield[p.id] ? ' 🛡' : ''}`;
       el.classList.toggle('hp-low', hp <= max * 0.35);
+    } else if (st.flags.clashBrawl) {
+      el.dataset.hp = String(p.hp ?? p.maxHp ?? 12);
+      el.classList.toggle('hp-low', p.hp <= p.maxHp*.35);
     } else if ((st.flags.damage || st.flags.damageKing) && p.hp != null && p.maxHp && p.hp < p.maxHp) {
       el.dataset.hp = String(p.hp);
       el.classList.toggle('hp-low', p.hp <= Math.ceil(p.maxHp * 0.35));
@@ -4921,6 +4937,7 @@ function renderPieces(animate) {
       delete el.dataset.hp;
       el.classList.remove('hp-low');
     }
+    if (typeof v84RenderMood === 'function') v84RenderMood(el, p);
     const typeKey = p.t + '|' + p.c + '|' + (p.used || 0);
     if (el.dataset.tk !== typeKey) {
       el.innerHTML = pieceSvg(p.t);
@@ -5064,7 +5081,7 @@ function renderBoard(animate) {
   const boardEl = document.getElementById('board');
   if (boardEl) {
     boardEl.classList.toggle('fog-on', !!ui.st.flags.fog);
-    boardEl.classList.toggle('brawl-locked', !!ui.st.flags.clashBrawl && ui.st.full <= 6);
+    boardEl.classList.toggle('brawl-locked', !!ui.st.flags.clashBrawl && (ui.st.brawl?.plies || 0) < 6);
   }
   layoutBoard();
   positionSquares();
@@ -5159,21 +5176,27 @@ function snap(st, lastMove = null) {
     plySeq: st.plySeq || 0,
     checkDamagedSeq: st.checkDamagedSeq != null ? st.checkDamagedSeq : -1,
     rngState: st.rngState,
+    specialState: (st.flags.strategy || st.flags.clashBrawl) ? captureNetworkState(st) : null,
   };
 }
 
 
 /* ═══════════════════════ 12.5. CLASH BRAWL ═══════════════════════════ */
 
-const BRAWL_COST = { p: 1, b: 3, n: 3, r: 4, q: 6 };
-const BRAWL_NAME = { p: 'Пешка', b: 'Слон', n: 'Конь', r: 'Ладья', q: 'Ферзь' };
+const BRAWL_COST = { p: 3, b: 6, n: 7, r: 10, q: 14 };
+const BRAWL_HP = { p: 12, b: 22, n: 26, r: 38, q: 46, k: 50 };
+const BRAWL_ATK = { p: 6, b: 10, n: 12, r: 16, q: 20, k: 12 };
+const BRAWL_NAME = { p: 'Пешка', b: 'Слон', n: 'Конь', r: 'Ладья', q: 'Ферзь', k: 'Король' };
 const BRAWL_POINTS = { p: 1, b: 3, n: 3, r: 5, q: 9, k: 10 };
-
+const BRAWL_UPGRADES = {
+  power: { name: '⚔ Оружие', text: '+2 к урону всех своих фигур', cost: 5 },
+  heal: { name: '💚 Ремонт', text: '+8 HP всем своим, не выше максимума', cost: 4 },
+  shield: { name: '🛡 Купол', text: 'Вдвое меньше входящего урона до следующего своего хода', cost: 4 },
+  economy: { name: '💜 Генератор', text: '+1 эликсир в начале следующих своих ходов (до +3)', cost: 7 },
+  reserve: { name: '📦 Резерв', text: '+4 к вместимости эликсира (до 28)', cost: 4 },
+};
 function brawlDeck() {
-  const keep = ['n', 'r', 'q'][Math.floor(Math.random() * 3)];
-  return ['p', 'p', 'b', keep]
-    .map((type) => ({ t: type, cost: BRAWL_COST[type] }))
-    .sort((a, b) => a.cost - b.cost || a.t.localeCompare(b.t));
+  return ['p', 'b', 'n', 'r', 'q'].map((t) => ({ t, cost: BRAWL_COST[t] }));
 }
 
 
@@ -5181,40 +5204,436 @@ function brawlDeck() {
 /* ═══════════════════ 12.9. СТРАТЕГИЯ ═══════════════════ */
 
 const STRAT = {
-  p: { hp: 10, move: 5, atk: 10, dmg: 6, range: 2 },
-  b: { hp: 25, move: 7, atk: 15, dmg: 8, range: 3 },
-  n: { hp: 28, move: 10, atk: 15, dmg: 12, range: 2 },
-  r: { hp: 52, move: 16, atk: 24, dmg: 30, range: 5 },
-  q: { hp: 75, move: 35, atk: 57, dmg: 45, range: 3 },
-  k: { hp: 205, move: 35, atk: 120, dmg: 150, range: 1 },
+  p: { hp: 16, move: 2, atk: 6, dmg: 8, range: 2 },
+  b: { hp: 32, move: 4, atk: 10, dmg: 12, range: 3 },
+  n: { hp: 38, move: 5, atk: 12, dmg: 16, range: 2 },
+  r: { hp: 65, move: 7, atk: 18, dmg: 28, range: 5 },
+  q: { hp: 90, move: 10, atk: 25, dmg: 35, range: 3 },
+  k: { hp: 210, move: 12, atk: 20, dmg: 25, range: 1 },
 };
+const STRAT_NUKE = { round: 5, cost: 120, center: 150, inner: 80, outer: 30 };
+const STRAT_UPGRADES = {
+  income: { name: 'Экономика', base: 30, max: 3 },
+  arsenal: { name: 'Арсенал', base: 35, max: 3 },
+  logistics: { name: 'Снабжение', base: 25, max: 3 },
+};
+
+/* Only rule data lives in st.strategy. Selections/aiming are non-enumerable and
+   rebuilt after JSON import: no DOM, Set, timers or wall-clock in the reducer. */
+function strategyEnsure(st) {
+  if (st.strategy && st.strategy.version === 84) return st.strategy;
+  const territory = {}, influence = {};
+  for (let i = 0; i < st.board.length; i++) {
+    const owner = Math.floor(i / st.W) < st.H / 2 ? 'w' : 'b';
+    territory[i] = owner; influence[i] = owner === 'w' ? 3 : -3;
+  }
+  st.strategy = {
+    version: 84, hp: {}, shield: {}, moved: {}, gold: { w: 35, b: 35 }, cap: 180,
+    factions: { w: 'Светлая республика', b: 'Тёмная федерация' },
+    phase: 'move', phaseSide: 0, round: 1, seq: 0, phaseRepeated: false,
+    nextPhase: 'attack', nextRepeat: false, notice: '',
+    upgrades: { w: { income: 0, arsenal: 0, logistics: 0 }, b: { income: 0, arsenal: 0, logistics: 0 } },
+    nukeUsed: { w: false, b: false }, territory, influence,
+    nextPiece: 1, objects: [ { sq: 2 * st.W + 2, name: 'Завод', income: 4 },
+      { sq: (st.H - 3) * st.W + st.W - 3, name: 'Порт', income: 4 },
+      { sq: Math.floor(st.H / 2) * st.W + Math.floor(st.W / 2), name: 'Столица торговли', income: 6 } ],
+    mines: [], rad: [], lastMoved: {},
+  };
+  for (const p of st.board) if (p) st.strategy.hp[p.id] = STRAT[p.t].hp;
+  const neutral=st.strategy.objects[2].sq; st.strategy.territory[neutral]=null; st.strategy.influence[neutral]=0;
+  strategyPlanPhase(st);
+  return st.strategy;
+}
+function strategyPlanPhase(st) {
+  const s = st.strategy;
+  s.nextRepeat = !s.phaseRepeated && stateRandom(st) < 0.1;
+  s.nextPhase = s.nextRepeat ? s.phase : (s.phase === 'move' ? 'attack' : 'move');
+}
+function strategyPieceHp(st, p) { return p ? (st.strategy.hp[p.id] ?? STRAT[p.t].hp) : 0; }
+function strategyRuleCost(st, p, kind, sq) {
+  const u = st.strategy.upgrades[p.c];
+  const base = kind === 'nuke' ? STRAT_NUKE.cost : kind === 'mine' ? 15
+    : STRAT[p.t][kind === 'move' ? 'move' : 'atk'];
+  if (kind === 'nuke') return base;
+  return Math.max(1, Math.ceil(base * (kind === 'move' ? 1 - u.logistics * .15 : 1)
+    * (strategyOnEnemyHalf(st, sq, p.c) ? 1.1 : 1)));
+}
+function strategyRuleDamage(st, p) { return STRAT[p.t].dmg + st.strategy.upgrades[p.c].arsenal * 4; }
+function strategyCleanup(st, events = []) {
+  for (let sq = 0; sq < st.board.length; sq++) {
+    const p = st.board[sq];
+    if (!p || strategyPieceHp(st, p) > 0) continue;
+    st.board[sq] = null;
+    events.push({ type: 'destroy', sq, piece: { ...p } });
+  }
+  const w = findKing(st, 'w') >= 0, b = findKing(st, 'b') >= 0;
+  if (!w || !b) {
+    st.capturedKing = !w && !b ? null : (!w ? 'w' : 'b');
+    st.status = 'over'; st.result = { winner: w === b ? null : (w ? 'w' : 'b'), reason: 'king' };
+  } else { st.capturedKing = null; st.status = 'play'; st.result = null; }
+}
+function strategyDealDamage(st, p, amount, events, sq) {
+  if (!p) return false;
+  const s = st.strategy, shield = s.shield[p.id] || 0;
+  const absorbed = Math.min(shield, amount);
+  s.shield[p.id] = shield - absorbed;
+  s.hp[p.id] = Math.max(0, strategyPieceHp(st, p) - (amount - absorbed));
+  events.push({ type: 'damage', sq, amount: amount - absorbed, absorbed });
+  return s.hp[p.id] === 0;
+}
+function strategyRuleKnockback(st, sq, from, events) {
+  const p = st.board[sq];
+  if (!p || p.t === 'q' || p.t === 'k' || strategyPieceHp(st, p) <= 0) return;
+  const x = sq % st.W, y = Math.floor(sq / st.W);
+  const fx = from % st.W, fy = Math.floor(from / st.W);
+  const dx = Math.sign(x - fx), dy = Math.sign(y - fy);
+  const candidates = [[dx, dy], ...QUEEN_DIRS.filter(([a, b]) => a !== dx || b !== dy)];
+  for (const [a, b] of candidates) {
+    if (!a && !b) continue;
+    const nx = x + a, ny = y + b;
+    if (!inside(st, nx, ny)) {
+      /* Only the direction of impact can throw a piece over the edge. */
+      if (a !== dx || b !== dy) continue;
+      st.strategy.hp[p.id] = 0;
+      events.push({ type: 'knockout', from: sq, dx: a, dy: b, piece: { ...p } });
+      return;
+    }
+    const to = sqAt(st, nx, ny);
+    if (st.board[to]) continue;
+    st.board[to] = p; st.board[sq] = null; st.strategy.moved[p.id] = true;
+    events.push({ type: 'knockback', from: sq, to, piece: { ...p } });
+    strategyDealDamage(st, p, 4, events, to);
+    return;
+  }
+}
+function strategyUpdateTerritory(st) {
+  const s = st.strategy;
+  for (let sq = 0; sq < st.board.length; sq++) {
+    const x = sq % st.W, y = Math.floor(sq / st.W);
+    /* One-rank home borders cannot be repainted. */
+    if (y === 0 || y === st.H - 1) {
+      s.influence[sq] = y === 0 ? 3 : -3; s.territory[sq] = y === 0 ? 'w' : 'b'; continue;
+    }
+    let dw = Infinity, db = Infinity;
+    for (let i = 0; i < st.board.length; i++) {
+      const p = st.board[i]; if (!p) continue;
+      const d = Math.max(Math.abs(i % st.W - x), Math.abs(Math.floor(i / st.W) - y));
+      if (d > 1) continue;
+      if (p.c === 'w') dw = Math.min(dw, d); else db = Math.min(db, d);
+    }
+    if (dw === db) continue;
+    const favored = dw < db ? 1 : -1;
+    const n = s.influence[sq] || 0;
+    /* Three interactions convert a fully hostile cell: -3,-1,+1,+3. */
+    s.influence[sq] = Math.max(-3, Math.min(3, n + favored * 2));
+    if (Math.abs(s.influence[sq]) === 3) s.territory[sq] = s.influence[sq] > 0 ? 'w' : 'b';
+  }
+}
+function strategyRuleIncome(st, color) {
+  const s = st.strategy;
+  const objects = s.objects.filter(o => s.territory[o.sq] === color).reduce((n, o) => n + o.income, 0);
+  return 10 + s.upgrades[color].income * 4 + objects;
+}
+function strategyRuleAttackData(st, p, from, special = null) {
+  const aim = new Set(), targets = new Set();
+  if (!p) return { aim, targets };
+  const x = from % st.W, y = Math.floor(from / st.W);
+  if (special === 'nuke' && p.t === 'k') {
+    for (let i = 0; i < st.board.length; i++) { aim.add(i); targets.add(i); }
+    return { aim, targets };
+  }
+  const lob = special === 'rocket' || special === 'catapult';
+  let dirs = p.t === 'p' ? [[0, p.c === 'w' ? 1 : -1]] : p.t === 'r' ? ROOK_DIRS
+    : p.t === 'b' ? BISHOP_DIRS : QUEEN_DIRS;
+  const range = lob ? 6 : p.t === 'p' ? (st.strategy.moved[p.id] ? 2 : 4) : STRAT[p.t].range;
+  if (p.t === 'n') {
+    for (const [dx, dy] of [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]]) {
+      if (!inside(st, x + dx, y + dy)) continue;
+      const to = sqAt(st, x + dx, y + dy); aim.add(to);
+      if (!st.board[to] || st.board[to].c !== p.c) targets.add(to);
+    }
+    return { aim, targets };
+  }
+  for (const [dx, dy] of dirs) for (let d = 1; d <= range; d++) {
+    const nx = x + dx * d, ny = y + dy * d;
+    if (!inside(st, nx, ny)) break;
+    const to = sqAt(st, nx, ny), q = st.board[to];
+    aim.add(to);
+    if (lob) { if (special !== 'catapult' || d >= 2) targets.add(to); continue; }
+    if (!q || q.c !== p.c) targets.add(to);
+    if (q) break;
+  }
+  return { aim, targets };
+}
+function strategyNukePreview(st, to) {
+  const tx = to % st.W, ty = Math.floor(to / st.W), cells = [];
+  for (let sq = 0; sq < st.board.length; sq++) {
+    const d = Math.max(Math.abs(sq % st.W - tx), Math.abs(Math.floor(sq / st.W) - ty));
+    if (d > 2) continue;
+    cells.push({ sq, damage: d === 0 ? STRAT_NUKE.center : d === 1 ? STRAT_NUKE.inner : STRAT_NUKE.outer });
+  }
+  return cells;
+}
+function strategyRuleRadiation(st, events) {
+  const s = st.strategy;
+  for (const zone of s.rad) {
+    if (zone.createdRound >= s.round) continue;
+    for (const sq of zone.cells) {
+      const p = st.board[sq]; if (p) strategyDealDamage(st, p, 6, events, sq);
+    }
+    zone.rounds--;
+  }
+  s.rad = s.rad.filter(z => z.rounds > 0);
+  strategyCleanup(st, events);
+}
+function strategyAdvance(st, mover, events) {
+  const s = st.strategy;
+  strategyUpdateTerritory(st);
+  s.seq++; st.plySeq = (st.plySeq || 0) + 1;
+  if (mover === 'b') st.full++;
+  if (s.phaseSide === 0) { s.phaseSide = 1; st.turn = 'b'; }
+  else {
+    const old = s.phase;
+    const repeat = s.nextRepeat;
+    s.phase = s.nextPhase; s.phaseRepeated = repeat; s.phaseSide = 0; st.turn = 'w';
+    if (old === 'attack') {
+      strategyRuleRadiation(st, events); s.round++;
+      for (const color of ['w', 'b']) s.gold[color] = Math.min(s.cap, s.gold[color] + strategyRuleIncome(st, color));
+    }
+    s.notice = repeat ? `Тактический сюрприз: ещё одна фаза ${s.phase === 'move' ? 'манёвров' : 'атаки'}!` : '';
+    strategyPlanPhase(st);
+  }
+  strategyCleanup(st, events);
+}
+function strategyReduceAction(st, action) {
+  const s = strategyEnsure(st), mover = st.turn, events = [];
+  const fail = reason => ({ ok: false, reason, action, mover, seq: s.seq, events: [] });
+  if (!action || typeof action !== 'object') return fail('Неверное действие');
+  if (st.status !== 'play') return fail('Партия уже завершена');
+  if (action.seq != null && action.seq !== s.seq + 1) return fail('Неверный номер действия');
+  if (action.color && action.color !== mover) return fail('Сейчас ход другой стороны');
+  const kind = action.kind;
+  const p = Number.isInteger(action.from) ? st.board[action.from] : null;
+  const costFor = type => strategyRuleCost(st, p, type, action.from);
+  const pay = cost => { if (s.gold[mover] < cost) return false; s.gold[mover] -= cost; return true; };
+  if (kind === 'pass') {
+    s.gold[mover] = Math.min(s.cap, s.gold[mover] + (s.phase === 'move' ? 6 : 3));
+    events.push({ type: 'pass', color: mover });
+  } else if (kind === 'upgrade') {
+    const meta = STRAT_UPGRADES[action.upgrade], levels = s.upgrades[mover];
+    if (!meta || levels[action.upgrade] >= meta.max) return fail('Улучшение уже максимальное');
+    const cost = meta.base + levels[action.upgrade] * 15;
+    if (!pay(cost)) return fail(`Улучшение стоит ${cost}, в казне ${s.gold[mover]}`);
+    levels[action.upgrade]++; events.push({ type: 'upgrade', upgrade: action.upgrade, color: mover });
+  } else if (kind === 'support') {
+    const target = st.board[action.to], heal = action.support === 'heal';
+    if (!target || target.c !== mover || !['heal','shield'].includes(action.support)) return fail('Выбери свою фигуру');
+    if (heal && strategyPieceHp(st, target) >= STRAT[target.t].hp) return fail('Фигура уже здорова');
+    if (!heal && (s.shield[target.id] || 0) >= 30) return fail('У фигуры уже полный щит');
+    if (!pay(heal ? 20 : 25)) return fail('Недостаточно золота на поддержку');
+    if (heal) s.hp[target.id] = Math.min(STRAT[target.t].hp, strategyPieceHp(st, target) + 25);
+    else s.shield[target.id] = 30;
+    events.push({ type: 'support', sq: action.to, support: action.support });
+  } else if (kind === 'deploy') {
+    if(s.phase!=='move') return fail('Подкрепления доступны в фазе манёвров');
+    const price={p:12,b:26,n:28,r:46,q:65}[action.piece];
+    if(!price || !Number.isInteger(action.to) || action.to<0 || action.to>=st.board.length || st.board[action.to] || s.territory[action.to]!==mover) return fail('Выбери пустую захваченную клетку');
+    if(st.board.filter(p=>p&&p.c===mover).length>=24) return fail('На поле уже 24 своих фигуры');
+    if(!pay(price)) return fail('Не хватает золота на подкрепление');
+    let id=850000000+s.nextPiece++; while(st.board.some(p=>p&&p.id===id))id=850000000+s.nextPiece++;
+    st.board[action.to]={t:action.piece,c:mover,id,used:0}; s.hp[id]=STRAT[action.piece].hp;
+    s.moved[id]=true;events.push({type:'deploy',to:action.to,piece:{...st.board[action.to]}});
+  } else if (kind === 'move') {
+    if (s.phase !== 'move') return fail('Сейчас фаза атаки, движение закрыто');
+    if (!p || p.c !== mover) return fail('Выбери свою фигуру');
+    const move = legalMoves(st, mover).find(m => m.from === action.from && m.to === action.to
+      && (m.promo || null) === (action.promo || null));
+    if (!move) return fail('Недоступное движение');
+    if (!pay(costFor('move'))) return fail(`Нужно ${costFor('move')} золота. Можно пропустить и получить +6`);
+    if (st.board[action.to]) {
+      const victim = st.board[action.to];
+      strategyDealDamage(st, victim, strategyRuleDamage(st, p), events, action.to);
+      strategyRuleKnockback(st, action.to, action.from, events);
+      strategyCleanup(st, events);
+      if (!st.board[action.to]) { st.board[action.to] = p; st.board[action.from] = null; }
+      s.moved[p.id] = true; st.ep = -1;
+      if(p.t==='k') st.castling[p.c]={k:null,q:null};
+      if(p.t==='r') for(const side of ['k','q'])if(st.castling[p.c][side]===p.id)st.castling[p.c][side]=null;
+    } else {
+      const seq = st.plySeq, full = st.full;
+      applyMove(st, move); st.turn = mover; st.plySeq = seq; st.full = full;
+      s.moved[p.id] = true;
+      if (move.promo) s.hp[st.board[action.to].id] = STRAT[move.promo].hp;
+    }
+    s.lastMoved[mover] = action.to;
+    events.push({ type: 'move', from: action.from, to: action.to });
+  } else if (kind === 'attack' || kind === 'mine') {
+    if (s.phase !== 'attack') return fail('Сейчас фаза манёвров, стрельба закрыта');
+    if (!p || p.c !== mover) return fail('Выбери свою фигуру');
+    const special = action.special || null;
+    if (kind === 'mine') {
+      if (p.t !== 'n' || s.mines.some(m => m.sq === action.from)) return fail('Здесь нельзя поставить мину');
+      if (!pay(15)) return fail('Мина стоит 15 золота');
+      s.mines.push({ sq: action.from, owner: mover, expiresRound: s.round + 3 });
+      events.push({ type: 'mine', sq: action.from });
+    } else {
+      if (special && !((special === 'nuke' && p.t === 'k') || (special === 'rocket' && p.t === 'q') || (special === 'catapult' && p.t === 'r'))) return fail('У этой фигуры нет такой спецатаки');
+      if (special === 'nuke' && (s.nukeUsed[mover] || s.round < STRAT_NUKE.round)) return fail(`Ядерка: с раунда ${STRAT_NUKE.round}, один запуск на сторону`);
+      const data = strategyRuleAttackData(st, p, action.from, special);
+      if (!data.targets.has(action.to)) return fail('Цель вне дальности или перекрыта');
+      if (action.aim && (!Number.isFinite(action.aim.x) || !Number.isFinite(action.aim.y)
+        || action.aim.x < 0 || action.aim.x > 1 || action.aim.y < 0 || action.aim.y > 1)) return fail('Неверные координаты прицела');
+      if (!pay(costFor(special === 'nuke' ? 'nuke' : 'attack'))) return fail('Не хватает золота на выстрел — пропусти или выбери другую фигуру');
+      const aim = action.aim || { x: .5, y: .5 };
+      const hit = special === 'nuke' || special === 'catapult' || (Math.abs(aim.x - .5) <= .34 && Math.abs(aim.y - .5) <= .4);
+      events.push({ type: 'shot', from: action.from, to: action.to, special, hit });
+      if (special === 'nuke') {
+        s.nukeUsed[mover] = true;
+        const area = strategyNukePreview(st, action.to);
+        for (const cell of area) { const q = st.board[cell.sq]; if (q) strategyDealDamage(st, q, cell.damage, events, cell.sq); }
+        strategyCleanup(st, events);
+        const survivors = area.map(c => ({ sq: c.sq, id: st.board[c.sq]?.id })).filter(c => c.id != null);
+        for (const c of survivors) { const sq = st.board.findIndex(q => q && q.id === c.id); if (sq >= 0) strategyRuleKnockback(st, sq, action.to, events); }
+        s.rad.push({ sq: action.to, cells: area.filter(c => c.damage >= STRAT_NUKE.inner).map(c => c.sq), rounds: 3, createdRound: s.round });
+      } else if (hit) {
+        const target = st.board[action.to];
+        if (target && target.c !== mover) {
+          strategyDealDamage(st, target, strategyRuleDamage(st, p), events, action.to);
+          if (special === 'rocket' || p.t === 'n') strategyRuleKnockback(st, action.to, action.from, events);
+        }
+        if (p.t === 'b') for (const [dx, dy] of [[-1,0],[1,0]]) {
+          const x = action.to % st.W + dx, y = Math.floor(action.to / st.W) + dy;
+          if (!inside(st, x, y)) continue;
+          const sq = sqAt(st, x, y), q = st.board[sq]; if (q && q.c !== mover) strategyDealDamage(st, q, 6, events, sq);
+        }
+      }
+    }
+  } else return fail('Неизвестное действие');
+  strategyCleanup(st, events);
+  strategyRuleMines(st, events);
+  if(st.status==='play') strategyAdvance(st, mover, events); else {s.seq++;st.plySeq=(st.plySeq||0)+1;}
+  return { ok: true, mover, action: { ...action, color: mover, seq: s.seq }, seq: s.seq, events, result: st.result };
+}
+function strategyRuleMines(st, events) {
+  const s = st.strategy;
+  s.mines = s.mines.filter(m => m.expiresRound > s.round);
+  for (let n = s.mines.length - 1; n >= 0; n--) {
+    const m = s.mines[n];
+    const sq = st.board.findIndex((p, i) => p && p.c !== m.owner && Math.max(Math.abs(i % st.W - m.sq % st.W), Math.abs(Math.floor(i / st.W) - Math.floor(m.sq / st.W))) <= 1);
+    if (sq < 0) continue;
+    strategyDealDamage(st, st.board[sq], 30, events, sq); s.mines.splice(n, 1);
+    events.push({ type: 'mine-explosion', sq });
+  }
+  strategyCleanup(st, events);
+}
+function strategyBindState(st = ui.st) {
+  if (!st || !st.flags.strategy) return null;
+  const s = strategyEnsure(st);
+  for (const [key, value] of Object.entries({ attacker: null, selected: null, special: null, targets: new Set(), aim: new Set(), preview: [], previewTarget: null, support: null, recruit: null, hand: [], radTimer: 0 })) {
+    Object.defineProperty(s, key, { value, writable: true, configurable: true, enumerable: false });
+  }
+  ui.strategy = s; return s;
+}
+function strategyPerformAction(action, opts = {}) {
+  const st = opts.state || ui.st;
+  if (!st || !st.flags.strategy) return { ok: false, reason: 'Не Стратегия' };
+  if (!opts.remote && !opts.replay && !opts.bot && (ui.viewPly !== ui.frames.length - 1 && !canBranchHere() || ui.paused || ui.gameLocked || ui.spectator
+    || (ui.mode === 'online' && st.turn !== myColor()) || (ui.bot && st.turn === ui.bot.color))) return { ok: false, reason: 'Сейчас действие недоступно' };
+  const result = strategyReduceAction(st, action);
+  if (!result.ok) { if (!opts.silent && !opts.remote) toast(result.reason); return result; }
+  if (st === ui.st) {
+    strategyBindState(st); ui.selected = -1;
+    if (typeof ui.onStrategyAction === 'function') ui.onStrategyAction(result, opts);
+    else if (!opts.silent) { renderAll(false); strategyAnimateEvents(result.events); strategyRender(); if(st.status==='over')finishGame(st.result);else strategyScheduleBot(); }
+  }
+  return result;
+}
+function strategyReceiveAction(action, opts = {}) { return strategyPerformAction(action, { ...opts, remote: true }); }
+function strategyScheduleBot() {
+  const st = ui.st, seq = st?.strategy?.seq;
+  if (!st || !ui.bot || st.turn !== ui.bot.color || st.status !== 'play') return;
+  setTimeout(() => { if (ui.st === st && st.strategy.seq === seq) strategyMaybeBot(); }, 450);
+}
+function strategyChooseBotAction(st) {
+  const s = strategyEnsure(st), color = st.turn;
+  if (s.phase === 'move') {
+    const moves = legalMoves(st, color).filter(m => strategyRuleCost(st, st.board[m.from], 'move', m.from) <= s.gold[color]);
+    moves.sort((a, b) => (st.board[b.to] ? 10 : 0) - (st.board[a.to] ? 10 : 0)
+      + (s.territory[a.to] === color ? 0 : 2) - (s.territory[b.to] === color ? 0 : 2)
+      + (color === 'w' ? Math.floor(b.to/st.W)-Math.floor(a.to/st.W) : Math.floor(a.to/st.W)-Math.floor(b.to/st.W)));
+    return moves.length ? { kind: 'move', ...moves[0] } : { kind: 'pass' };
+  }
+  const options = [];
+  for (let from = 0; from < st.board.length; from++) {
+    const p = st.board[from]; if (!p || p.c !== color) continue;
+    for (const special of [null, ...(p.t === 'q' ? ['rocket'] : p.t === 'r' ? ['catapult'] : p.t === 'k' && !s.nukeUsed[color] && s.round >= STRAT_NUKE.round ? ['nuke'] : [])]) {
+      if (strategyRuleCost(st, p, special === 'nuke' ? 'nuke' : 'attack', from) > s.gold[color]) continue;
+      for (const to of strategyRuleAttackData(st, p, from, special).targets) {
+        const q = st.board[to]; let score = q && q.c !== color ? strategyRuleDamage(st, p) + (q.t === 'k' ? 25 : 0) : 0;
+        if (special === 'nuke') score = strategyNukePreview(st, to).reduce((n,c) => { const v=st.board[c.sq]; return n + (v ? Math.min(strategyPieceHp(st,v),c.damage)*(v.c===color?-1:1) : 0); },0);
+        if (score > 0) options.push({ kind: 'attack', from, to, special, score });
+      }
+    }
+  }
+  options.sort((a,b)=>b.score-a.score);
+  return options[0] || { kind: 'pass' };
+}
+function strategyMaybeBot() {
+  const st = ui.st;
+  if (!st || !ui.bot || st.turn !== ui.bot.color || st.status !== 'play' || ui.paused || ui.away || ui.gameLocked) return false;
+  if (ui.mode === 'online' && ui.role !== 'host') return false;
+  const result = strategyPerformAction(strategyChooseBotAction(st), { bot: true });
+  if (!result.ok) strategyPerformAction({ kind: 'pass' }, { bot: true });
+  ui.bot.busy = false; ui.botThinking = false; return true;
+}
+function strategyAimAt(sq, x = .5, y = .5, fire = false) {
+  const s = ui.strategy, st = ui.st;
+  if (!s || s.attacker == null) return { ok: false, reason: 'Сначала выбери стрелка' };
+  s.preview = s.special === 'nuke' ? strategyNukePreview(st, sq) : [{ sq, damage: strategyRuleDamage(st, st.board[s.attacker]) }];
+  strategyRenderPreview();
+  const action = { kind: 'attack', from: s.attacker, to: sq, special: s.special, aim: { x, y } };
+  if (fire) return strategyPerformAction(action);
+  return { ok: s.targets.has(sq), hit: Math.abs(x-.5)<=.34 && Math.abs(y-.5)<=.4, action, cells: s.preview };
+}
+function strategyAnimateEvents(events) {
+  for (const e of events) {
+    if (e.type === 'shot') { strategyProjectile(e.from,e.to,e.special === 'nuke' ? '☢' : e.special === 'rocket' ? '🚀' : e.special === 'catapult' ? '🪨' : '•'); if(e.special==='nuke') strategyNuke(e.to); }
+    if(e.type==='shot'&&!e.hit)strategyFloat(e.to,'МИМО','purple');
+    if (e.type === 'damage') strategyFloat(e.sq, `-${e.amount}${e.absorbed ? ' 🛡' : ''}`, 'red');
+    if (e.type === 'knockback' || e.type === 'knockout') strategyKnockbackFx(e);
+    if (e.type === 'destroy') strategyBurst(e.sq, '#ff944b');
+    if (e.type === 'mine-explosion') strategyBurst(e.sq, '#ff7b3b');
+  }
+}
+function strategyKnockbackFx(e) {
+  const layer = $('#brawlLayer'); if (!layer || !e.piece) return;
+  const el = document.createElement('span'); el.className = 'strat-toss'; el.innerHTML = pieceSvg(e.piece.t);
+  const a = strategyCellXY(e.from), b = e.to != null ? strategyCellXY(e.to) : { x: a.x + e.dx * ui.sq * 2, y: a.y + e.dy * ui.sq * 2 };
+  el.style.left = a.x + 'px'; el.style.top = a.y + 'px'; el.style.width = ui.sq * .8 + 'px'; el.style.height = ui.sq * .8 + 'px';
+  layer.appendChild(el);
+  el.animate([{transform:'translate(-50%,-50%) scale(1.2,.7)'},{transform:`translate(${(b.x-a.x)/2- ui.sq*.4}px,${(b.y-a.y)/2-ui.sq}px) rotate(100deg) scale(1.05)`},{transform:`translate(${b.x-a.x-ui.sq*.4}px,${b.y-a.y-ui.sq*.4}px) rotate(240deg) scale(${e.type==='knockout'?'.05':'.8,1.15'})`,opacity:e.type==='knockout'?0:1}],{duration:650,easing:'ease-in-out'});
+  setTimeout(()=>el.remove(),700);
+}
+function strategyRenderPreview() {
+  const s = ui.strategy; if (!s) return;
+  const board = $('#board'); if (!board) return;
+  board.querySelectorAll('.strat-preview').forEach(el=>el.remove());
+  for (const c of s.preview || []) {
+    const pt = strategyCellXY(c.sq), el = document.createElement('span'); el.className = 'strat-preview';
+    el.style.left = pt.x - ui.sq/2 + 'px'; el.style.top = pt.y - ui.sq/2 + 'px'; el.style.width = el.style.height = ui.sq + 'px'; el.textContent = `−${c.damage}`;
+    board.appendChild(el);
+  }
+}
 const STRAT_NAMES = {
   p: 'Пешка', b: 'Слон', n: 'Конь', r: 'Ладья', q: 'Ферзь', k: 'Король',
 };
 
 function strategyInit(st) {
-  stopStrategy();
-  const factions = {
-    w: Math.random() < 0.5 ? 'WhiteTown' : 'LightTech',
-    b: Math.random() < 0.5 ? 'BlackTown' : 'DarkTech',
-  };
-  st.strategy = {
-    hp: {}, shield: {}, moved: {}, gold: { w: 30, b: 30 }, cap: 50,
-    factions, phase: 'move', hand: [], hands: {}, selected: 1, attacker: null,
-    targets: new Set(), aim: new Set(), x2: false, territory: {},
-    moveDone: { w: false, b: false }, attackDone: { w: false, b: false }, lastMoved: {},
-    special: null, mines: [], rad: [], radTimer: 0,
-  };
-  for (const p of st.board) if (p) st.strategy.hp[p.id] = STRAT[p.t].hp;
-  ui.strategy = st.strategy;
-  st.strategy.gold = { w: 30, b: 30 };
-  st.strategy.cap = 50;
+  stopStrategy(); strategyBindState(st);
   document.documentElement.dataset.strategy = '1';
-  $('#strategyBar').classList.remove('hidden');
-  $('#stratInfoPanel').classList.remove('hidden');
-  strategyDrawHand(st.turn);
-  strategyUpdateInfo(st.board.find((p) => p && p.c === 'w' && p.t === 'q') || st.board.find((p) => p && p.c === 'w'));
-  st.strategy.radTimer = setInterval(strategyRadiationTick, 250);
+  $('#strategyBar')?.classList.remove('hidden');
+  $('#stratInfoPanel')?.classList.remove('hidden');
+  strategyUpdateInfo(st.board.find(p => p && p.c === st.turn));
   strategyRender();
 }
 
@@ -5262,260 +5681,56 @@ function strategyIncome(color) {
   toast(`+${amount} в казну`);
 }
 
-function strategyDrawHand(color) {
-  const s = ui.st && ui.st.strategy;
-  if (!s) return;
-  const types = [...new Set(ui.st.board.filter((p) => p && p.c === color).map((p) => p.t))];
-  const hand = [];
-  const addSupport = () => (Math.random() < 0.3 ? 'heal' : (Math.random() < 0.15 && s.gold[color] >= 50 ? 'shield' : null));
-  for (let i = 0; i < 4; i++) {
-    const support = addSupport();
-    if (support) hand.push({ kind: support, cost: support === 'shield' ? 50 : 35 });
-    else {
-      const type = types[Math.floor(Math.random() * types.length)] || 'p';
-      hand.push({ kind: 'piece', type, cost: STRAT[type].atk });
-    }
-  }
-  s.hands[color] = hand;
-  if (color === ui.st.turn) {
-    s.hand = hand;
-    s.selected = 1;
-  }
-  s.attacker = null;
-  s.targets = new Set();
-  s.aim = new Set();
-}
+function strategyDrawHand() { strategyRenderCards(); }
 
+function strategyCanAct() {
+  return !!(ui.st && ui.strategy && ui.st.status==='play' && !ui.paused && !ui.away && !ui.gameLocked && !ui.spectator && (!ui.bot || ui.st.turn!==ui.bot.color) && (ui.mode!=='online'||ui.st.turn===myColor()) && (ui.viewPly===ui.frames.length-1||canBranchHere()));
+}
 function strategyRender() {
-  const st = ui.st;
-  const s = st && st.strategy;
-  if (!s) return;
-  const fw = $('#stratFactionW');
-  const fb = $('#stratFactionB');
-  if (fw) fw.textContent = s.factions.w;
-  if (fb) fb.textContent = s.factions.b;
-  const gw = $('#stratGoldW');
-  const gb = $('#stratGoldB');
-  if (gw) gw.textContent = `${s.gold.w}/${s.cap}`;
-  if (gb) gb.textContent = `${s.gold.b}/${s.cap}`;
-  const badgeW = $('#stratGoldBadgeW');
-  const badgeB = $('#stratGoldBadgeB');
-  if (badgeW) badgeW.classList.toggle('active', st.turn === 'w');
-  if (badgeB) badgeB.classList.toggle('active', st.turn === 'b');
-  const phase = $('#stratPhase');
-  if (phase) phase.textContent = st.turn === 'w' ? (s.phase === 'move' ? 'Ход белых' : 'Атака белых') : (s.phase === 'move' ? 'Ход чёрных' : 'Атака чёрных');
-  const action = $('#stratAction');
-  if (action) {
-    const who = st.turn === 'w' ? 'белых' : 'чёрных';
-    action.textContent = s.phase === 'move' ? `Ход ${who}: передвинь фигуру` : `Атака ${who}: выбери фигуру и жёлтую клетку`;
-    action.classList.toggle('attack', s.phase === 'attack');
+  const st=viewState(), s=st?.strategy; if(!s)return;
+  for(const c of ['w','b']) { const key=c.toUpperCase(); const f=$('#stratFaction'+key),g=$('#stratGold'+key); if(f)f.textContent=s.factions[c]; if(g)g.textContent=`${s.gold[c]}/${s.cap}`; $('#stratGoldBadge'+key)?.classList.toggle('active',st.turn===c); }
+  const own=st.turn,can=strategyCanAct(),phase=s.phase==='move'?'Манёвры':'Атака';
+  $('#stratPhase').textContent=`Раунд ${s.round} · ${phase}`;
+  $('#stratAction').textContent=`${own==='w'?'Белые':'Чёрные'}: ${s.phase==='move'?'передвинь фигуру, вызови подкрепление или развивай страну':'выбери стрелка, затем прицелься в подсвеченную клетку'}${s.nextRepeat?' · далее повтор этой фазы!':''}`;
+  $('#stratAction').classList.toggle('attack',s.phase==='attack');
+  $('#stratSkipMove').classList.toggle('hidden',s.phase!=='move'); $('#stratSkipAttack').classList.toggle('hidden',s.phase!=='attack');
+  $('#stratSkipMove').textContent='Пропустить (+6)'; $('#stratSkipAttack').textContent='Пропустить (+3)';
+  for(const id of ['stratSkipMove','stratSkipAttack'])$('#'+id).disabled=!can;
+  for(const [id,key] of [['stratX2','income'],['stratPlus','arsenal'],['stratCap','logistics']]){
+    const el=$('#'+id),meta=STRAT_UPGRADES[key],level=s.upgrades[own][key],cost=meta.base+level*15;if(!el)continue;
+    el.textContent=`${meta.name} ${level}/${meta.max} · ${cost}💰`;el.disabled=!can||level>=meta.max||s.gold[own]<cost;
+    el.title=key==='income'?'Доход +4 за раунд. Занимает действие.':key==='arsenal'?'Урон всех бойцов +4. Занимает действие.':'Стоимость движения −15%. Занимает действие.';
   }
+  let timeline=$('#strategyTimeline');if(!timeline){timeline=document.createElement('div');timeline.id='strategyTimeline';timeline.className='strat-timeline';$('#strategyBar').appendChild(timeline);}
+  timeline.innerHTML=['Белые: шаг','Чёрные: шаг','Белые: атака','Чёрные: атака'].map((v,i)=>`<span class="${i===(s.phase==='move'?0:2)+s.phaseSide?'active':''}">${v}</span>`).join('');
+  const sp=$('#stratSpecial'),atk=ui.strategy.attacker!=null?ui.st.board[ui.strategy.attacker]:null;
+  if(sp){const labels={n:'💣 Мина · 15',r:'🪨 Катапульта',q:'🚀 Ракета',k:'☢ Ядерка · 120'};sp.textContent=atk?labels[atk.t]||'Нет спецатаки':'Спецатака';sp.disabled=!can||s.phase!=='attack'||!atk||!labels[atk.t]||(atk.t==='k'&&(s.nukeUsed[own]||s.round<STRAT_NUKE.round||s.gold[own]<120));sp.classList.toggle('active',!!ui.strategy.special);}
   strategyRenderCards();
-  strategyRenderTerritory();
-  const sp = $('#stratSpecial');
-  if (sp) {
-    const atk = s.attacker != null ? st.board[s.attacker] : null;
-    const labels = { n: '💣 Мина (15)', r: '🪨 Катапульта', q: '🚀 Ракета', k: '☢ Ядерка (120)' };
-    sp.textContent = atk && labels[atk.t] ? labels[atk.t] : 'Спец';
-    sp.disabled = !atk || !labels[atk.t];
-  }
 }
-
 function strategyRenderCards() {
-  const box = $('#stratCards');
-  const s = ui.strategy;
-  if (!box || !s) return;
-  box.innerHTML = '';
-  s.hand.slice(0, 4).forEach((card, i) => {
-    const el = document.createElement('button');
-    el.type = 'button';
-    const cost = card.cost != null ? card.cost : (card.kind === 'piece' ? STRAT[card.type].atk : card.kind === 'shield' ? 50 : 35);
-    const locked = s.gold[ui.st.turn] < cost;
-    el.className = 'strat-card' + (i === s.selected ? ' sel' : '') + (card.kind === 'heal' ? ' heal' : card.kind === 'shield' ? ' shield' : '') + (locked ? ' locked' : '');
-    if (card.kind === 'piece') {
-      const meta = STRAT[card.type] || STRAT.p;
-      el.innerHTML = `<span class="sc-icon">${pieceSvg(card.type)}</span><span class="sc-name">${STRAT_NAMES[card.type] || card.type}</span><span class="sc-stats">${meta.hp} HP · ${meta.move}/${meta.atk}</span><span class="strat-card-cost">${cost}💰</span>`;
-    } else {
-      el.innerHTML = `<span class="sc-icon">${card.kind === 'heal' ? '💜' : '🛡'}</span><span class="sc-name">${card.kind === 'heal' ? 'Хилл' : 'Щит'}</span><span class="sc-stats">${card.kind === 'heal' ? '15–25 HP' : '+30 HP'}</span><span class="strat-card-cost">${cost}💰</span>`;
-    }
-    el.addEventListener('click', () => {
-      if (locked) { toast('Не хватает золота на эту карточку'); return; }
-      s.selected = i;
-      strategyRenderCards();
-    });
-    box.appendChild(el);
-  });
+  const box=$('#stratCards'),st=ui.st,s=ui.strategy;if(!box||!s)return;box.innerHTML='';
+  const can=strategyCanAct(),color=st.turn;
+  const info=document.createElement('p');info.className='strat-economy';info.textContent=`Доход +${strategyRuleIncome(st,color)} / раунд · ядерка ${s.nukeUsed[color]?'использована':s.round<5?'с 5-го раунда':'готова при 120💰'} · каждое улучшение занимает действие.`;box.appendChild(info);
+  for(const [kind,text,cost] of [['heal','💚 Ремонт +25 HP',20],['shield','🛡 Щит +30',25]]){
+    const b=document.createElement('button');b.type='button';b.className='strat-card support';b.textContent=`${text} · ${cost}💰`;b.disabled=!can||s.gold[color]<cost;b.onclick=()=>{s.recruit=null;s.support=s.support===kind?null:kind;toast(s.support?'Нажми свою фигуру для поддержки':'Поддержка отменена');renderSquares();};box.appendChild(b);
+  }
+  if(s.phase==='move')for(const [type,cost] of Object.entries({p:12,b:26,n:28,r:46,q:65})){
+    const b=document.createElement('button');b.type='button';b.className='strat-recruit'+(s.recruit===type?' active':'');b.innerHTML=`${pieceSvg(type)}<span>${STRAT_NAMES[type]} · ${cost}💰</span>`;b.disabled=!can||s.gold[color]<cost;b.onclick=()=>{s.support=null;s.recruit=s.recruit===type?null:type;toast(s.recruit?'Выбери пустую захваченную клетку':'Подкрепление отменено');renderSquares();strategyRenderCards();};box.appendChild(b);
+  }
 }
-
 function strategyUpdateInfo(p) {
-  if (!p || !ui.st || !ui.st.strategy) return;
-  const meta = STRAT[p.t] || STRAT.p;
-  const f = $('#sipFaction');
-  if (f) f.textContent = ui.st.strategy.factions[p.c];
-  const glyph = $('#sipGlyph');
-  if (glyph) glyph.innerHTML = pieceSvg(p.t);
-  const name = $('#sipName');
-  if (name) name.textContent = STRAT_NAMES[p.t] || p.t;
-  const hp = $('#sipHp');
-  if (hp) hp.textContent = `${strategyHp(p)} / ${meta.hp} HP`;
-  const mc = $('#sipMoveCost');
-  if (mc) mc.textContent = String(meta.move);
-  const ac = $('#sipAtkCost');
-  if (ac) ac.textContent = String(meta.atk);
-  const dmg = $('#sipDmg');
-  if (dmg) dmg.textContent = p.t === 'q' ? '35–55' : String(meta.dmg);
-  const desc = $('#sipDesc');
-  if (desc) {
-    desc.textContent = p.t === 'n' ? 'Спецатака: мина на 3 хода, взрыв 25–35.'
-      : p.t === 'r' ? 'Спецатака: катапульта на 2–6 клеток, камень 30.'
-      : p.t === 'q' ? 'Спецатака: ракета по 8 направлениям, 35–55 и отбрасывание.'
-      : p.t === 'k' ? 'Спецатака: ядерка 150, разброс и радиация.'
-      : p.t === 'b' ? 'Атака: три шара — 8 и по 4 по бокам.'
-      : p.t === 'p' ? 'Атака: снаряд на 2 клетки (4, если не ходила).'
-      : 'Карточка фигуры.';
-  }
+  const st=ui.st,s=st?.strategy;if(!p||!s)return;const m=STRAT[p.t],sq=st.board.findIndex(q=>q?.id===p.id);
+  $('#sipFaction').textContent=s.factions[p.c];$('#sipGlyph').innerHTML=pieceSvg(p.t);$('#sipName').textContent=STRAT_NAMES[p.t];
+  $('#sipHp').textContent=`${strategyPieceHp(st,p)}/${m.hp} HP${s.shield[p.id]?' · щит '+s.shield[p.id]:''}`;
+  $('#sipMoveCost').textContent=strategyRuleCost(st,p,'move',sq);$('#sipAtkCost').textContent=strategyRuleCost(st,p,'attack',sq);$('#sipDmg').textContent=strategyRuleDamage(st,p);
+  $('#sipDesc').textContent={p:'Прямой выстрел: 4 клетки до первого движения, потом 2. Фигуры заслоняют линию.',b:'Диагональный выстрел и осколки по соседям цели.',n:'Прыжок с отбрасыванием. Мина живёт 3 раунда.',r:'Прямая стрельба; катапульта на 2–6 клеток через препятствия.',q:'Линейный выстрел; ракета перелетает препятствия и отбрасывает.',k:'Штаб. Ядерный удар с раунда 5, 120 золота, один на сторону. Задевает и своих.'}[p.t];
 }
-
-function strategyShowPieceCard(p) {
-  const s = ui.strategy;
-  if (!s || !p) return;
-  s.hand[s.selected] = { kind: 'piece', type: p.t, cost: STRAT[p.t].atk };
-  strategyRenderCards();
-  strategyUpdateInfo(p);
-}
-
-function strategyTerritory() {
-  const st = ui.st;
-  const s = st && st.strategy;
-  if (!s) return {};
-  const map = {};
-  for (let i = 0; i < st.board.length; i++) {
-    const y = Math.floor(i / st.W);
-    map[i] = y < Math.ceil(st.H / 2) ? 'w' : 'b';
-  }
-  const ownNear = (sq, color, source) => {
-    const x = sq % st.W;
-    const y = Math.floor(sq / st.W);
-    for (let i = 0; i < st.board.length; i++) {
-      if (i === source) continue;
-      const q = st.board[i];
-      if (!q || q.c !== color) continue;
-      if (Math.max(Math.abs(i % st.W - x), Math.abs(Math.floor(i / st.W) - y)) <= 3) return true;
-    }
-    return false;
-  };
-  for (let i = 0; i < st.board.length; i++) {
-    const p = st.board[i];
-    if (!p || p.t === 'k') continue;
-    if (!strategyOnEnemyHalf(st, i, p.c)) continue;
-    const cells = [i];
-    const x = i % st.W;
-    const y = Math.floor(i / st.W);
-    for (const [dx, dy] of ROOK_DIRS) {
-      const nx = x + dx, ny = y + dy;
-      if (inside(st, nx, ny)) cells.push(sqAt(st, nx, ny));
-    }
-    for (const c of cells) {
-      if (ownNear(c, p.c, i)) continue;
-      map[c] = p.c;
-    }
-  }
-  s.territory = map;
-  return map;
-}
-
-function strategyRenderTerritory() {
-  if (!ui.st || !ui.st.strategy) return;
-  strategyTerritory();
-}
+function strategyShowPieceCard(p) { strategyUpdateInfo(p); }
+function strategyTerritory() { return ui.st?.strategy?.territory||{}; }
+function strategyRenderTerritory() {}
 
 function strategyAttackData(p, sq) {
-  const st = ui.st;
-  const s = st.strategy;
-  const aim = new Set();
-  const targets = new Set();
-  const add = (s) => { if (inside(st, s % st.W, Math.floor(s / st.W))) aim.add(s); };
-  const enemy = (s) => { const q = st.board[s]; return q && q.c !== p.c; };
-  const x = sq % st.W;
-  const y = Math.floor(sq / st.W);
-  if (s.special === 'catapult' && p.t === 'r') {
-    for (const [dx, dy] of ROOK_DIRS) {
-      for (let d = 2; d <= 6; d++) {
-        const nx = x + dx * d, ny = y + dy * d;
-        if (!inside(st, nx, ny)) break;
-        const cell = sqAt(st, nx, ny);
-        const q = st.board[cell];
-        if (q && q.c === p.c) break;
-        aim.add(cell);
-        targets.add(cell);
-        if (q) break;
-      }
-    }
-    return { aim, targets };
-  }
-  if (s.special === 'rocket' && p.t === 'q') {
-    for (const [dx, dy] of QUEEN_DIRS) {
-      for (let d = 1; d <= 6; d++) {
-        const nx = x + dx * d, ny = y + dy * d;
-        if (!inside(st, nx, ny)) break;
-        const cell = sqAt(st, nx, ny);
-        const q = st.board[cell];
-        if (q && q.c === p.c) break;
-        aim.add(cell);
-        targets.add(cell);
-        if (q) break;
-      }
-    }
-    return { aim, targets };
-  }
-  if (s.special === 'nuke' && p.t === 'k') {
-    for (let i = 0; i < st.board.length; i++) {
-      const q = st.board[i];
-      if (!q) continue;
-      const nx = i % st.W, ny = Math.floor(i / st.W);
-      if (Math.max(Math.abs(nx - x), Math.abs(ny - y)) <= 3) {
-        aim.add(i);
-        if (q.c !== p.c) targets.add(i);
-      }
-    }
-    return { aim, targets };
-  }
-  if (p.t === 'p') {
-    const dir = p.c === 'w' ? 1 : -1;
-    const max = (st.strategy.moved[p.id] ? 2 : 4);
-    for (let d = 1; d <= max; d++) {
-      const nx = x, ny = y + dir * d;
-      if (!inside(st, nx, ny)) break;
-      const s = sqAt(st, nx, ny);
-      add(s);
-      if (d === max && !st.board[s]) targets.add(s);
-      if (enemy(s)) targets.add(s);
-      if (st.board[s]) break;
-    }
-  } else if (p.t === 'n') {
-    for (const [dx, dy] of [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]]) {
-      const nx = x + dx, ny = y + dy;
-      if (!inside(st, nx, ny)) continue;
-      const s = sqAt(st, nx, ny);
-      aim.add(s);
-      if (!st.board[s] || enemy(s)) targets.add(s);
-    }
-  } else {
-    const dirs = p.t === 'r' ? ROOK_DIRS : p.t === 'b' ? BISHOP_DIRS : QUEEN_DIRS;
-    const range = p.t === 'k' ? 1 : STRAT[p.t].range;
-    for (const [dx, dy] of dirs) {
-      for (let d = 1; d <= range; d++) {
-        const nx = x + dx * d, ny = y + dy * d;
-        if (!inside(st, nx, ny)) break;
-        const s = sqAt(st, nx, ny);
-        if (st.board[s] && st.board[s].c === p.c) break;
-        add(s);
-        targets.add(s);
-        if (st.board[s]) break;
-      }
-    }
-  }
-  return { aim, targets };
+  return strategyRuleAttackData(ui.st, p, sq, ui.strategy?.special || null);
 }
 
 function strategySelectAttacker(sq) {
@@ -5534,84 +5749,38 @@ function strategySelectAttacker(sq) {
 }
 
 function strategyClick(sq) {
-  const st = ui.st;
-  const s = st.strategy;
-  if (!s || st.status !== 'play' || ui.gameLocked || ui.paused) return;
-  if (ui.bot && st.turn === ui.bot.color) return;
+  const st = ui.st, s = ui.strategy;
+  if (!s || st.status !== 'play' || ui.gameLocked || ui.paused || ui.spectator) return;
+  if ((ui.bot && st.turn === ui.bot.color) || (ui.mode === 'online' && st.turn !== myColor())) return;
   const p = st.board[sq];
   if (p) strategyUpdateInfo(p);
-
-  if (s.phase === 'attack') {
-    if (p && p.c === st.turn) {
-      strategySelectAttacker(sq);
-      return;
-    }
-    if (s.attacker != null && s.targets.has(sq)) {
-      strategyAttack(s.attacker, sq);
-      return;
-    }
-    s.attacker = null;
-    s.targets = new Set();
-    s.aim = new Set();
-    renderSquares();
+  if (s.recruit) { strategyPerformAction({kind:'deploy',piece:s.recruit,to:sq}); return; }
+  if (s.support) {
+    const result = strategyPerformAction({kind:'support', support:s.support, to:sq});
+    if (result.ok) s.support = null;
     return;
   }
-
-  if (s.selected != null && s.hand[s.selected] && (s.hand[s.selected].kind === 'heal' || s.hand[s.selected].kind === 'shield')) {
-    if (p && p.c === st.turn) { strategyUseSupport(s.hand[s.selected].kind, sq); return; }
-  }
-
-  if (ui.selected >= 0) {
-    const candidates = legalMoves(st, st.turn).filter((m) => m.from === ui.selected && m.to === sq);
-    if (candidates.length) {
-      if (st.board[sq] && st.board[sq].c !== st.turn) strategyMelee(ui.selected, sq);
-      else commitMove(candidates[0]);
-      ui.selected = -1;
-      return;
+  if (s.phase === 'attack') {
+    if (p && p.c === st.turn && s.special !== 'nuke') { strategySelectAttacker(sq); return; }
+    if (s.attacker != null && s.targets.has(sq)) {
+      const point = ui.aimPoint?.sq === sq ? ui.aimPoint : {x:.5,y:.5};
+      if (s.special === 'nuke' && s.previewTarget !== sq) {
+        s.previewTarget = sq; strategyAimAt(sq,point.x,point.y); toast('Ядерный удар: зона показана. Нажми эту клетку ещё раз для запуска.'); return;
+      }
+      strategyAimAt(sq,point.x,point.y,true); return;
     }
+    toast('Выбери подсвеченную цель. Серые клетки перекрыты или вне дальности.'); return;
+  }
+  if (ui.selected >= 0 && ui.selected !== sq) {
+    const candidates = legalMoves(st, st.turn).filter(m=>m.from===ui.selected && m.to===sq);
+    if (candidates.length) { strategyPerformAction({kind:'move', ...candidates.find(m=>!m.promo||m.promo==='q')||candidates[0]}); return; }
   }
   if (p && p.c === st.turn) {
-    ui.selected = sq;
-    strategyShowPieceCard(p);
-    renderSquares();
-    renderHints();
-  } else {
-    ui.selected = -1;
-    renderSquares();
-  }
+    ui.selected=sq; strategyShowPieceCard(p); renderSquares(); renderHints();
+  } else { ui.selected=-1; renderSquares(); }
 }
 
-function strategyMelee(from, to) {
-  const st = ui.st;
-  const s = st.strategy;
-  const p = st.board[from];
-  const target = st.board[to];
-  if (!p || !target) return;
-  const cost = strategyCost(STRAT[p.t].move, st, from, p.c);
-  if (s.gold[p.c] < cost) { toast('Не хватает очков на ход'); return; }
-  s.gold[p.c] -= cost;
-  s.moved[p.id] = true;
-  const dmg = strategyHp(p);
-  const died = strategyDamage(target, dmg);
-  if (died) {
-    const victimHp = STRAT[target.t].hp;
-    if (target.t === 'k') st.capturedKing = target.c;
-    st.board[to] = p;
-    st.board[from] = null;
-    st.strategy.hp[p.id] = Math.max(1, strategyHp(p) - Math.round(victimHp * 0.5));
-    st.full++;
-    if (target.t === 'k') {
-      renderAll(false);
-      const res = updateStatus(st);
-      if (res) finishGame(res);
-      return;
-    }
-  }
-  renderAll(false);
-  const res = updateStatus(st);
-  if (res) { finishGame(res); return; }
-  strategyAfterMove(p.c, to);
-}
+function strategyMelee(from, to) { return strategyPerformAction({ kind: 'move', from, to }); }
 
 
 function strategyCellXY(sq) {
@@ -5631,7 +5800,7 @@ function strategyProjectile(from, to, icon) {
   el.style.top = '0px';
   layer.appendChild(el);
   const midX = (a.x + b.x) / 2;
-  const midY = Math.min(a.y, b.y) - 46;
+  const midY = ['🚀','🪨','☢'].includes(icon) ? Math.min(a.y,b.y)-46 : (a.y+b.y)/2;
   el.animate([
     { transform: `translate(${a.x}px,${a.y}px) scale(.7)`, opacity: 0 },
     { transform: `translate(${midX}px,${midY}px) scale(1.35)`, opacity: 1, offset: .55 },
@@ -5688,6 +5857,7 @@ function strategyNuke(sq) {
   const board = $('#board');
   const layer = $('#brawlLayer');
   if (!board || !layer || !ui.st) return;
+  if(profile.calm || matchMedia('(prefers-reduced-motion: reduce)').matches){strategyFloat(sq,'☢','rad');return;}
   const dark = document.createElement('div');
   dark.className = 'strat-nuke-dark';
   board.appendChild(dark);
@@ -5746,92 +5916,9 @@ function strategyNuke(sq) {
   setTimeout(() => ring.remove(), 600);
 }
 
-function strategyPlaceMine() {
-  const st = ui.st;
-  const s = st && st.strategy;
-  if (!s || !s.attacker) return;
-  const sq = s.attacker;
-  const p = st.board[sq];
-  if (!p || p.t !== 'n' || p.c !== st.turn) return;
-  if (s.gold[p.c] < 15) { toast('Мина стоит 15 очков'); return; }
-  s.gold[p.c] -= 15;
-  s.mines.push({ sq, owner: p.c, expires: st.full + 6 });
-  strategyFloat(sq, '💣 мина', 'blue');
-  s.special = null;
-  toast('Мина установлена на 3 хода');
-  renderAll(false);
-  strategyEndTurn();
-}
-
-function strategyCheckMines() {
-  const st = ui.st;
-  const s = st && st.strategy;
-  if (!s || st.status !== 'play') return;
-  for (let m = s.mines.length - 1; m >= 0; m--) {
-    const mine = s.mines[m];
-    if (st.full >= mine.expires) { s.mines.splice(m, 1); continue; }
-    const x = mine.sq % st.W;
-    const y = Math.floor(mine.sq / st.W);
-    let victim = -1;
-    for (let i = 0; i < st.board.length; i++) {
-      const q = st.board[i];
-      if (!q || q.c === mine.owner) continue;
-      const nx = i % st.W, ny = Math.floor(i / st.W);
-      if (Math.max(Math.abs(nx - x), Math.abs(ny - y)) <= 1) { victim = i; break; }
-    }
-    if (victim < 0) continue;
-    const q = st.board[victim];
-    const dmg = 25 + Math.floor(Math.random() * 11);
-    strategyBurst(mine.sq, '#ff7b3b');
-    strategyProjectile(mine.sq, victim, '💥');
-    strategyDamage(q, dmg);
-    strategyFloat(victim, `-${dmg}`, 'red');
-    s.mines.splice(m, 1);
-    toast('💣 Мина взорвалась');
-    if (strategyHp(q) <= 0) {
-      st.board[victim] = null;
-      if (q.t === 'k') st.capturedKing = q.c;
-    }
-    renderAll(false);
-    const res = updateStatus(st);
-    if (res) finishGame(res);
-    return;
-  }
-}
-
-function strategyRadiationTick() {
-  const st = ui.st;
-  const s = st && st.strategy;
-  if (!s || st.status !== 'play' || ui.paused || ui.away) return;
-  const now = performance.now();
-  let changed = false;
-  for (let r = s.rad.length - 1; r >= 0; r--) {
-    const zone = s.rad[r];
-    if (now > zone.until) { s.rad.splice(r, 1); changed = true; continue; }
-    if (now - zone.last < 2000) continue;
-    zone.last = now;
-    const zx = zone.sq % st.W, zy = Math.floor(zone.sq / st.W);
-    for (let i = 0; i < st.board.length; i++) {
-      const q = st.board[i];
-      if (!q) continue;
-      const nx = i % st.W, ny = Math.floor(i / st.W);
-      if (Math.max(Math.abs(nx - zx), Math.abs(ny - zy)) > 1) continue;
-      strategyDamage(q, 2);
-      strategyFloat(i, '-2 ☢', 'rad');
-      if (strategyHp(q) <= 0) {
-        st.board[i] = null;
-        if (q.t === 'k') st.capturedKing = q.c;
-        changed = true;
-      }
-    }
-    changed = true;
-  }
-  if (changed) {
-    renderAll(false);
-    const res = updateStatus(st);
-    if (res) finishGame(res);
-  }
-}
+function strategyPlaceMine() { return strategyPerformAction({kind:'mine',from:ui.strategy?.attacker}); }
+function strategyCheckMines() {}
+function strategyRadiationTick() {}
 
 function strategySpecial() {
   const st = ui.st;
@@ -5849,93 +5936,14 @@ function strategySpecial() {
   toast(s.special ? 'Выбери цель спецатаки' : 'Спецатака отменена');
 }
 
-function strategyAttack(from, to) {
-  const st = ui.st;
-  const s = st.strategy;
-  const p = st.board[from];
-  const target = st.board[to] || null;
-  if (!p) return;
-  const cost = strategyCost(STRAT[p.t].atk, st, from, p.c);
-  if (s.gold[p.c] < cost) { toast('Не хватает очков на атаку'); return; }
-  s.gold[p.c] -= cost;
-  s.moved[p.id] = true;
-  const special = s.special;
-  s.special = null;
-  let dmg = STRAT[p.t].dmg;
-  if (p.t === 'q') dmg = 35 + Math.floor(Math.random() * 21);
-  if (special === 'catapult') dmg = 30;
-  if (strategyOnEnemyHalf(st, from, p.c)) dmg = Math.round(dmg * 1.15);
-  const icon = special === 'catapult' ? '🪨' : special === 'rocket' ? '🚀' : p.t === 'n' ? '🐴' : p.t === 'b' ? '🔮' : p.t === 'k' ? '☢' : '•';
-  strategyProjectile(from, to, icon);
-  if (special === 'nuke') {
-    strategyNuke(to);
-    const targetsAoe = [];
-    for (let i = 0; i < st.board.length; i++) {
-      const q = st.board[i];
-      if (!q || q === target) continue;
-      const nx = i % st.W, ny = Math.floor(i / st.W);
-      const tx = to % st.W, ty = Math.floor(to / st.W);
-      if (Math.max(Math.abs(nx - tx), Math.abs(ny - ty)) <= 2) targetsAoe.push(i);
-    }
-    const nukeDied = target ? strategyDamage(target, 150) : false;
-    if (target) strategyFloat(to, '-150', 'red');
-    if (target && target.t === 'k') st.capturedKing = target.c;
-    if (nukeDied && st.board[to]) st.board[to] = null;
-    for (const i of targetsAoe) {
-      const q = st.board[i];
-      if (!q) continue;
-      if (q.c !== p.c) { strategyDamage(q, 60); strategyFloat(i, '-60', 'red'); }
-      strategyKnockback(i);
-    }
-    s.rad.push({ sq: to, until: performance.now() + 16000, last: performance.now() });
-  } else {
-    const died = target ? strategyDamage(target, dmg) : false;
-    strategyBurst(to, special === 'rocket' ? '#ff9d3b' : '#ffd45e');
-    if (target) strategyFloat(to, `-${dmg}`, 'red');
-
-    if (p.t === 'b') {
-      let side = 0;
-      for (const [dx, dy] of QUEEN_DIRS) {
-        if (side >= 2) break;
-        const nx = to % st.W + dx, ny = Math.floor(to / st.W) + dy;
-        if (!inside(st, nx, ny)) continue;
-        const cell = sqAt(st, nx, ny);
-        const q = st.board[cell];
-        if (q && q.c !== p.c) {
-          strategyProjectile(from, cell, '🔮');
-          strategyDamage(q, 4);
-          strategyFloat(cell, '-4', 'red');
-          side++;
-        }
-      }
-    }
-    if (p.t === 'n') {
-      const recoil = 3 + Math.floor(Math.random() * 3);
-      st.strategy.hp[p.id] = Math.max(0, strategyHp(p) - recoil);
-    }
-    if (special === 'rocket' && !died && target) strategyKnockback(to);
-    if (target && target.t === 'k') st.capturedKing = target.c;
-    if (died && st.board[to]) st.board[to] = null;
-  }
-  renderAll(false);
-  const res = updateStatus(st);
-  if (res) { finishGame(res); return; }
-  strategyEndTurn();
+function strategyAttack(from, to, aim = { x: .5, y: .5 }) {
+  return strategyPerformAction({ kind: 'attack', from, to, special: ui.strategy?.special || null, aim });
 }
 
 function strategyDamage(piece, dmg) {
-  const st = ui.st;
-  const s = st.strategy;
-  if (!piece) return false;
-  const shield = s.shield[piece.id] || 0;
-  if (shield > 0) {
-    const absorbed = Math.min(shield, dmg);
-    s.shield[piece.id] = shield - absorbed;
-    dmg -= absorbed;
-  }
-  const hp = Math.max(0, strategyHp(piece) - dmg);
-  s.hp[piece.id] = hp;
-  return hp <= 0;
+  const events=[]; const sq=ui.st.board.indexOf(piece);
+  const died=strategyDealDamage(ui.st,piece,dmg,events,sq);
+  strategyCleanup(ui.st,events); return died;
 }
 
 function strategyFloat(sq, text, cls) {
@@ -5952,336 +5960,216 @@ function strategyFloat(sq, text, cls) {
   setTimeout(() => el.remove(), 900);
 }
 
-function strategyUseSupport(kind, sq) {
-  const st = ui.st;
-  const s = st.strategy;
-  const p = st.board[sq];
-  if (!p || p.c !== st.turn) return;
-  if (kind === 'heal') {
-    const heal = 15 + Math.floor(Math.random() * 11);
-    const cost = Math.ceil(heal * 1.5);
-    if (s.gold[p.c] < cost) { toast('Не хватает очков на хилл'); return; }
-    s.gold[p.c] -= cost;
-    const max = strategyMaxHp(p);
-    s.hp[p.id] = Math.min(max, strategyHp(p) + heal);
-    strategyFloat(sq, `+${heal}`, 'green');
-  } else {
-    if (s.gold[p.c] < 50) { toast('Щит стоит 50 очков'); return; }
-    s.gold[p.c] -= 50;
-    s.shield[p.id] = (s.shield[p.id] || 0) + 30;
-    strategyFloat(sq, '🛡+30', 'blue');
-  }
-  s.hand[s.selected] = { kind: 'piece', type: p.t };
-  renderAll(false);
-}
+function strategyUseSupport(kind,sq) { return strategyPerformAction({kind:'support',support:kind,to:sq}); }
 
-function strategyPrepareAttack(color) {
-  const st = ui.st;
-  const s = st && st.strategy;
-  if (!s) return;
-  s.phase = 'attack';
-  st.turn = color;
-  s.attacker = null;
-  s.targets = new Set();
-  s.aim = new Set();
-  s.special = null;
-  if (s.hands[color]) s.hand = s.hands[color];
-  const sq = s.lastMoved[color];
-  if (sq != null) {
-    const p = st.board[sq];
-    if (p && p.c === color) strategySelectAttacker(sq);
-  }
-  renderAll(false);
-  if (ui.bot && st.turn === ui.bot.color) setTimeout(strategyBotAttack, 650);
-}
+function strategyPrepareAttack() { strategyRender(); strategyScheduleBot(); }
+/* Legacy commitMove integration must be replaced with strategyPerformAction.
+   Do not advance a second time if an old delayed callback is still queued. */
+function strategyAfterMove() { strategyRender(); strategyScheduleBot(); }
+function strategyEndTurn() { return strategyPerformAction({ kind: 'pass' }); }
+function strategyBotAttack() { return strategyMaybeBot(); }
 
-function strategyAfterMove(mover, to) {
-  const st = ui.st;
-  const s = st && st.strategy;
-  if (!s || st.status !== 'play') return;
-  mover = mover || st.turn;
-  if (to != null) s.lastMoved[mover] = to;
-  s.moveDone[mover] = true;
-  s.attacker = null;
-  s.targets = new Set();
-  s.aim = new Set();
-  s.special = null;
-  if (s.moveDone.w && s.moveDone.b) {
-    s.attackDone = { w: false, b: false };
-    strategyCheckMines();
-    strategyPrepareAttack('w');
-    return;
+/* ─────────── Clash Brawl: serializable deterministic action model ─────────── */
+function brawlEnsure(st) {
+  if (!st || !st.flags.clashBrawl) return null;
+  const s = st.brawl || (st.brawl = {});
+  if (!s.elixir) {
+    Object.assign(s, { version: 84, plies: s.plies || 0, seq: 0, phase: 'develop', maxByColor: { w: 16, b: 16 }, max: 16,
+      elixir: { w: 8, b: 8 }, income: { w: 3, b: 3 }, power: { w: 0, b: 0 },
+      decks: { w: brawlDeck(), b: brawlDeck() }, shieldTurns: { w: 0, b: 0 }, hp: { w: 50, b: 50 },
+      draft: null, stage: 'main', offer: [], prepared: -1, nextPiece: 1, ranked: false });
+    s.selected = null;
   }
-  st.turn = other(mover);
-  s.phase = 'move';
-  strategyIncome(st.turn);
-  strategyDrawHand(st.turn);
-  strategyCheckMines();
-  renderAll(false);
-  if (ui.bot && st.turn === ui.bot.color) setTimeout(maybeBotTurn, 500);
-}
-
-function strategyEndTurn() {
-  const st = ui.st;
-  const s = st && st.strategy;
-  if (!s || s.phase !== 'attack') return;
-  const mover = st.turn;
-  s.attackDone[mover] = true;
-  s.attacker = null;
-  s.targets = new Set();
-  s.aim = new Set();
-  s.special = null;
-  if (s.attackDone.w && s.attackDone.b) {
-    s.phase = 'move';
-    s.moveDone = { w: false, b: false };
-    s.attackDone = { w: false, b: false };
-    s.lastMoved = {};
-    st.turn = 'w';
-    strategyIncome('w');
-    strategyDrawHand('w');
-    strategyCheckMines();
-    renderAll(false);
-    if (ui.bot && st.turn === ui.bot.color) setTimeout(maybeBotTurn, 500);
-    return;
-  }
-  st.turn = other(mover);
-  strategyPrepareAttack(st.turn);
-}
-
-function strategyBotAttack() {
-  const st = ui.st;
-  const s = st && st.strategy;
-  if (!s || st.turn !== ui.bot.color || s.phase !== 'attack') return;
-  const options = [];
   for (let i = 0; i < st.board.length; i++) {
     const p = st.board[i];
-    if (!p || p.c !== st.turn) continue;
-    const data = strategyAttackData(p, i);
-    for (const t of data.targets) options.push([i, t]);
+    if (p && p.hp == null) st.board[i] = { ...p, hp: BRAWL_HP[p.t], maxHp: BRAWL_HP[p.t] };
   }
-  if (!options.length) { strategyEndTurn(); return; }
-  const [from, to] = options[Math.floor(Math.random() * options.length)];
-  strategyAttack(from, to);
+  if (s.prepared !== s.plies && !s.draft) brawlPrepareTurn(st);
+  return s;
 }
-
-/* ─────────── драфт Clash Brawl: баны, пики, случайные цвета ─────────── */
-
+function brawlPrepareTurn(st) {
+  const s = st.brawl;
+  s.prepared = s.plies;
+  s.selected = null;
+  s.offer = [];
+  if (stateRandom(st) < 0.5) {
+    const pool = Object.keys(BRAWL_UPGRADES);
+    while (s.offer.length < 3) s.offer.push(pool.splice(Math.floor(stateRandom(st) * pool.length), 1)[0]);
+  }
+  s.stage = s.offer.length ? 'upgrade' : 'main';
+  s.phase = s.plies < 6 ? 'develop' : 'battle';
+}
 function brawlDraftPool() {
-  return ['p', 'p', 'b', 'n', 'r', 'q'].map((type, i) => ({
-    id: type + '-' + i + '-' + Math.random().toString(36).slice(2, 6),
-    slot: type + '-' + i,
-    t: type,
-  }));
+  return ['p', 'p', 'b', 'n', 'r', 'q'].map((t, i) => ({ id: String(i), slot: String(i), t }));
 }
-
-function startBrawlDraft() {
-  const st = ui.st;
-  if (!st || !st.flags.clashBrawl) return;
-  const poolW = brawlDraftPool();
-  const poolB = brawlDraftPool();
-  const slots = ['p-0', 'p-1', 'b-2', 'n-3', 'r-4', 'q-5'];
-  const protectCount = 1 + (Math.random() < 0.5 ? 1 : 0);
-  const protectedTypes = new Set();
-  while (protectedTypes.size < protectCount) {
-    protectedTypes.add(slots[Math.floor(Math.random() * slots.length)]);
-  }
-  const botColor = ui.bot ? (Math.random() < 0.5 ? 'w' : 'b') : null;
-  ui.brawl.draft = {
-    pools: { w: poolW, b: poolB },
-    protected: protectedTypes,
-    bans: { w: [], b: [] },
-    picks: { w: [], b: [] },
-    step: 'ban',
-    turn: 'w',
-    botColor,
-    done: false,
-  };
-  ui.brawl.decks = { w: [], b: [] };
-  ui.gameLocked = true;
-  $('#brawlDraft').classList.remove('hidden');
-  renderBrawlDraft();
-  if (botColor === 'w') setTimeout(draftBotTurn, 500);
-}
-
-function draftColorName(color) {
-  const en = profile.language === 'en';
-  return color === 'w' ? (en ? 'White' : 'Белые') : (en ? 'Black' : 'Чёрные');
-}
-
-function renderBrawlDraft() {
-  const d = ui.brawl && ui.brawl.draft;
-  if (!d) return;
-  const en = profile.language === 'en';
-  const color = d.turn;
-  const pick = d.step === 'pick';
-  const status = pick
-    ? (en ? `${draftColorName(color)} picks cards: ${d.picks[color].length}/4` : `${draftColorName(color)} выбирает карты: ${d.picks[color].length}/4`)
-    : (en ? `${draftColorName(color)} bans one piece` : `${draftColorName(color)} запрещает одну фигуру`);
-  $('#bdTitle').textContent = en ? 'Clash Brawl draft' : 'Драфт Clash Brawl';
-  $('#bdStatus').textContent = status;
-  const prot = $('#bdProtected');
-  if (prot) {
-    const names = [...new Set([...d.protected].map((slot) => BRAWL_NAME[slot[0]]))];
-    prot.textContent = names.length
-      ? (en ? 'Protected this game: ' : 'Защищены в этой партии: ') + names.join(', ')
-      : '';
-  }
-  const pool = $('#bdPool');
-  if (pool) {
-    pool.innerHTML = '';
-    for (const card of d.pools[color]) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'brawl-card' + (d.protected.has(card.slot) ? ' protected' : '');
-      b.style.color = color === 'w' ? '#fff' : '#9fc6ff';
-      b.innerHTML = `<span class="brawl-card-cost">${BRAWL_COST[card.t]}</span>${pieceSvg(card.t, 'brawl-pc')}<span class="brawl-card-name">${BRAWL_NAME[card.t]}</span>`;
-      b.addEventListener('click', () => brawlDraftCard(card.id));
-      pool.appendChild(b);
-    }
-  }
-  const decks = $('#bdDecks');
-  if (decks) {
-    decks.innerHTML = ['w', 'b'].map((c) => `<span>${draftColorName(c)}: <b>${d.picks[c].map((t) => BRAWL_NAME[t]).join(' · ') || '—'}</b></span>`).join('');
-  }
-}
-
-function brawlDraftCard(id) {
-  const d = ui.brawl && ui.brawl.draft;
-  if (!d || d.done) return;
-  const color = d.turn;
-  const pool = d.pools[color];
-  const card = pool.find((c) => c.id === id);
-  if (!card) return;
-  if (d.step === 'ban') {
-    if (d.protected.has(card.slot)) {
-      toast(profile.language === 'en' ? 'This piece is protected this game' : 'Эту фигуру нельзя запретить в этой партии');
-      return;
-    }
-    d.pools[color] = pool.filter((c) => c.id !== id);
-    d.bans[color].push(card.t);
-    if (color === 'w') {
-      d.turn = 'b';
+function brawlActionFail(reason) { return { ok: false, reason }; }
+/** Pure DOM-free reducer. opts.color must be the authenticated actor on remote calls. */
+function brawlApplyAction(st, action, opts = {}) {
+  const s = brawlEnsure(st);
+  if (!s || !action || st.status !== 'play') return brawlActionFail('Партия недоступна');
+  const mover = s.draft ? s.draft.turn : st.turn;
+  if (opts.color && opts.color !== mover) return brawlActionFail('Сейчас очередь соперника');
+  if (action.seq != null && action.seq !== s.seq) return brawlActionFail('Устаревшее действие');
+  const result = { ok: true, action: { ...action }, mover, consumed: false, events: [], record: null };
+  if (action.type === 'draft-start') {
+    if (s.plies || s.draft || s.ranked) return brawlActionFail('Драфт доступен только до первого действия');
+    s.draft = { turn: st.turn, first: st.turn, step: 'ban', bans: { w: [], b: [] }, picks: { w: [], b: [] }, pools: { w: brawlDraftPool(), b: brawlDraftPool() } };
+    s.ranked = true;
+  } else if (action.type === 'draft-card') {
+    const d = s.draft;
+    if (!d) return brawlActionFail('Драфт не идёт');
+    const target = d.step === 'ban' ? other(mover) : mover;
+    const pool = d.pools[target];
+    const card = pool.find((c) => c.id === action.id);
+    if (!card) return brawlActionFail('Карта недоступна');
+    d.pools[target] = pool.filter((c) => c.id !== card.id);
+    if (d.step === 'ban') {
+      d.bans[target].push(card.t);
+      d.turn = other(mover); st.turn=d.turn;
+      if (d.turn === d.first) d.step = 'pick';
     } else {
-      d.step = 'pick';
-      d.turn = 'w';
+      d.picks[mover].push(card.t);
+      const next = other(mover);
+      d.turn = d.picks[next].length < 4 ? next : mover; st.turn=d.turn;
+      if (d.picks.w.length === 4 && d.picks.b.length === 4) {
+        s.decks = { w: d.picks.w.map((t) => ({ t, cost: BRAWL_COST[t] })), b: d.picks.b.map((t) => ({ t, cost: BRAWL_COST[t] })) };
+        s.draftResult = { bans: d.bans, picks: d.picks };
+        st.turn=d.first; s.draft = null;
+      }
     }
-    renderBrawlDraft();
-    if (d.botColor === d.turn) setTimeout(draftBotTurn, 450);
-    return;
-  }
-  const np = d.picks[color].filter((t) => t === 'n' || t === 'r' || t === 'q').length;
-  if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && np >= 2) {
-    toast(profile.language === 'en' ? 'Only two non-pawn cards are allowed' : 'Можно выбрать только две не-пешки');
-    return;
-  }
-  d.pools[color] = pool.filter((c) => c.id !== id);
-  d.picks[color].push(card.t);
-  if (d.picks[color].length >= 4) {
-    if (color === 'w') d.turn = 'b';
-    else finishBrawlDraft();
-  }
-  renderBrawlDraft();
-  if (d.done) return;
-  if (d.botColor === d.turn) setTimeout(draftBotTurn, 450);
-}
-
-function draftBotTurn() {
-  const d = ui.brawl && ui.brawl.draft;
-  if (!d || d.done || d.botColor !== d.turn) return;
-  const color = d.turn;
-  const pool = d.pools[color];
-  const valid = pool.filter((card) => {
-    if (d.step === 'ban') return !d.protected.has(card.slot);
-    const np = d.picks[color].filter((t) => t === 'n' || t === 'r' || t === 'q').length;
-    if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && np >= 2) return false;
-    return true;
-  });
-  if (!valid.length) return;
-  if (d.step === 'ban') {
-    brawlDraftCard(valid[Math.floor(Math.random() * valid.length)].id);
-    return;
-  }
-  // Бот собирает колоду сам: сначала дешёвая пешка, затем сильные карты.
-  const score = (card) => {
-    const picks = d.picks[color];
-    const pawns = picks.filter((t) => t === 'p').length;
-    const heavy = picks.filter((t) => t === 'n' || t === 'r' || t === 'q').length;
-    let value = Math.random() * 2;
-    if (card.t === 'p' && pawns < 2) value += 3;
-    if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && heavy < 2) value += 2.5;
-    if (card.t === 'q' && heavy < 2) value += 1.5;
-    return value;
-  };
-  const ranked = valid.map((card) => ({ card, score: score(card) }))
-    .sort((a, b) => b.score - a.score)
-    .map((x) => x.card);
-  const top = ranked.slice(0, Math.min(2, ranked.length));
-  brawlDraftCard(top[Math.floor(Math.random() * top.length)].id);
-}
-
-/** Бот выбирает карту для высадки по эликсиру и ситуации на доске. */
-function brawlBotPickCard(color, elixir) {
-  const cards = ui.brawl && ui.brawl.decks[color] || [];
-  const ready = cards.map((card, index) => ({ card, index })).filter((x) => x.card.cost <= elixir);
-  if (!ready.length) return -1;
-  const scored = ready.map((x) => {
-    let score = (BRAWL_POINTS[x.card.t] || 1) + x.card.cost * 0.35 + Math.random() * 2.2;
-    if (x.card.t === 'q' && elixir >= 6) score += 7;
-    if (x.card.t === 'r' && elixir >= 4) score += 3.5;
-    if (x.card.t === 'p' && elixir < 4) score += 2.5;
-    return { ...x, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  const top = scored.slice(0, Math.min(2, scored.length));
-  return top[Math.floor(Math.random() * top.length)].index;
-}
-
-function finishBrawlDraft() {
-  const d = ui.brawl && ui.brawl.draft;
-  if (!d) return;
-  d.done = true;
-  ui.brawl.decks.w = d.picks.w.map((t) => ({ t, cost: BRAWL_COST[t] }))
-    .sort((a, b) => a.cost - b.cost || a.t.localeCompare(b.t));
-  ui.brawl.decks.b = d.picks.b.map((t) => ({ t, cost: BRAWL_COST[t] }))
-    .sort((a, b) => a.cost - b.cost || a.t.localeCompare(b.t));
-  $('#brawlDraft').classList.add('hidden');
-  ui.brawl.draft = null;
-  ui.gameLocked = false;
-  if (d.botColor) {
-    ui.bot.color = d.botColor;
-    profile.side = other(d.botColor);
-    ui.orientation = other(d.botColor);
+  } else if (s.draft) return brawlActionFail('Сначала завершите баны и пики');
+  else if (action.type === 'upgrade') {
+    if (s.stage !== 'upgrade') return brawlActionFail('Сейчас нет выбора усиления');
+    if (action.kind != null) {
+      const u = BRAWL_UPGRADES[action.kind];
+      if (!u || !s.offer.includes(action.kind)) return brawlActionFail('Усиление не предложено');
+      if (s.elixir[mover] < u.cost) return brawlActionFail('Не хватает эликсира; можно отказаться');
+      if (action.kind === 'economy' && s.income[mover] >= 6) return brawlActionFail('Генератор уже максимальный');
+      if (action.kind === 'reserve' && s.maxByColor[mover] >= 28) return brawlActionFail('Резерв уже максимальный');
+      s.elixir[mover] -= u.cost;
+      if (action.kind === 'power') s.power[mover] += 2;
+      if (action.kind === 'heal') st.board = st.board.map((p) => p && p.c === mover ? { ...p, hp: Math.min(p.maxHp || BRAWL_HP[p.t], p.hp + 8) } : p);
+      if (action.kind === 'shield') s.shieldTurns[mover] = 1;
+      if (action.kind === 'economy') s.income[mover]++;
+      if (action.kind === 'reserve') s.maxByColor[mover] += 4;
+      result.events.push({ type: 'upgrade', kind: action.kind });
+    }
+    s.stage = 'main'; s.offer = [];
   } else {
-    ui.orientation = Math.random() < 0.5 ? 'w' : 'b';
+    if (s.stage !== 'main') return brawlActionFail('Выберите усиление или нажмите «Без усиления»');
+    if (action.type === 'deploy') {
+      const sq = action.to;
+      const card = s.decks[mover][action.card];
+      if (!Number.isInteger(sq) || sq < 0 || sq >= st.board.length || st.board[sq]) return brawlActionFail('Выберите свободную клетку');
+      if (!brawlDeploymentCell(st, sq, mover)) return brawlActionFail('Высадка только на своей половине');
+      if (!card || s.elixir[mover] < card.cost) return brawlActionFail('Не хватает эликсира на фигуру');
+      s.elixir[mover] -= card.cost;
+      let id = 840000000 + s.nextPiece++;
+      while (st.board.some((p) => p && p.id === id)) id = 840000000 + s.nextPiece++;
+      st.board[sq] = { t: card.t, c: mover, id, used: 0, hp: BRAWL_HP[card.t], maxHp: BRAWL_HP[card.t] };
+      result.record = { san: `${card.t.toUpperCase()}@${sqName(st, sq)}`, from: -1, to: sq, captured: false };
+      result.events.push({ type: 'deploy', to: sq, piece: { ...st.board[sq] } });
+    } else if (action.type === 'move') {
+      const match = legalMoves(st).find((m) => m.from === action.from && m.to === action.to && (m.promo || null) === (action.promo || null));
+      if (!match || match.ep) return brawlActionFail('Такое действие недоступно');
+      const p = st.board[match.from];
+      const victim = st.board[match.to];
+      const undo = applyMove(st, match);
+      result.record = { san: `${BRAWL_NAME[p.t]} ${sqName(st, match.from)}${victim ? ' ⚔ ' : ' → '}${sqName(st, match.to)}`, from: match.from, to: match.to, promo: match.promo || null, captured: !!victim && !(undo.damage && undo.damage.survived) };
+      result.events.push({ type: victim ? 'hit' : 'move', from: match.from, to: match.to, damage: undo.damage || null, victim: victim ? { ...victim } : null });
+    } else if (action.type === 'pass') {
+      s.elixir[mover] = Math.min(s.maxByColor[mover], s.elixir[mover] + 1);
+      result.record = { san: 'Пропуск (+1 эликсир)', from: -1, to: -1, captured: false };
+    } else return brawlActionFail('Неизвестное действие');
+    if (action.type !== 'move') { st.plySeq = (st.plySeq || 0) + 1; if (mover === 'b') st.full++; }
+    st.turn = other(mover); st.ep = -1; st.check = false;
+    s.plies++; s.phase = s.plies < 6 ? 'develop' : 'battle';
+    s.selected = null;
+    s.shieldTurns[st.turn] = 0;
+    s.elixir[st.turn] = Math.min(s.maxByColor[st.turn], s.elixir[st.turn] + s.income[st.turn]);
+    result.consumed = true;
+    result.record.color = mover;
+    updateStatus(st);
+    if (st.status === 'play') brawlPrepareTurn(st);
+    else { s.stage = 'over'; result.events.push({ type: 'king-explosion', color: other(st.result.winner) }); }
   }
-  if (Math.random() < 0.5) ui.st.turn = 'b';
-  renderAll(false);
-  renderPlayers();
-  renderBrawl();
-  toast(profile.language === 'en' ? 'Draft complete — fight!' : 'Драфт завершён — в бой!');
-  if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
+  s.seq++;
+  result.seq = s.seq;
+  result.ply = s.plies;
+  return result;
 }
-
-function autoBrawlDraft() {
-  const d = ui.brawl && ui.brawl.draft;
+function brawlDeploymentCell(st, sq, color) {
+  const y = Math.floor(sq / st.W), mid = Math.ceil(st.H / 2);
+  return color === 'w' ? y < mid : y >= mid;
+}
+function brawlBotAction(st) {
+  const s = brawlEnsure(st), color = s.draft ? s.draft.turn : st.turn;
+  if (s.draft) {
+    const d = s.draft, pool = d.pools[d.step === 'ban' ? other(color) : color];
+    const ranked = pool.slice().sort((a, b) => (d.step === 'ban' ? BRAWL_POINTS[b.t] - BRAWL_POINTS[a.t] : Math.abs(BRAWL_COST[a.t] - 6) - Math.abs(BRAWL_COST[b.t] - 6)));
+    return { type: 'draft-card', id: ranked[0].id };
+  }
+  if (s.stage === 'upgrade') {
+    const affordable = s.offer.filter((k) => s.elixir[color] >= BRAWL_UPGRADES[k].cost && (k !== 'economy' || s.income[color] < 6) && (k !== 'reserve' || s.maxByColor[color] < 28));
+    const kind = affordable.find((k) => k === 'economy') || (s.elixir[color] >= 10 ? affordable[0] : null);
+    return { type: 'upgrade', kind: kind || null };
+  }
+  const moves = legalMoves(st).filter((m) => !m.ep);
+  const captures = moves.filter((m) => st.board[m.to]).sort((a, b) => BRAWL_POINTS[st.board[b.to].t] - BRAWL_POINTS[st.board[a.to].t]);
+  if (captures.length) return { type: 'move', from: captures[0].from, to: captures[0].to, promo: captures[0].promo };
+  const ready = s.decks[color].map((card, i) => ({ card, i })).filter(({card}) => card.cost <= s.elixir[color]);
+  ready.sort((a,b) => b.card.cost - a.card.cost);
+  const cells = st.board.map((p,i) => !p && brawlDeploymentCell(st,i,color) ? i : -1).filter((i) => i >= 0);
+  cells.sort((a,b) => (color === 'w' ? b-a : a-b));
+  if (ready.length && cells.length && st.board.filter((p) => p && p.c === color).length < 15) return { type:'deploy', card:ready[0].i, to:cells[0] };
+  if (moves.length) {
+    moves.sort((a,b) => { const advance = (m) => (Math.floor(m.to/st.W)-Math.floor(m.from/st.W))*(color==='w'?1:-1); return advance(b)-advance(a); });
+    return { type:'move', from:moves[0].from,to:moves[0].to,promo:moves[0].promo };
+  }
+  return {type:'pass'};
+}
+function brawlSubmitAction(action, opts = {}) {
+  const st = ui.st;
+  if (!st || (!opts.remote && (ui.gameLocked || ui.paused || ui.away || ui.spectator || (ui.viewPly!==ui.frames.length-1&&!canBranchHere())))) return false;
+  const s = brawlEnsure(st), actor = s.draft ? s.draft.turn : st.turn;
+  if (!opts.remote && !opts.bot && ui.bot && actor === ui.bot.color) return false;
+  if (!opts.remote && ui.mode === 'online' && actor !== myColor()) return false;
+  const result = brawlApplyAction(st, action, {color:actor});
+  if (!result.ok) { toast(result.reason); return false; }
+  ui.brawl = st.brawl;
+  if (typeof ui.onBrawlAction === 'function') ui.onBrawlAction(result, opts);
+  else {
+    if (result.consumed) { ui.moves.push({...result.record, at:Date.now(),spent:0}); ui.frames.push(snap(st)); ui.viewPly=ui.frames.length-1; }
+    renderAll(false); renderBrawl(); renderBrawlDraft();
+    if (st.status === 'over') finishGame(st.result);
+    if (ui.bot && st.status === 'play') setTimeout(brawlRunBot,250);
+  }
+  return true;
+}
+function startBrawlDraft(explicit = false) { if (explicit) return brawlSubmitAction({type:'draft-start'}); renderBrawl(); return false; }
+function draftColorName(c) { return c === 'w' ? 'Белые' : 'Чёрные'; }
+function renderBrawlDraft() {
+  const s = ui.st && brawlEnsure(ui.st), d = s && s.draft, overlay = $('#brawlDraft');
+  if (!overlay) return;
+  overlay.classList.toggle('hidden',!d);
   if (!d) return;
-  let guard = 0;
-  while (ui.brawl && ui.brawl.draft && guard < 40) {
-    const color = ui.brawl.draft.turn;
-    const pool = ui.brawl.draft.pools[color];
-    if (!pool || !pool.length) break;
-    const valid = pool.filter((card) => {
-      if (ui.brawl.draft.step === 'ban') return !ui.brawl.draft.protected.has(card.slot);
-      const np = ui.brawl.draft.picks[color].filter((t) => t === 'n' || t === 'r' || t === 'q').length;
-      if ((card.t === 'n' || card.t === 'r' || card.t === 'q') && np >= 2) return false;
-      return true;
-    });
-    if (!valid.length) break;
-    brawlDraftCard(valid[0].id);
-    guard += 1;
+  $('#bdTitle').textContent = 'Ранговый драфт';
+  $('#bdStatus').textContent = `${draftColorName(d.turn)}: ${d.step==='ban'?'запретите одну карту СОПЕРНИКУ':'выберите карту СЕБЕ'} · пики ${d.picks[d.turn].length}/4`;
+  $('#bdProtected').textContent = 'Бан каждой стороны → поочерёдно 4 пика. Цвета и первый ход не меняются.';
+  const target = d.step==='ban'?other(d.turn):d.turn;
+  $('#bdPool').innerHTML='';
+  for (const c of d.pools[target]) {
+    const el=document.createElement('button');el.type='button';el.className='brawl-card';
+    el.innerHTML=`${pieceSvg(c.t)}<b>${BRAWL_NAME[c.t]}</b><small>${BRAWL_COST[c.t]} 💜 · ${BRAWL_HP[c.t]} HP</small>`;
+    el.onclick=()=>brawlDraftCard(c.id); $('#bdPool').appendChild(el);
   }
+  $('#bdDecks').textContent=['w','b'].map((c)=>`${draftColorName(c)}: ${d.picks[c].map((t)=>BRAWL_NAME[t]).join(', ')||'—'}`).join(' | ');
 }
-
+function brawlDraftCard(id) { return brawlSubmitAction({type:'draft-card',id}); }
+function draftBotTurn() { brawlRunBot(); }
+function brawlBotPickCard(color, elixir) { const s=ui.st&&brawlEnsure(ui.st); return s?s.decks[color].findIndex((c)=>c.cost<=elixir):-1; }
+function finishBrawlDraft() { renderBrawlDraft(); }
+function autoBrawlDraft() { for(let i=0;ui.st&&ui.st.brawl.draft&&i<12;i++){const r=brawlApplyAction(ui.st,brawlBotAction(ui.st));if(!r.ok)break;} ui.brawl=ui.st.brawl;renderAll(false);renderBrawl();renderBrawlDraft(); }
 
 /* ═══════════════════ 12.7. КОРОЛЕВСКАЯ БИТВА ═══════════════════ */
 
@@ -6585,428 +6473,79 @@ function royalShrink() {
 }
 
 function initBrawl(st) {
-  stopBrawl();
-  ui.brawl = {
-    elixir: { w: 5, b: 5 },
-    max: 10,
-    selected: null,
-    timer: 0,
-    decks: { w: brawlDeck(), b: brawlDeck() },
-    shieldUses: { w: 3, b: 3 },
-    shieldTurns: { w: 0, b: 0 },
-    banUsed: { w: false, b: false },
-    deckKey: null,
-    deckButtons: [],
-    lastCheck: null,
-  };
-  st.brawl = st.brawl || { hp: { w: 50, b: 50 }, shieldTurns: { w: 0, b: 0 } };
-  ui.brawl.hp = st.brawl.hp;
-  document.documentElement.dataset.brawl = '1';
-  const deckBox = $('#brawlDeck');
-  if (deckBox) deckBox.innerHTML = '';
-  $('#brawlPanel').classList.remove('hidden');
-  ui.timeMs = 0;
-  ui.clocks = { w: 0, b: 0 };
-  renderBrawl();
-  clearInterval(ui.brawl.timer);
-  ui.brawl.timer = setInterval(() => {
-    if (!ui.brawl || !ui.st || ui.st.status !== 'play' || ui.paused || ui.away) return;
-    ui.brawl.elixir.w = Math.min(ui.brawl.max, ui.brawl.elixir.w + 1);
-    ui.brawl.elixir.b = Math.min(ui.brawl.max, ui.brawl.elixir.b + 1);
-    renderBrawl();
-  }, 2500);
+  stopBrawl(); ui.brawl = brawlEnsure(st);
+  document.documentElement.dataset.brawl = '1'; $('#brawlPanel').classList.remove('hidden');
+  renderBrawl(); renderBrawlDraft();
 }
-
 function stopBrawl() {
-  if (ui.brawl && ui.brawl.timer) clearInterval(ui.brawl.timer);
-  const draftOverlay = $('#brawlDraft');
-  if (draftOverlay) draftOverlay.classList.add('hidden');
-  ui.brawl = null;
-  document.documentElement.dataset.brawl = '0';
-  const panel = $('#brawlPanel');
-  if (panel) panel.classList.add('hidden');
-  const layer = $('#brawlLayer');
-  if (layer) layer.innerHTML = '';
+  if (ui.brawl?.timer) clearInterval(ui.brawl.timer);
+  $('#brawlDraft')?.classList.add('hidden'); ui.brawl = null;
+  document.documentElement.dataset.brawl = '0'; $('#brawlPanel')?.classList.add('hidden');
+  const layer=$('#brawlLayer'); if(layer) layer.innerHTML='';
 }
-
-function brawlColor() {
-  if (ui.mode === 'online') return myColor();
-  return ui.st ? ui.st.turn : 'w';
-}
-
-function brawlCanDeploy(sq, color) {
-  const st = ui.st;
-  if (!st || !st.flags.clashBrawl || !ui.brawl || ui.brawl.selected === null) return false;
-  if (st.board[sq]) return false;
-  const y = Math.floor(sq / st.W);
-  const early = (st.full || 0) <= 6;
-  if (early) return color === 'w' ? y < 2 : y >= st.H - 2;
-  return color === 'w' ? y < 4 : y >= 4;
-}
-
+function brawlBindState(st=ui.st) { if(!st?.flags.clashBrawl)return; ui.brawl=brawlEnsure(st); ui.brawl.selected=null; }
+function brawlColor() { return ui.mode==='online' ? myColor() : (ui.st?.brawl?.draft?.turn || ui.st?.turn || 'w'); }
+function brawlCanAct() { const st=ui.st,s=st?.brawl,actor=s?.draft?.turn||st?.turn; return !!(s&&st.status==='play'&&!ui.paused&&!ui.away&&!ui.gameLocked&&!ui.spectator&&(ui.mode!=='online'||actor===myColor())&&(!ui.bot||actor!==ui.bot.color)); }
+function brawlCanDeploy(sq,color) { const st=ui.st,s=st?.brawl; return !!(s&&s.stage==='main'&&!s.draft&&s.selected!=null&&!st.board[sq]&&brawlDeploymentCell(st,sq,color)); }
 function renderBrawl() {
-  if (!ui.brawl || !ui.st) return;
-  const color = brawlColor();
-  const elixir = ui.brawl.elixir[color] || 0;
-  const fill = $('#brawlElixirFill');
-  const num = $('#brawlElixirNum');
-  if (fill) fill.style.width = (elixir / ui.brawl.max * 100) + '%';
-  if (num) num.textContent = `${elixir} / ${ui.brawl.max}`;
-  const shield = $('#brawlShield');
-  if (shield) {
-    shield.disabled = ui.st.status !== 'play' || ui.brawl.shieldUses[color] <= 0 || ui.brawl.shieldTurns[color] > 0;
-    const count = $('#brawlShieldCount');
-    if (count) count.textContent = String(ui.brawl.shieldUses[color]);
+  const st=ui.st,s=st?.brawl; if(!s)return; ui.brawl=s;
+  const color=brawlColor(),actor=s.draft?s.draft.turn:st.turn, can=brawlCanAct();
+  const panel=$('#brawlPanel'); if(!panel)return;
+  panel.classList.add('brawl-v84');
+  let guidance=panel.querySelector('.brawl-guidance');
+  if(!guidance){guidance=document.createElement('div');guidance.className='brawl-guidance';panel.prepend(guidance);}
+  guidance.textContent=`${actor==='w'?'Белые':'Чёрные'} · ${s.plies<6?`Развитие ${s.plies}/6 — граница закрыта`:'Бой — взорви короля'} · ${s.stage==='upgrade'?'Усиление или отказ → затем действие':'Поставь фигуру / походи / пропусти'}`;
+  const fill=$('#brawlElixirFill'),num=$('#brawlElixirNum'),max=s.maxByColor[color];
+  if(fill)fill.style.width=s.elixir[color]/max*100+'%';
+  if(num)num.textContent=`${s.elixir[color]}/${max} · доход +${s.income[color]}/свой ход`;
+  const shield=$('#brawlShield'); if(shield){shield.textContent='Пропустить (+1)';shield.disabled=!can||s.stage!=='main'||!!s.draft;}
+  const ban=$('#brawlBan');if(ban){ban.textContent='Баны и пики';ban.disabled=!can||s.plies>0||s.ranked;}
+  let upgrades=panel.querySelector('.brawl-upgrades');if(!upgrades){upgrades=document.createElement('div');upgrades.className='brawl-upgrades';panel.appendChild(upgrades);}
+  upgrades.innerHTML='';upgrades.classList.toggle('hidden',s.stage!=='upgrade'||!!s.draft);
+  if(s.stage==='upgrade'&&!s.draft){
+    for(const key of s.offer){const meta=BRAWL_UPGRADES[key],btn=document.createElement('button');btn.type='button';btn.innerHTML=`<b>${meta.name} · ${meta.cost} 💜</b><small>${meta.text}</small>`;btn.disabled=!can||s.elixir[color]<meta.cost;btn.onclick=()=>brawlSubmitAction({type:'upgrade',kind:key});upgrades.appendChild(btn);}
+    const skip=document.createElement('button');skip.type='button';skip.textContent='Без усиления → к действию';skip.disabled=!can;skip.onclick=()=>brawlSubmitAction({type:'upgrade',kind:null});upgrades.appendChild(skip);
   }
-  const banBtn = $('#brawlBan');
-  if (banBtn) banBtn.disabled = ui.st.status !== 'play' || ui.brawl.banUsed[color] || ui.moves.length > 0;
-  const deck = $('#brawlDeck');
-  if (deck) {
-    const cards = ui.brawl.decks[color] || [];
-    const deckKey = color + '|' + cards.map((c) => c.t).join(',');
-    if (ui.brawl.deckKey !== deckKey) {
-    ui.brawl.deckKey = deckKey;
-    ui.brawl.deckButtons = [];
-    deck.innerHTML = '';
-    cards.forEach((card, index) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'brawl-card' + (ui.brawl.selected === index ? ' selected' : '') + (elixir < card.cost ? ' disabled' : '');
-      b.style.color = color === 'w' ? '#ffffff' : '#9fc6ff';
-      b.style.setProperty('--i', String(index));
-      b.innerHTML = `<span class="brawl-card-cost">${card.cost}</span>${pieceSvg(card.t, 'brawl-pc')}<span class="brawl-card-name">${BRAWL_NAME[card.t]}</span>`;
-      b.addEventListener('pointerdown', (e) => brawlCardDragStart(e, index));
-      b.addEventListener('click', () => {
-        if (ui.brawl.suppressCardClick) { ui.brawl.suppressCardClick = false; return; }
-        if (ui.brawl.selected === index) ui.brawl.selected = null;
-        else ui.brawl.selected = index;
-        renderBrawl();
-        renderSquares();
-      });
-      deck.appendChild(b);
-      ui.brawl.deckButtons.push(b);
-    });
-    } else {
-      (ui.brawl.deckButtons || []).forEach((b, index) => {
-        const card = cards[index];
-        if (!card) return;
-        b.className = 'brawl-card' + (ui.brawl.selected === index ? ' selected' : '') + (elixir < card.cost ? ' disabled' : '');
-      });
-    }
-  }
-  renderBrawlHp();
+  const deck=$('#brawlDeck');if(deck){deck.innerHTML='';s.decks[color].forEach((card,index)=>{
+    const btn=document.createElement('button');btn.type='button';btn.className='brawl-card'+(s.selected===index?' selected':'');btn.innerHTML=`<span class="brawl-card-cost">${card.cost}💜</span>${pieceSvg(card.t)}<span class="brawl-card-name">${BRAWL_NAME[card.t]}</span><small>${BRAWL_HP[card.t]} HP · ${BRAWL_ATK[card.t]+s.power[color]} урон</small>`;
+    btn.disabled=!can||s.stage!=='main'||s.elixir[color]<card.cost||!!s.draft;
+    btn.onclick=()=>{if(s.suppressCardClick){s.suppressCardClick=false;return;}s.selected=s.selected===index?null:index;renderBrawl();renderSquares();};
+    btn.onpointerdown=e=>brawlCardDragStart(e,index);deck.appendChild(btn);
+  });}
+  renderBrawlHp();renderBrawlDraft();
 }
-
-function brawlFloat(sq, text, cls) {
-  const layer = $('#brawlLayer');
-  if (!layer || !ui.st) return;
-  const { dx, dy } = disp(ui.st, sq);
-  const el = document.createElement('span');
-  el.className = 'floating-dmg ' + (cls || 'red');
-  el.textContent = text;
-  el.style.left = ((dx + 0.5) * ui.sq) + 'px';
-  el.style.top = ((dy + 0.2) * ui.sq) + 'px';
-  layer.appendChild(el);
-  setTimeout(() => el.remove(), 1000);
-}
-
-function brawlHpBar(color, st) {
-  const king = findKing(st, color);
-  if (king < 0) return '';
-  const { dx, dy } = disp(st, king);
-  const left = ((dx + 0.5) * ui.sq) + 'px';
-  const top = (dy * ui.sq) + (dy === 0 ? ui.sq * 0.7 : 0) + 'px';
-  const shift = dy === 0 ? 'transform:none;' : '';
-  const hp = Math.max(0, ui.brawl.hp[color]);
-  return `<div class="king-hp-bar" style="left:${left};top:${top};${shift}"><div class="king-hp-fill" style="width:${hp / 50 * 100}%"></div></div>
-    <div class="king-hp-text" style="left:${left};top:${top};${shift}">${hp}/50</div>`;
-}
-
-function renderBrawlHp() {
-  const layer = $('#brawlLayer');
-  if (!layer || !ui.st) return;
-  layer.querySelectorAll('.king-hp-bar,.king-hp-text').forEach((el) => el.remove());
-  layer.insertAdjacentHTML('beforeend', brawlHpBar('w', ui.st) + brawlHpBar('b', ui.st));
-}
-
-function brawlTrail(from, to) {
-  const layer = $('#brawlLayer');
-  if (!layer || !ui.st) return;
-  const a = from >= 0 ? disp(ui.st, from) : disp(ui.st, to);
-  const b = disp(ui.st, to);
-  for (let i = 0; i <= 7; i++) {
-    const k = i / 7;
-    const dot = document.createElement('span');
-    dot.className = 'brawl-trail-dot';
-    dot.style.left = ((a.dx + (b.dx - a.dx) * k + 0.5) * ui.sq) + 'px';
-    dot.style.top = ((a.dy + (b.dy - a.dy) * k + 0.5) * ui.sq) + 'px';
-    layer.appendChild(dot);
-    setTimeout(() => dot.remove(), 600);
-  }
-}
-
-function brawlYeet(st, sq, piece) {
-  const layer = $('#brawlLayer');
-  if (!layer) return;
-  const { dx, dy } = disp(st, sq);
-  const el = document.createElement('span');
-  el.className = 'yeet-text';
-  el.textContent = 'YEET!';
-  el.style.left = ((dx + 0.5) * ui.sq) + 'px';
-  el.style.top = ((dy + 0.5) * ui.sq) + 'px';
-  layer.appendChild(el);
-  setTimeout(() => el.remove(), 900);
-  const fly = document.createElement('span');
-  fly.style.cssText = `position:absolute;left:${(dx + .1) * ui.sq}px;top:${(dy + .1) * ui.sq}px;width:${ui.sq * .8}px;height:${ui.sq * .8}px;transition:transform .8s ease,opacity .8s ease;`;
-  fly.innerHTML = pieceSvg(piece.t);
-  layer.appendChild(fly);
-  requestAnimationFrame(() => {
-    fly.style.transform = `translate(${ui.sq * 2.4}px, ${-ui.sq * 1.8}px) rotate(720deg) scale(0)`;
-    fly.style.opacity = '0';
-  });
-  setTimeout(() => fly.remove(), 900);
-}
-
-function openBrawlBan() {
-  if (!ui.brawl || !ui.st || ui.st.status !== 'play') return;
-  const color = brawlColor();
-  if (ui.brawl.banUsed[color] || ui.moves.length > 0) return;
-  const row = $('#brawlBanRow');
-  if (!row) return;
-  row.innerHTML = '';
-  for (const type of ['n', 'r', 'q']) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'brawl-card';
-    b.style.color = color === 'w' ? '#fff' : '#9fc6ff';
-    b.innerHTML = `<span class="brawl-card-cost">${BRAWL_COST[type]}</span>${pieceSvg(type, 'brawl-pc')}<span class="brawl-card-name">${BRAWL_NAME[type]}</span>`;
-    b.addEventListener('click', () => {
-      ui.brawl.decks[color][3] = { t: type, cost: BRAWL_COST[type] };
-      ui.brawl.banUsed[color] = true;
-      $('#brawlBanModal').classList.add('hidden');
-      renderBrawl();
-      toast('Колода: ' + BRAWL_NAME[type]);
-    });
-    row.appendChild(b);
-  }
-  $('#brawlBanModal').classList.remove('hidden');
-}
-
-function brawlCardDragStart(e, index) {
-  if (!ui.brawl || !ui.st || ui.st.status !== 'play') return;
-  const color = brawlColor();
-  const card = ui.brawl.decks[color][index];
-  if (!card || ui.brawl.elixir[color] < card.cost) return;
-  if (ui.brawl.selected === index) {
-    ui.brawl.selected = null;
-    renderBrawl();
-    renderSquares();
-    return;
-  }
-  ui.brawl.selected = index;
-  ui.brawl.suppressCardClick = true;
-  ui.brawl.drag = { index, x: e.clientX, y: e.clientY, active: false };
-  renderBrawl();
-  renderSquares();
-}
-
-function brawlCardDragMove(e) {
-  if (!ui.brawl || !ui.brawl.drag) return;
-  const d = ui.brawl.drag;
-  if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) d.active = true;
-}
-
-function brawlCardDragEnd(e) {
-  if (!ui.brawl || !ui.brawl.drag) return;
-  const d = ui.brawl.drag;
-  ui.brawl.drag = null;
-  if (!d.active) return;
-  const to = squareAtPoint(ui.st, e.clientX, e.clientY);
-  if (to >= 0 && brawlCanDeploy(to, brawlColor())) {
-    brawlDeploy(to);
-    return;
-  }
-}
-
-function brawlShieldAction() {
-  if (!ui.brawl || !ui.st || ui.st.status !== 'play') return;
-  const color = brawlColor();
-  if (ui.brawl.shieldUses[color] <= 0 || ui.brawl.shieldTurns[color] > 0) return;
-  ui.brawl.shieldUses[color] -= 1;
-  ui.brawl.shieldTurns[color] = 2;
-  ui.st.turn = other(color);
-  ui.st.full += 1;
-  ui.frames.push(snap(ui.st));
-  ui.viewPly = ui.frames.length - 1;
-  ui.moves.push({ san: 'щит', from: -1, to: -1, color, captured: false, spent: 0, at: Date.now() });
-  brawlTurnStart(ui.st.turn);
-  renderAll(false);
-  renderBrawl();
-  toast('Щит активен на 2 хода');
-}
-
-function brawlTurnStart(color) {
-  if (!ui.brawl) return;
-  if (ui.brawl.shieldTurns[color] > 0) ui.brawl.shieldTurns[color] -= 1;
-}
-
-function brawlBotTryDeploy() {
-  const st = ui.st;
-  if (!st || !ui.brawl || !ui.bot) return false;
-  if (ui.mode !== 'local' || st.status !== 'play' || st.turn !== ui.bot.color) return false;
-  // В 45% ходов бот сам выбирает карту и клетку высадки, а не просто двигает фигуру.
-  if (Math.random() >= 0.45) return false;
-  const color = st.turn;
-  const elixir = ui.brawl.elixir[color] || 0;
-  const cardIndex = brawlBotPickCard(color, elixir);
-  if (cardIndex < 0) return false;
-  ui.brawl.selected = cardIndex;
-  const cells = [];
-  for (let i = 0; i < st.board.length; i++) {
-    if (!st.board[i] && brawlCanDeploy(i, color)) cells.push(i);
-  }
-  if (!cells.length) { ui.brawl.selected = null; return false; }
-  // Ближе к центру высадка полезнее, но оставляем немного случайности.
-  const mid = (st.W - 1) / 2;
-  cells.sort((a, b) => Math.abs((a % st.W) - mid) - Math.abs((b % st.W) - mid));
-  const pool = cells.slice(0, Math.max(1, Math.ceil(cells.length / 2)));
-  const target = pool[Math.floor(Math.random() * pool.length)];
-  const done = brawlDeploy(target);
-  if (!done) ui.brawl.selected = null;
-  if (done) brawlFloat(target, 'БОТ', 'purple');
-  return done;
-}
-
-function brawlDeploy(sq) {
-  const st = ui.st;
-  if (!ui.brawl || !st || ui.brawl.selected === null) return false;
-  const color = st.turn;
-  if (!brawlCanDeploy(sq, color)) return false;
-  const card = ui.brawl.decks[color][ui.brawl.selected];
-  if (!card || ui.brawl.elixir[color] < card.cost) return false;
-  ui.brawl.elixir[color] -= card.cost;
-  const piece = { t: card.t, c: color, id: Date.now() + Math.floor(Math.random() * 1e6), used: 0 };
-  if (card.t === 'p' && Math.random() < 0.25) piece.gold = true;
-  st.board[sq] = piece;
-  st.ep = -1;
-  st.check = false;
-  st.full += 1;
-  ui.brawl.selected = null;
-  ui.moves.push({ san: `${card.t.toUpperCase()}@${sqName(st, sq)}`, from: -1, to: sq, color, captured: false, spent: 0, at: Date.now() });
-  st.turn = other(color);
-  brawlTurnStart(st.turn);
-  ui.frames.push(snap(st));
-  ui.viewPly = ui.frames.length - 1;
-  renderAll(false);
-  renderBrawl();
-  brawlTrail(-1, sq);
-  brawlFloat(sq, '+' + (piece.gold ? 'золотая!' : BRAWL_NAME[card.t]), piece.gold ? 'gold' : 'purple');
-  if (ui.bot && st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
-  return true;
-}
-
-function brawlCheckDamage(by, color) {
-  if (!ui.brawl || !ui.st) return;
-  if (ui.brawl.shieldTurns[color] > 0) {
-    brawlFloat(findKing(ui.st, color), 'ЩИТ', 'purple');
-    return;
-  }
-  const last = ui.brawl.lastCheck;
-  const repeat = last && last.by === by && (ui.moves.length - last.ply) <= 2;
-  const dmg = repeat ? 3 : 2;
-  ui.brawl.lastCheck = { by, ply: ui.moves.length };
-  ui.brawl.hp[color] = Math.max(0, ui.brawl.hp[color] - dmg);
-  const king = findKing(ui.st, color);
-  if (king >= 0) brawlFloat(king, '-' + dmg + ' HP', 'red');
-  renderBrawl();
-  brawlWin();
-}
-
-function brawlKingAttack(st, match) {
-  if (!ui.brawl) return false;
-  const p = st.board[match.from];
-  const king = st.board[match.to];
-  if (!p || !king || king.t !== 'k') return false;
-  const color = king.c;
-  const dx = Math.sign(fileOf(st, match.to) - fileOf(st, match.from));
-  const dy = Math.sign(rankOf(st, match.to) - rankOf(st, match.from));
-  let damage = 10;
-  const bx = fileOf(st, match.to) + dx;
-  const by = rankOf(st, match.to) + dy;
-  if (inside(st, bx, by)) {
-    const behind = sqAt(st, bx, by);
-    if (st.board[behind]) {
-      st.board[behind] = null;
-      brawlFloat(behind, 'SPLAT!', 'gold');
-    }
-    st.board[match.to] = null;
-    st.board[behind] = king;
-  } else {
-    damage += 5;
-  }
-  if (ui.brawl.shieldTurns[color] > 0) {
-    damage = 0;
-    brawlFloat(match.to, 'ЩИТ', 'purple');
-  }
-  if (damage > 0) {
-    ui.brawl.hp[color] = Math.max(0, ui.brawl.hp[color] - damage);
-    brawlFloat(match.to, '-' + damage + ' HP', 'red');
-  }
-  st.board[match.from] = null;
-  if (p.t === 'q') {
-    p.hp = (p.hp || 10) - 5;
-    if (p.hp > 0) st.board[match.from] = p;
-    else brawlFloat(match.from, 'ФЕРЗЬ ПАЛ', 'red');
-  } else {
-    brawlFloat(match.from, 'КАМИКАДЗЕ', 'red');
-  }
-  st.turn = other(p.c);
-  st.full += 1;
-  ui.moves.push({ san: 'KING HIT', from: match.from, to: match.to, color: p.c, captured: true, spent: 0, at: Date.now() });
-  ui.frames.push(snap(st));
-  ui.viewPly = ui.frames.length - 1;
-  brawlTurnStart(st.turn);
-  renderAll(false);
-  renderBrawl();
-  brawlTrail(match.from, match.to);
-  brawlWin();
-  return true;
-}
-
-function brawlWin() {
-  if (!ui.brawl || !ui.st || ui.st.status !== 'play') return false;
-  const hp = ui.brawl.hp;
-  if (hp.w > 0 && hp.b > 0) return false;
-  const winner = hp.w <= 0 ? 'b' : 'w';
-  const result = { winner, reason: 'brawl' };
-  ui.st.status = 'over';
-  ui.st.result = result;
-  renderAll(false);
-  finishGame(result);
-  return true;
-}
-
-function brawlCaptureFx(st, capInfo, match, mover) {
-  if (!ui.brawl || !capInfo.length) return;
-  const rook = st.board[match.to] && st.board[match.to].t === 'r';
-  for (const item of capInfo) {
-    brawlFloat(item.square, '+' + (BRAWL_POINTS[item.type] || 1), 'gold');
-    if (rook) {
-      const x = fileOf(st, item.square);
-      const y = rankOf(st, item.square);
-      if (x === 0 || x === st.W - 1 || y === 0 || y === st.H - 1) {
-        brawlYeet(st, item.square, item);
-      }
-    }
-  }
-  brawlTrail(match.from, match.to);
-}
+function brawlFloat(sq,text,cls) { if(sq<0||!ui.st)return;const layer=$('#brawlLayer');if(!layer)return;const {dx,dy}=disp(ui.st,sq),el=document.createElement('span');el.className='floating-dmg '+(cls||'red');el.textContent=text;el.style.left=(dx+.5)*ui.sq+'px';el.style.top=(dy+.3)*ui.sq+'px';layer.appendChild(el);setTimeout(()=>el.remove(),1000); }
+function renderBrawlHp() { const layer=$('#brawlLayer');if(!layer||!ui.st?.brawl)return;layer.querySelectorAll('.king-hp-bar,.king-hp-text').forEach(el=>el.remove()); }
+function brawlHpBar(){return '';}
+function brawlTrail(from,to) { if(to>=0)brawlFloat(to,'✨','purple'); }
+function brawlYeet(st,sq,piece) { v84FunnyCapture([{type:piece.t,color:piece.c,square:sq}]); }
+function openBrawlBan(){return startBrawlDraft(true);}
+function brawlShieldAction(){return brawlSubmitAction({type:'pass'});}
+function brawlTurnStart(){renderBrawl();}
+function brawlCardDragStart(e,index){if(e.button!==0||!brawlCanAct()||ui.brawl.stage!=='main')return;ui.brawl.drag={index,x:e.clientX,y:e.clientY,active:false,pointerId:e.pointerId};}
+function brawlCardDragMove(e){const d=ui.brawl?.drag;if(!d||e.pointerId!==d.pointerId)return;if(Math.hypot(e.clientX-d.x,e.clientY-d.y)>6){d.active=true;ui.brawl.selected=d.index;renderSquares();}}
+function brawlCardDragEnd(e){const s=ui.brawl,d=s?.drag;if(!d)return;s.drag=null;if(e.type==='pointercancel'||!d.active)return;s.suppressCardClick=true;const to=squareAtPoint(ui.st,e.clientX,e.clientY);if(to>=0)brawlDeploy(to);}
+function brawlDeploy(to){if(ui.brawl?.selected==null)return false;return brawlSubmitAction({type:'deploy',card:ui.brawl.selected,to});}
+function brawlRunBot(){const st=ui.st,s=st?.brawl,actor=s?.draft?.turn||st?.turn;if(!s||!ui.bot||actor!==ui.bot.color||st.status!=='play'||ui.paused||ui.away||ui.gameLocked)return false;return brawlSubmitAction(brawlBotAction(st),{bot:true});}
+function brawlMaybeBot(){return brawlRunBot();}
+function brawlBotTryDeploy(){return brawlRunBot();}
+function brawlCheckDamage(){}
+function brawlKingAttack(st,m){return brawlSubmitAction({type:'move',from:m.from,to:m.to,promo:m.promo});}
+function brawlAfterMove(){}
 
 function newGame(opts = {}) {
   if (ui.cancelDrag) ui.cancelDrag();
   stopBotWorker();
+  clearTimeout(ui.specialBotTimer);
+  stopImboGame();
   const pickedMode = modeById(opts.modeId || profile.modeId);
-  const mode = pickedMode.flags.randomPick ? randomRealMode() : pickedMode;
+  const selectedMs = opts.timeMs != null ? opts.timeMs : profile.timeMs;
+  const mode = pickedMode.flags.randomPick ? randomRealMode(selectedMs) : pickedMode;
+  if (!modeAllowedForTime(mode, selectedMs)) {
+    toast('Для «Клеш Бравла» и «Стратегии» выберите 3 минуты или больше, либо без ограничения.');
+    return false;
+  }
+  ui.mateMood = null;
   ui.modePick = opts.modePick || pickedMode.id;
   if (mode.flags.ultraBalance && ((opts.mode || 'local') !== 'online' || opts.bot)) {
     opts.bot = { ...(opts.bot || {}), level: 'gm', color: 'b' };
@@ -7089,13 +6628,16 @@ function newGame(opts = {}) {
   ui.timeMs = opts.timeMs != null ? opts.timeMs : profile.timeMs;
   ui.clocks = { w: ui.timeMs, b: ui.timeMs };
   if ($('#brawlBanModal')) $('#brawlBanModal').classList.add('hidden');
-  if (mode.flags.clashBrawl) { ui.timeMs = 0; ui.clocks = { w: 0, b: 0 }; initBrawl(ui.st); }
+  if (mode.flags.clashBrawl) initBrawl(ui.st);
   else if (mode.flags.royalBattle) royalInit(ui.st);
   else stopRoyal();
   if (mode.flags.zombie) zombieInit(ui.st);
   else stopZombie();
   if (mode.flags.strategy) strategyInit(ui.st);
   else stopStrategy();
+  ui.frames = [snap(ui.st)];
+  ui.initialState = captureNetworkState(ui.st);
+  if ((opts.mode || 'local') === 'online' && ui.online) ui.online.initialState = ui.initialState;
   ui.playerSide = playerSide;
   ui.orientation = opts.orientation || playerSide;
   if (mode.flags.inverted && (opts.mode || 'local') === 'local') ui.orientation = 'b';
@@ -7196,7 +6738,7 @@ function newGame(opts = {}) {
     if (ui.royal) startRoyalTimer();
     if (ui.bot && ui.st.turn === ui.bot.color) setTimeout(maybeBotTurn, 700);
   }
-  if (mode.flags.clashBrawl && (opts.mode || 'local') === 'local') startBrawlDraft();
+  if (mode.flags.clashBrawl) renderBrawl();
   updateNav();
 }
 
@@ -7218,11 +6760,11 @@ function renderMeta() {
   if (ui.bot && ui.bot.fake) bits.push('Возможно, не совсем игрок');
   if (st.flags.jester) bits.push('Шуты: 5 ходов');
   if (st.flags.boy) bits.push('Пацанчики берут две');
-  if (st.flags.annihilate) bits.push('аннигиляция: крест вокруг обоих полей');
+  if (st.flags.annihilate) bits.push('аннигиляция: квадраты 3×3 вокруг обоих полей');
   if (st.flags.ultraBalance) bits.push('ультрабаланс: бот-гроссмейстер');
-  if (st.flags.clashBrawl) bits.push(st.full <= 6 ? 'граница закрыта: 6 ходов' : 'граница открыта');
+  if (st.flags.clashBrawl) bits.push((st.brawl?.plies || 0) < 6 ? 'развитие: ' + (st.brawl?.plies || 0) + '/6 полуходов' : 'граница открыта');
   if (ui.online && ui.online.coop) bits.push(ui.online.role === 'host' ? 'друг ходит после бота' : 'ваш ход после бота');
-  if (st.flags.kingFree) bits.push('короля можно съесть');
+  if (st.flags.kingFree) bits.push(st.flags.strategy?'штаб уничтожается по HP':'короля можно съесть');
   if (st.flags.kingOnlyLose) bits.push('один король — поражение');
   $('#gameMeta').innerHTML = `<b>${escapeHtml(st.mode.name)}</b><br>${escapeHtml(bits.join(' · '))}`;
 }
@@ -7398,6 +6940,8 @@ function renderStatus() {
     return;
   }
   if (shell) shell.classList.toggle('check-alert', !!st.check && st.status === 'play');
+  if (st.flags.strategy) { el.textContent=`${st.strategy.phase==='move'?'Манёвры':'Атака'} ${st.turn==='w'?'белых':'чёрных'}`; sub.textContent=`Раунд ${st.strategy.round} · штаб с HP`; return; }
+  if (st.flags.clashBrawl) { el.textContent=`${st.turn==='w'?'Белые':'Чёрные'} · ${st.brawl.stage==='upgrade'?'усиление':st.brawl.plies<6?'развитие':'бой'}`;sub.textContent=st.brawl.plies<6?`${st.brawl.plies}/6 полуходов подготовки`:'Взорви короля';return; }
   if (ui.botThinking) {
     el.textContent = profile.language === 'en' ? 'Bot is thinking…' : 'Бот думает…';
   } else {
@@ -7565,6 +7109,8 @@ function showPromo(candidates, to) {
 function commitMove(m, opts = {}) {
   const st = ui.st;
   if (!st || st.status !== 'play') return false;
+  if (st.flags.strategy) return strategyPerformAction({kind:'move',from:m.from,to:m.to,promo:m.promo}, opts).ok;
+  if (st.flags.clashBrawl) return brawlSubmitAction({type:'move',from:m.from,to:m.to,promo:m.promo}, opts);
   const legal = legalMoves(st, st.turn);
   const match = legal.find((x) => x.from === m.from && x.to === m.to
     && (x.promo || null) === (m.promo || null)
@@ -7825,7 +7371,7 @@ function finishGame(res, opts = {}) {
     ui.st.status = 'over';
     ui.st.result = res;
     renderSquares();
-    if (res.reason === 'mate') mateKingWaves(ui.endSquare);
+    if (res.reason === 'mate') { renderPieces(false); mateKingWaves(ui.endSquare); if (typeof v84MateMood === 'function') v84MateMood(ui.endSquare); }
     const statusEl = $('#gameStatus');
     if (statusEl) statusEl.textContent = res.reason === 'mate' ? 'МАТ' : res.reason === 'stalemate' ? 'ПАТ' : res.reason === 'kingHp' ? 'КОРОЛЬ БЕЗ ХП' : 'КОРОЛЬ СНЯТ';
     const pause = kingEnd ? (profile.calm ? 600 : 1900) : 3000;
@@ -8385,7 +7931,7 @@ function updateNav() {
   if ($('#histPrev')) $('#histPrev').disabled = ui.viewPly <= 0;
   if ($('#histNext')) $('#histNext').disabled = ui.viewPly >= max;
   const info = $('#infoLine');
-  if (info) info.textContent = `${ui.moves.length} полуходов · ${ui.st ? ui.st.mode.name : ''}`;
+  if (info) info.textContent = `${ui.moves.length} ${specialMode() ? 'действий' : 'полуходов'} · ${ui.st ? ui.st.mode.name : ''}`;
 }
 
 function gotoPly(ply) {
@@ -8412,7 +7958,11 @@ function gotoPly(ply) {
     /* Локальная игра: назад — настоящий откат, но история не стирается.
        Вперёд можно вернуться; ветку обрежет только новый ход. */
     const f = ui.frames[target];
-    ui.st.board = f.board.slice();
+    if (f.specialState) {
+      const restored = restoreNetworkState(f.specialState);
+      if (restored) { ui.st = restored; bindSpecialState(restored); }
+    }
+    if(!f.specialState) ui.st.board = f.board.slice();
     ui.st.turn = f.turn;
     ui.st.ep = f.ep;
     ui.st.castling = { w: { ...f.castling.w }, b: { ...f.castling.b } };
@@ -8426,7 +7976,7 @@ function gotoPly(ply) {
     ui.st.lastCheckDamage = null;
     ui.st.status = f.status || 'play';
     ui.st.result = f.result ? { ...f.result } : null;
-    ui.st.full = Math.floor(target / 2) + 1;
+    if(!f.specialState) ui.st.full = Math.floor(target / 2) + 1;
     ui.viewPly = target;
     ui.lastMove = f.lastMove || null;
     ui.selected = -1;
@@ -8466,6 +8016,7 @@ function frameViewAt(ply) {
   if (!f) return viewState();
   return {
     ...ui.st,
+    ...(f.specialState ? restoreNetworkState(f.specialState) : {}),
     board: f.board,
     lastMove: f.lastMove || null,
     turn: f.turn,
@@ -8955,7 +8506,7 @@ class Relay {
 
 // Доставка ходов подтверждается приложением. Повтор использует тот же mid,
 // поэтому ни резервный канал, ни дубликат не могут сделать ход дважды.
-const NET_RELIABLE_TYPES = new Set(['move', 'start', 'end', 'chat', 'draw-offer', 'imbo-state', 'imbo-start', 'imbo-chat']);
+const NET_RELIABLE_TYPES = new Set(['move', 'mode-action', 'start', 'end', 'chat', 'reaction', 'draw-offer', 'imbo-action', 'imbo-sync-request', 'imbo-state', 'imbo-start', 'imbo-chat']);
 function netSessionState() {
   const session = ui.online;
   if (!session) return null;
@@ -9049,6 +8600,7 @@ function netPositionHash(st) {
     return Number(id != null) + ':' + Number(iq != null) + ':' + st.mv[side].cross + ':' + st.mv[side].checks;
   };
   value += '|' + available('w') + '|' + available('b');
+  if ((st.flags.strategy || st.flags.clashBrawl) && typeof specialRulesHash === 'function') value += '|' + specialRulesHash(st);
   let hash = 2166136261;
   for (let i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 16777619); }
   return (hash >>> 0).toString(36);
@@ -9074,10 +8626,13 @@ function restoreNetworkState(data) {
   copy.flags = mode.flags;
   copy.W = mode.W;
   copy.H = copy.board.length / copy.W;
+  if(specialMode(copy)&&!validSpecialState(copy))return null;
   return copy;
 }
 function requestNetworkSync(session = ui.online, reason = '') {
-  if (!session || ui.online !== session || !ui.st) return;
+  if (!session || ui.online !== session) return;
+  if(session.imbo){ if(session.role==='host')imboSyncState();else netPublish({t:'imbo-sync-request'}); return; }
+  if(!ui.st)return;
   const now = Date.now();
   if (now - (session.lastSyncRequest || 0) < 1800) return;
   session.lastSyncRequest = now;
@@ -9139,6 +8694,7 @@ function reconstructNetworkFrames(msg, finalState) {
   const frames = [snap(start)];
   const st = start;
   for (const recorded of msg.history) {
+    if(specialMode(st)) { const r=reduceSpecialAction(st,recorded.action); if(!r?.ok)return null; frames.push(snap(st,recorded.from>=0?{from:recorded.from,to:recorded.to}:null)); continue; }
     const legal = legalMoves(st, st.turn);
     const move = legal.find((m) => m.from === recorded.from && m.to === recorded.to
       && (m.promo || null) === (recorded.promo || null));
@@ -9167,6 +8723,7 @@ function applyNetworkSnapshot(msg, session) {
   if (!frames) return false; // некорректный журнал не подменяет историю
   if (ui.cancelDrag) ui.cancelDrag();
   ui.st = state;
+  bindSpecialState(state);
   idSeq = Math.max(idSeq, ...state.board.filter(Boolean).map((p) => p.id + 1));
   ui.moves = msg.history.map((m) => ({ ...m }));
   ui.frames = frames;
@@ -9199,7 +8756,7 @@ function startNetHeartbeat(session = ui.online) {
   session.lastPeerAt = Date.now();
   session.heartbeatTimer = setInterval(() => {
     if (ui.online !== session || !session.started) return;
-    netPublish({ t: 'ping', at: Date.now(), ply: ui.moves.length, hash: netPositionHash(ui.st) });
+    netPublish(session.imbo ? {t:'ping',at:Date.now(),imboSeq:ui.imbo?.seq||0} : { t: 'ping', at: Date.now(), ply: ui.moves.length, hash: netPositionHash(ui.st) });
     if (Date.now() - session.lastPeerAt > 30000) {
       session.connected = false;
       updateLinkDots();
@@ -9508,6 +9065,9 @@ async function startTrysteroRoom(code) {
 }
 
 async function createRoom() {
+  if (!modeAllowedForTime(modeById(profile.modeId), profile.timeMs)) {
+    toast('Для этого режима выберите от 3 минут или без ограничения.'); return false;
+  }
   if (ui.online && ui.online.code) leaveOnline(true);
   if (!ui.online) {
     ui.online = { code: '', role: 'host', sid: Math.random().toString(36).slice(2, 10) };
@@ -9701,6 +9261,17 @@ function handleNet(text) {
     session.seen.add(msg.mid);
     if (session.seen.size > 1200) session.seen.delete(session.seen.values().next().value);
   }
+  if (msg.t === 'mode-action') {
+    if (applyIncomingSpecial(msg, session)) acknowledgePacket(msg, session);
+    else if (msg.mid) session.seen.delete(msg.mid);
+    return;
+  }
+  if (msg.t === 'reaction') {
+    if (msg.sender !== 'spectator' && Date.now() - (session.lastReactionAt || 0) >= 1200) {
+      session.lastReactionAt = Date.now(); showGameReaction(msg.emoji, true);
+    }
+    acknowledgePacket(msg, session); return;
+  }
   if (msg.t === 'move') {
     if (applyIncomingMove(msg, session)) {
       acknowledgePacket(msg, session);
@@ -9713,6 +9284,7 @@ function handleNet(text) {
     if (session.role === 'host' && ui.st) publishOnlineStart({ recovery: true, target: msg.client || null, spectator: msg.sender === 'spectator' });
     return;
   }
+  if (ui.online.imbo && (msg.t==='ping'||msg.t==='pong')) { if(msg.t==='ping'){netPublish({t:'pong',at:msg.at,target:msg.client});if(msg.imboSeq>(ui.imbo?.seq||0))requestNetworkSync(session,'imbo-heartbeat');} return; }
   if (msg.t === 'ping') {
     netPublish({ t: 'pong', at: msg.at, ply: ui.moves.length, hash: netPositionHash(ui.st), target: msg.client || null });
     if (msg.ply > ui.moves.length || (msg.ply === ui.moves.length && msg.hash && msg.hash !== netPositionHash(ui.st))) requestNetworkSync(session, 'heartbeat');
@@ -9834,8 +9406,8 @@ function handleNet(text) {
       raceMs: msg.raceMs, seed: msg.seed, orientation: 'w', splash: false,
     });
     const initial = restoreNetworkState(msg.initial);
-    if (initial) { ui.st = initial; ui.frames = [snap(initial)]; }
-    for (const mv of (msg.moves || [])) commitMove(mv, { remote: true, silent: true });
+    if (initial) { ui.st = initial; bindSpecialState(initial); ui.initialState=captureNetworkState(initial); ui.frames = [snap(initial)]; }
+    for (const mv of (msg.history || msg.moves || [])) replayRecordedMove(mv);
     ui.replaying = false;
     startNetHeartbeat(session);
     ui.running = false;
@@ -9888,9 +9460,9 @@ function handleNet(text) {
         bot: msg.coop ? (msg.bot || { level: 'gm', color: 'b' }) : null,
       });
       const initial = restoreNetworkState(msg.initial);
-      if (initial) { ui.st = initial; ui.frames = [snap(initial)]; idSeq = Math.max(idSeq, ...initial.board.filter(Boolean).map((p) => p.id + 1)); }
+      if (initial) { ui.st = initial; bindSpecialState(initial); ui.initialState=captureNetworkState(initial); ui.frames = [snap(initial)]; idSeq = Math.max(idSeq, ...initial.board.filter(Boolean).map((p) => p.id + 1)); }
       if (msg.names) ui.names = msg.names;
-      for (const mv of (msg.moves || [])) commitMove(mv, { remote: true, silent: true });
+      for (const mv of (msg.history || msg.moves || [])) replayRecordedMove(mv);
       session.initialState = msg.initial || captureNetworkState(ui.st);
       if (msg.state && msg.hash && netPositionHash(ui.st) !== msg.hash) applyNetworkSnapshot(msg, session);
       if (Number.isFinite(msg.cw)) ui.clocks = { w: msg.cw, b: msg.cb };
@@ -10514,41 +10086,12 @@ function bindEvents() {
     if (!pop.classList.contains('hidden')) renderProfilePop();
   });
   if ($('#ppClose')) $('#ppClose').addEventListener('click', () => $('#profilePop').classList.add('hidden'));
-  if ($('#stratX2')) $('#stratX2').addEventListener('click', () => {
-    if (!ui.strategy) return;
-    ui.strategy.x2 = true;
-    toast('Следующий доход ×2');
-  });
-  if ($('#stratPlus')) $('#stratPlus').addEventListener('click', () => {
-    if (!ui.strategy) return;
-    const extra = Math.random() < 0.5 ? 2 : 1;
-    strategyAddGold(ui.st.turn, extra);
-    toast('+25% к доходу');
-    strategyRender();
-  });
-  if ($('#stratSkipMove')) $('#stratSkipMove').addEventListener('click', () => {
-    const s = ui.strategy;
-    if (!s || s.phase !== 'move') return;
-    const mover = ui.st.turn;
-    strategyAddGold(mover, 10);
-    toast('Ход пропущен: +10 очков');
-    strategyAfterMove(mover, null);
-  });
-  if ($('#stratSkipAttack')) $('#stratSkipAttack').addEventListener('click', () => {
-    if (!ui.strategy || ui.strategy.phase !== 'attack') return;
-    strategyEndTurn();
-  });
-  if ($('#stratSpecial')) $('#stratSpecial').addEventListener('click', strategySpecial);
-  if ($('#stratCap')) $('#stratCap').addEventListener('click', () => {
-    const s = ui.strategy;
-    if (!s) return;
-    if (s.cap >= 150) { toast('Лимит уже 150'); return; }
-    if (s.gold[ui.st.turn] < 20) { toast('Нужно 20 очков'); return; }
-    s.gold[ui.st.turn] -= 20;
-    s.cap = Math.min(150, s.cap + 5);
-    toast(`Лимит казны: ${s.cap}`);
-    strategyRender();
-  });
+  $('#stratX2')?.addEventListener('click',()=>strategyPerformAction({kind:'upgrade',upgrade:'income'}));
+  $('#stratPlus')?.addEventListener('click',()=>strategyPerformAction({kind:'upgrade',upgrade:'arsenal'}));
+  $('#stratCap')?.addEventListener('click',()=>strategyPerformAction({kind:'upgrade',upgrade:'logistics'}));
+  $('#stratSkipMove')?.addEventListener('click',()=>strategyPerformAction({kind:'pass'}));
+  $('#stratSkipAttack')?.addEventListener('click',()=>strategyPerformAction({kind:'pass'}));
+  $('#stratSpecial')?.addEventListener('click',strategySpecial);
 
   if ($('#homeAvatarBtn')) $('#homeAvatarBtn').addEventListener('click', () => {
     const pop = $('#profilePop');
@@ -10802,6 +10345,8 @@ function bindEvents() {
     if (ui.spectator || ui.reviewOnly) return;
     if (!sqEl || !ui.st || ui.st.status !== 'play' || ui.gameLocked || ui.paused || ui.imported) return;
     if (ui.viewPly !== ui.frames.length - 1 && !canBranchHere()) return;
+    if (ui.st.flags.clashBrawl && ui.st.brawl.stage !== 'main') return;
+    if (ui.st.flags.strategy && ui.st.strategy.phase === 'attack') return;
     if (ui.bot && ui.st.turn === ui.bot.color) return;
     if (!onlineCoachMayMove() || (ui.mode === 'online' && ui.st.turn !== myColor())) return;
     if (ui.mode !== 'local' && ui.st.turn !== myColor()) return;
@@ -10847,6 +10392,8 @@ function bindEvents() {
     if (ui.suppressClick) { ui.suppressClick = false; return; }
     const sq = e.target.closest('.sq');
     if (!sq) return;
+    const r = sq.getBoundingClientRect();
+    ui.aimPoint = {sq:Number(sq.dataset.sq), x:r.width ? (e.clientX-r.left)/r.width : .5, y:r.height ? (e.clientY-r.top)/r.height : .5};
     onSquareClick(Number(sq.dataset.sq));
   });
 
@@ -10899,6 +10446,7 @@ function boot() {
     }, 500);
   }
   bindEvents();
+  if (typeof setupV84 === 'function') setupV84();
   renderProfile();
   renderThemeRows();
   renderPieceRows();

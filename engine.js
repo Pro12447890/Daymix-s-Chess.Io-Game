@@ -349,7 +349,7 @@ const MODES = [
   },
   {
     id: 'clashBrawl', n: 58, name: 'Клеш Бравл', icon: '⚔️',
-    desc: 'Пародия на мобилки: 50 HP у короля, фиолетовый эликсир, вызов подкреплений из колоды, щиты и отталкивания!',
+    desc: 'Арена с HP у всех фигур. Первые 6 полуходов — развитие на своей половине; затем бой. Перед действием может выпасть выбор усиления. Эликсир копится по ходам, цель — взорвать короля.',
     W: 8, H: 8, flags: { clashBrawl: true, kingFree: true, customDeploy: true },
   },
   {
@@ -359,8 +359,8 @@ const MODES = [
   },
   {
     id: 'strategy', n: 61, name: 'Стратегия', icon: '⚔',
-    desc: 'Две страны, казна, HP и карточки. Ход — обычное движение, затем атака по подсвеченным клеткам. Побеждает тот, кто уничтожит короля.',
-    W: 8, H: 8, flags: { classic: true, strategy: true },
+    desc: 'Битва государств: белые и чёрные маневрируют, затем по очереди стреляют. Захват земли, доходные объекты, экономика и оружие. Король — штаб с HP; ядерка с 5-го раунда, один запуск на сторону.',
+    W: 8, H: 8, flags: { classic: true, strategy: true, kingFree: true },
   },
   {
     id: 'zombie', n: 60, name: 'Зомби-апокалипсис', icon: '🧟',
@@ -496,7 +496,9 @@ function setupBoard(st) {
       board[(H - 2) * W + x] = newPiece('p', 'b');
     }
     st.pawnStart = { w: [1], b: [H - 2] };
-    st.brawl = { hp: { w: 50, b: 50 }, shieldTurns: { w: 0, b: 0 } };
+    const health = { p: 12, n: 26, b: 22, r: 38, q: 46, k: 50 };
+    for (let i = 0; i < board.length; i++) if (board[i]) board[i] = { ...board[i], hp: health[board[i].t], maxHp: health[board[i].t] };
+    st.brawl = { version: 84, plies: 0, phase: 'develop', hp: { w: 50, b: 50 }, shieldTurns: { w: 0, b: 0 } };
     return;
   }
 
@@ -1019,7 +1021,7 @@ function genPseudo(st, color) {
           if (!isBlocked(st, t) && !board[t]) out.push({ from: sq, to: t });
         }
       }
-      if (st.flags.classic || st.flags.fischer) addCastling(st, color, out, sq);
+      if (!st.flags.strategy && (st.flags.classic || st.flags.fischer)) addCastling(st, color, out, sq);
       if (st.flags.crossCastle && st.mv[color].cross < st.flags.crossCastle) {
         for (let t = 0; t < board.length; t++) {
           const q = board[t];
@@ -1030,7 +1032,7 @@ function genPseudo(st, color) {
       continue;
     }
   }
-  if (st.flags.clashBrawl && st.full <= 6) {
+  if (st.flags.clashBrawl && ((st.brawl && st.brawl.plies) || 0) < 6) {
     // Первые шесть ходов граница непробиваема: через неё нельзя ни пройти, ни атаковать.
     const mid = Math.ceil(st.H / 2);
     return out.filter((m) => (color === 'w' ? rankOf(st, m.to) < mid : rankOf(st, m.to) >= mid));
@@ -1260,7 +1262,21 @@ function applyMove(st, m) {
     /* Режимы урона: атака снимает ХП, а не всегда съедает фигуру. */
     const kingNormal = p.t === 'k' && !st.flags.damageKing;
     const victimKingNormal = victim && victim.t === 'k' && !st.flags.damageKing;
-    if (victim && (st.flags.damage || st.flags.damageKing) && victim.c !== p.c && !kingNormal && !victimKingNormal) {
+    if (victim && st.flags.clashBrawl && victim.c !== p.c) {
+      const meta = { p: 6, n: 12, b: 10, r: 16, q: 20, k: 12 };
+      const boost = st.brawl && st.brawl.power ? st.brawl.power[p.c] || 0 : 0;
+      const shield = st.brawl && st.brawl.shieldTurns && st.brawl.shieldTurns[victim.c] > 0;
+      const dmg = shield ? Math.max(1, Math.ceil((meta[p.t] + boost) / 2)) : meta[p.t] + boost;
+      const hp = Math.max(0, (victim.hp == null ? 12 : victim.hp) - dmg);
+      undo.damage = damageHit = { square: m.to, dmg, type: victim.t, color: victim.c, survived: hp > 0, hp };
+      if (hp > 0) {
+        undo.damaged = { sq: m.to, piece: victim };
+        board[m.to] = { ...victim, hp };
+      } else {
+        const v = remove(m.to);
+        if (v) capturedColor = v.c;
+      }
+    } else if (victim && (st.flags.damage || st.flags.damageKing) && victim.c !== p.c && !kingNormal && !victimKingNormal) {
       const atkHp = p.hp != null ? p.hp : damageMaxHp(p.t, st.flags);
       const defHp = victim.hp != null ? victim.hp : damageMaxHp(victim.t, st.flags);
       const dmg = Math.max(1, atkHp);
@@ -1286,7 +1302,7 @@ function applyMove(st, m) {
       if (v) capturedColor = v.c;
     }
     let placed = p;
-    if (damageHit && damageHit.survived) placed = null;
+    if (damageHit && damageHit.survived) { placed = null; if (st.flags.clashBrawl) board[m.from] = p; }
     else if (m.vanish) placed = null;
     else if (m.promo) {
       placed = { ...p, t: m.promo, used: 0 };
@@ -1294,6 +1310,7 @@ function applyMove(st, m) {
         placed.maxHp = damageMaxHp(m.promo, st.flags);
         placed.hp = placed.maxHp;
       }
+      if (st.flags.clashBrawl) { const hp = {p:12,b:22,n:26,r:38,q:46,k:50}[m.promo]; placed.hp=hp; placed.maxHp=hp; }
       if (st.flags.zombie) placed.special = p.c === 'w' ? 'redqueen' : 'bluequeen';
     }
     else if ((m.kingStep && st.flags.bishopKing) || p.t === 'j') placed = { ...p, used: p.used + 1 };
@@ -1449,6 +1466,7 @@ function guardKingCapture(st, moves) {
 
 function legalMoves(st, color = st.turn) {
   let pseudo = genPseudo(st, color);
+  if (st.flags.strategy) return pseudo.filter(m => !m.ep && !m.castle);
   if (st.flags.antichess) {
     const caps = pseudo.filter((m) => m.capture != null || m.ep || (m.caps && m.caps.length));
     if (caps.length) pseudo = caps;
@@ -1563,6 +1581,13 @@ function updateDamageKingStatus(st) {
 function updateStatus(st) {
   const countPieces = (color) => st.board.filter((q) => q && q.c === color).length;
   if (st.flags.damageKing) return updateDamageKingStatus(st);
+  if (st.flags.strategy) {
+    st.check = false; st.checkSide = {w:false,b:false};
+    for (let i=0;i<st.board.length;i++) { const p=st.board[i]; if(p && st.strategy && st.strategy.hp[p.id] <= 0) st.board[i]=null; }
+    const w=findKing(st,'w')>=0, b=findKing(st,'b')>=0;
+    if(!w || !b) { st.status='over'; st.result={winner:w===b?null:(w?'w':'b'),reason:'king'}; return st.result; }
+    st.status='play'; st.result=null; st.capturedKing=null; return null;
+  }
   if (st.flags.captureAll) {
     const wLeft = countPieces('w');
     const bLeft = countPieces('b');
@@ -1575,6 +1600,12 @@ function updateStatus(st) {
   }
   if (st.flags.captureRace) return null;
   if (st.flags.clashBrawl) {
+    if (st.brawl) {
+      for (const color of ['w', 'b']) {
+        const king = st.board.find((p) => p && p.c === color && p.t === 'k');
+        st.brawl.hp[color] = king ? Math.max(0, king.hp == null ? 50 : king.hp) : 0;
+      }
+    }
     if (st.brawl && (st.brawl.hp.w <= 0 || st.brawl.hp.b <= 0)) {
       st.status = 'over';
       st.result = { winner: st.brawl.hp.w <= 0 ? 'b' : 'w', reason: 'brawl' };
@@ -1930,11 +1961,9 @@ function variantCheckersPieceName(p) {
   return p.king ? 'дамка' : 'шашка';
 }
 
-function variantCheckersCaptureDirs(p, variant) {
-  if (p.king) return VARIANT_ALL_DIRS;
-  // Международные шашки: простая шашка бьёт назад, но ходит только вперёд.
-  if (variant === 'intl') return VARIANT_ALL_DIRS;
-  return p.c === 'w' ? [[-1, -1], [1, -1]] : [[-1, 1], [1, 1]];
+function variantCheckersCaptureDirs() {
+  // И русская, и международная простая шашка бьют в обе стороны.
+  return VARIANT_ALL_DIRS;
 }
 
 function variantCheckersStepDirs(p) {
@@ -1989,17 +2018,48 @@ function variantCheckersMovesFrom(st, from) {
   return out;
 }
 
+function variantCheckersCaptureRoutes(st, from, removed = []) {
+  const piece = st.board[from];
+  if (!piece) return [];
+  const blocked = new Set(removed);
+  const captures = variantCheckersMovesFrom(st, from).filter((m) => m.cap >= 0 && !blocked.has(m.cap));
+  const routes = [];
+  for (const move of captures) {
+    const next = { ...st, board: st.board.map((p) => p ? { ...p } : null) };
+    next.board[from] = null;
+    next.board[move.to] = { ...piece };
+    // Побитые шашки остаются препятствиями до окончания всей серии (турецкий удар).
+    if (st.variant === 'ru' && Math.floor(move.to / st.W) === (piece.c === 'w' ? 0 : st.H - 1)) next.board[move.to].king = true;
+    const tail = variantCheckersCaptureRoutes(next, move.to, [...removed, move.cap]);
+    if (tail.length) for (const route of tail) routes.push([move, ...route]);
+    else routes.push([move]);
+  }
+  return routes;
+}
+
 function variantCheckersAllMoves(st, color = st.turn) {
-  const caps = [];
+  // Во время серии разрешено ходить только той же шашкой по оставшимся маршрутам.
+  if (st.captureRoutes && st.captureRoutes.length) {
+    const unique = new Map();
+    for (const route of st.captureRoutes) if (route.length) unique.set(route[0].from + ':' + route[0].to, route[0]);
+    return [...unique.values()];
+  }
+  let routes = [];
   const quiet = [];
   for (let i = 0; i < st.board.length; i++) {
     const p = st.board[i];
     if (!p || p.c !== color) continue;
-    for (const m of variantCheckersMovesFrom(st, i)) {
-      (m.cap >= 0 ? caps : quiet).push(m);
-    }
+    routes.push(...variantCheckersCaptureRoutes(st, i));
+    quiet.push(...variantCheckersMovesFrom(st, i).filter((m) => m.cap < 0));
   }
-  return caps.length ? caps : quiet;
+  if (!routes.length) return quiet;
+  if (st.variant === 'intl') {
+    const max = Math.max(...routes.map((route) => route.length));
+    routes = routes.filter((route) => route.length === max);
+  }
+  const unique = new Map();
+  for (const route of routes) unique.set(route[0].from + ':' + route[0].to, route[0]);
+  return [...unique.values()];
 }
 
 function variantCheckersApply(st, from, to) {
@@ -2011,31 +2071,35 @@ function variantCheckersApply(st, from, to) {
   const wasCapture = move.cap >= 0;
   const wasKing = piece.king;
 
-  st.board[from] = null;
-  if (wasCapture) st.board[move.cap] = null;
-  st.board[to] = piece;
-
-  if (!piece.king) {
-    const last = piece.c === 'w' ? 0 : st.H - 1;
-    if (Math.floor(to / st.W) === last) piece.king = true;
+  let routes = st.captureRoutes;
+  if (wasCapture && (!routes || !routes.length)) {
+    routes = [];
+    for (let i = 0; i < st.board.length; i++) if (st.board[i] && st.board[i].c === st.turn) routes.push(...variantCheckersCaptureRoutes(st, i));
+    if (st.variant === 'intl') {
+      const max = Math.max(...routes.map((route) => route.length));
+      routes = routes.filter((route) => route.length === max);
+    }
   }
+  st.captureRoutes = wasCapture ? routes.filter((route) => route[0].from === from && route[0].to === to).map((route) => route.slice(1)).filter((route) => route.length) : [];
+  st.board[from] = null;
+  st.board[to] = piece;
+  st.pendingCaptures = st.pendingCaptures || [];
+  if (wasCapture) st.pendingCaptures.push(move.cap);
+  const last = piece.c === 'w' ? 0 : st.H - 1;
+  if (!piece.king && (st.variant === 'ru' || !st.captureRoutes.length) && Math.floor(to / st.W) === last) piece.king = true;
   const promo = !wasKing && piece.king;
-
   st.ply += 1;
-  st.idle = wasCapture ? 0 : st.idle + 1;
+  st.idle = wasCapture || !wasKing ? 0 : st.idle + 1;
   st.selected = to;
   st.legal = [];
   st.lastMove = { from, to, cap: wasCapture ? move.cap : -1, color: piece.c, promo };
-
-  const further = wasCapture
-    ? variantCheckersMovesFrom(st, to).filter((m) => m.cap >= 0)
-    : [];
-  if (further.length) {
-    st.legal = further;
-    st.text = 'Продолжайте взятие';
-    return { ok: true, chain: true, at: to, from, to, captures: wasCapture ? [move.cap] : [], promo };
+  if (st.captureRoutes.length) {
+    st.legal = variantCheckersAllMoves(st);
+    st.text = 'Продолжайте взятие той же шашкой';
+    return { ok: true, chain: true, at: to, from, to, captures: [move.cap], promo };
   }
-
+  for (const cap of st.pendingCaptures) st.board[cap] = null;
+  st.pendingCaptures = [];
   st.selected = null;
   st.turn = other(st.turn);
   variantCheckersStatus(st);
@@ -2060,9 +2124,9 @@ function variantCheckersStatus(st) {
       st.over = true;
       st.winner = other(st.turn);
       st.text = `${variantColorName(st.turn)} без ходов — победа ${variantColorName(st.winner).toLowerCase()}`;
-    } else if (st.idle >= 30) {
+    } else if (st.idle >= (st.variant === 'intl' ? 50 : 30) && st.board.filter(Boolean).every((p) => p.king)) {
       st.over = true; st.winner = null;
-      st.text = 'Ничья: 15 ходов подряд без взятия';
+      st.text = `Ничья: ${st.variant === 'intl' ? 25 : 15} ходов каждой стороны только дамками без взятия`;
     } else {
       const mustCapture = moves.some((m) => m.cap >= 0);
       st.text = `${variantColorName(st.turn)}${mustCapture ? ' · взятие обязательно' : ''} · ${st.variant === 'intl' ? 'международные' : 'русские'}`;
@@ -2135,7 +2199,7 @@ function variantBgMoveFor(st, color, from, die) {
   return null;
 }
 
-function variantBackgammonLegal(st) {
+function variantBackgammonRawLegal(st) {
   const out = [];
   if (st.over || !st.moves.length) return out;
   const color = st.turn;
@@ -2157,6 +2221,45 @@ function variantBackgammonLegal(st) {
     }
   }
   return out;
+}
+
+function variantBgSimulate(st, move) {
+  const next = { ...st, points: st.points.slice(), bar: { ...st.bar }, off: { ...st.off }, moves: st.moves.slice() };
+  const color = st.turn, sign = bgSign(color);
+  if (move.from === -1) next.bar[color]--;
+  else next.points[move.from] -= sign;
+  if (move.off) next.off[color]++;
+  else {
+    if (bgEnemy(next.points[move.to], color)) { next.points[move.to] = 0; next.bar[other(color)]++; }
+    next.points[move.to] += sign;
+  }
+  next.moves.splice(next.moves.indexOf(move.die), 1);
+  return next;
+}
+
+function variantBgMaxUsage(st, memo = new Map()) {
+  if (!st.moves.length) return 0;
+  const key = st.points.join(',') + '|' + st.bar.w + ',' + st.bar.b + '|' + st.moves.join(',');
+  if (memo.has(key)) return memo.get(key);
+  let best = 0;
+  for (const move of variantBackgammonRawLegal(st)) best = Math.max(best, 1 + variantBgMaxUsage(variantBgSimulate(st, move), memo));
+  memo.set(key, best);
+  return best;
+}
+
+function variantBackgammonLegal(st) {
+  const raw = variantBackgammonRawLegal(st);
+  if (!raw.length) return [];
+  const memo = new Map();
+  const usage = raw.map((move) => 1 + variantBgMaxUsage(variantBgSimulate(st, move), memo));
+  const max = Math.max(...usage);
+  let legal = raw.filter((move, i) => usage[i] === max);
+  // Если можно использовать лишь одну из разных костей, обязательна старшая.
+  if (max === 1 && new Set(st.moves).size > 1) {
+    const high = Math.max(...legal.map((move) => move.die));
+    legal = legal.filter((move) => move.die === high);
+  }
+  return legal.filter((move, i) => legal.findIndex((m) => m.from === move.from && m.to === move.to && m.die === move.die) === i);
 }
 
 function variantBackgammonTargets(st, from) {
@@ -2291,9 +2394,10 @@ function variantDodgeballCreate(opts = {}) {
   const st = {
     engine: 'variant', kind: 'dodgeball', variant,
     title: 'Вышибалы', W, H, r: big ? 15 : 13,
-    discs: [], count: Math.min(12, count),
+    discs: [], count: Math.max(4, Math.min(variant === 'row' || variant === 'rand' ? 12 : 16, count)),
     turn: 'w', phase: variant === 'row' ? 'setup' : 'aim',
-    selected: null, drag: null, setupSel: null, deadline: Date.now() + 10000,
+    selected: null, drag: null, setupSel: null, aimLimitMs: opts.aimLimitMs || 0, deadline: 0,
+    accumulator: 0, simTime: 0, shotAt: 0, restAt: null,
     settleUntil: 0, moves: 0, over: false, winner: null, text: '',
     params: [variant], raf: 0,
   };
@@ -2334,7 +2438,7 @@ function variantDodgeballSwap(st, a, b) {
 function variantDodgeballReady(st, now = Date.now()) {
   if (st.phase !== 'setup') return false;
   st.phase = 'aim';
-  st.deadline = now + 10000;
+  st.deadline = st.aimLimitMs ? now + st.aimLimitMs : 0;
   st.selected = null;
   variantDodgeballStatus(st, now);
   return true;
@@ -2345,10 +2449,16 @@ function variantDodgeballShoot(st, index, dx, dy, now = Date.now()) {
   if (!disc || !disc.alive || disc.team !== st.turn) return false;
   if (st.phase !== 'aim' || st.over) return false;
   if (Math.hypot(dx, dy) < 12) return false;
-  disc.vx = Math.max(-18, Math.min(18, dx * 0.22));
-  disc.vy = Math.max(-18, Math.min(18, dy * 0.22));
+  if (![dx, dy, now].every(Number.isFinite)) return false;
+  // Скорость — пиксели в секунду, а не пиксели за кадр.
+  disc.vx = Math.max(-1100, Math.min(1100, dx * 4));
+  disc.vy = Math.max(-1100, Math.min(1100, dy * 4));
   st.phase = 'settle';
-  st.settleUntil = now + 3000;
+  st.simTime = 0;
+  st.accumulator = 0;
+  st.shotAt = now;
+  st.restAt = null;
+  st.settleUntil = 2000;
   st.moves += 1;
   st.selected = index;
   variantDodgeballStatus(st, now);
@@ -2357,14 +2467,36 @@ function variantDodgeballShoot(st, index, dx, dy, now = Date.now()) {
 
 function variantDodgeballStep(st, dt, now = Date.now()) {
   if (st.over || st.phase === 'setup') return st;
+  if (!Number.isFinite(dt) || dt <= 0) return st;
+  // Fixed 120 Hz simulation; rendering at 30/60/144 Hz cannot change trajectories.
+  st.accumulator = (st.accumulator || 0) + Math.min(dt, 2);
+  const step = 1 / 120;
+  while (st.accumulator + 1e-10 >= step) {
+    st.accumulator -= step;
+    st.simTime = (st.simTime || 0) + step * 1000;
+    variantDodgeballPhysics(st, step, now);
+    if (st.over || st.phase !== 'settle') { st.accumulator = 0; break; }
+  }
+  if (st.phase === 'aim' && st.deadline && now >= st.deadline) {
+    st.turn = other(st.turn);
+    st.deadline = st.aimLimitMs ? now + st.aimLimitMs : 0;
+    st.selected = null;
+  }
+  return st;
+}
+
+function variantDodgeballPhysics(st, dt, now) {
+  if (st.phase !== 'settle') return;
   const { W, H } = st;
 
   for (const d of st.discs) {
     if (!d.alive) continue;
     d.x += d.vx * dt;
     d.y += d.vy * dt;
-    d.vx *= 0.988;
-    d.vy *= 0.988;
+    const drag = Math.exp(-2.1 * dt);
+    d.vx *= drag;
+    d.vy *= drag;
+    if (Math.hypot(d.vx, d.vy) < 4) { d.vx = 0; d.vy = 0; }
     if (d.x < d.r) { d.x = d.r; d.vx = Math.abs(d.vx) * 0.72; }
     if (d.x > W - d.r) { d.x = W - d.r; d.vx = -Math.abs(d.vx) * 0.72; }
     if (d.x < -d.r || d.x > W + d.r || d.y < -d.r || d.y > H + d.r) d.alive = false;
@@ -2398,7 +2530,12 @@ function variantDodgeballStep(st, dt, now = Date.now()) {
     }
   }
 
-  if (st.phase === 'settle' && now >= st.settleUntil) {
+  const moving = st.discs.some((d) => d.alive && Math.hypot(d.vx, d.vy) > 0);
+  if (moving) st.restAt = null;
+  else if (st.restAt == null) st.restAt = st.simTime;
+  // Минимум 2 секунды с удара; долгий полёт — ещё 0.5 с после остановки.
+  const readyAt = st.restAt == null ? Infinity : Math.max(2000, st.restAt > 2000 ? st.restAt + 500 : st.restAt);
+  if (st.phase === 'settle' && st.simTime + 0.001 >= readyAt) {
     const w = st.discs.filter((d) => d.alive && d.team === 'w').length;
     const b = st.discs.filter((d) => d.alive && d.team === 'b').length;
     if (!w && !b) {
@@ -2413,17 +2550,7 @@ function variantDodgeballStep(st, dt, now = Date.now()) {
     } else {
       st.turn = other(st.turn);
       st.phase = 'aim';
-      st.deadline = now + 10000;
-      st.selected = null;
-      variantDodgeballStatus(st, now);
-    }
-  } else if (st.phase === 'aim' && now > st.deadline) {
-    if (st.moves < 4) {
-      st.over = true; st.winner = null;
-      st.text = 'Время вышло на первых ходах — партия прервана';
-    } else {
-      st.turn = other(st.turn);
-      st.deadline = now + 10000;
+      st.deadline = st.aimLimitMs ? now + st.aimLimitMs : 0;
       st.selected = null;
       variantDodgeballStatus(st, now);
     }
@@ -2436,9 +2563,9 @@ function variantDodgeballStatus(st, now = Date.now()) {
   if (st.phase === 'setup') {
     st.text = `Расставьте шашки: нажмите две свои, чтобы поменять местами · ${st.count} на ${st.count}`;
   } else if (st.phase === 'aim') {
-    st.text = `${variantColorName(st.turn)} · тяни вниз и отпусти · ${Math.max(0, Math.ceil((st.deadline - now) / 1000))} с`;
+    st.text = `${variantColorName(st.turn)} · потяни свою шашку назад и отпусти${st.deadline ? ' · ' + Math.max(0, Math.ceil((st.deadline - now) / 1000)) + ' с' : ''}`;
   } else {
-    st.text = 'Шашки летят… 3 секунды';
+    st.text = 'Шашки летят… очередь сменится после остановки';
   }
   return { over: false, winner: null, text: st.text };
 }
@@ -2486,6 +2613,25 @@ function variantCornersMoves(st, from) {
     if (jx < 0 || jx >= W || jy < 0 || jy >= H) continue;
     const js = jy * W + jx;
     if (!board[js]) out.push({ from, to: js, jump: true });
+  }
+  // Любое число прыжков за один ход. Исходная клетка после первого прыжка пуста.
+  const visited = new Set([from]);
+  const queue = [{ sq: from, path: [from] }];
+  while (queue.length) {
+    const current = queue.shift();
+    const cx = current.sq % W, cy = Math.floor(current.sq / W);
+    for (const [dx, dy] of VARIANT_ALL_DIRS.concat([[1, 0], [-1, 0], [0, 1], [0, -1]])) {
+      const mx = cx + dx, my = cy + dy, nx = cx + 2 * dx, ny = cy + 2 * dy;
+      if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+      const middle = my * W + mx, target = ny * W + nx;
+      if (middle === from || !board[middle] || (target !== from && board[target]) || visited.has(target)) continue;
+      visited.add(target);
+      const path = [...current.path, target];
+      const existing = out.find((m) => m.to === target);
+      if (existing) { existing.jump = true; existing.path = path; }
+      else out.push({ from, to: target, jump: true, path });
+      queue.push({ sq: target, path });
+    }
   }
   return out;
 }
@@ -2595,7 +2741,7 @@ function variantCheckersNegamax(st, depth) {
   for (const m of moves) {
     const copy = VariantEngine.clone(st);
     variantCheckersApply(copy, m.from, m.to);
-    const score = -variantCheckersNegamax(copy, depth - 1);
+    const score = (copy.turn === st.turn ? 1 : -1) * variantCheckersNegamax(copy, depth - 1);
     if (score > best) best = score;
   }
   return best;
@@ -2617,7 +2763,7 @@ function variantPickCheckers(st, level) {
   for (const m of moves) {
     const copy = VariantEngine.clone(st);
     variantCheckersApply(copy, m.from, m.to);
-    const score = -variantCheckersNegamax(copy, depth - 1);
+    const score = (copy.turn === st.turn ? 1 : -1) * variantCheckersNegamax(copy, depth - 1);
     if (score > bestScore) { bestScore = score; best = m; }
   }
   return best;
@@ -2716,7 +2862,7 @@ const VariantEngine = {
 
   movesFrom(st, from) {
     if (!st || st.over) return [];
-    if (st.kind === 'checkers') return variantCheckersMovesFrom(st, from);
+    if (st.kind === 'checkers') return variantCheckersAllMoves(st).filter((m) => m.from === from);
     if (st.kind === 'backgammon') return variantBackgammonTargets(st, from);
     if (st.kind === 'corners') return variantCornersMoves(st, from);
     return [];
@@ -2799,23 +2945,39 @@ const VariantEngine = {
     if (!st) return null;
     const copy = {};
     for (const key of Object.keys(st)) {
-      if (key === 'canvas' || key === 'raf' || key === 'drag' || key === 'setupSel') continue;
+      if (['canvas', 'raf', 'drag', 'setupSel', 'lastFrameAt', 'botTimer'].includes(key)) continue;
       copy[key] = st[key];
     }
     return JSON.parse(JSON.stringify(copy));
   },
 
   deserialize(data) {
-    if (!data || !data.kind) return null;
-    const st = JSON.parse(JSON.stringify(data));
+    if (!data || !Object.prototype.hasOwnProperty.call(VARIANT_META, data.kind) || !['w', 'b'].includes(data.turn)) return null;
+    let st;
+    try { st = JSON.parse(JSON.stringify(data)); } catch (_) { return null; }
+    const finite = (n) => Number.isFinite(n) && Math.abs(n) < 1e15;
+    if (st.kind === 'checkers' || st.kind === 'corners') {
+      const size = st.kind === 'checkers' && st.variant === 'intl' ? 10 : 8;
+      if (st.W !== size || st.H !== size || !Array.isArray(st.board) || st.board.length !== size * size) return null;
+      if (st.board.some((p) => p && (!['w', 'b'].includes(p.c) || (st.kind === 'checkers' && typeof p.king !== 'boolean')))) return null;
+      if (st.captureRoutes && (!Array.isArray(st.captureRoutes) || st.captureRoutes.length > 50000 || st.captureRoutes.some((r) => !Array.isArray(r) || r.length > 50 || r.some((m) => !m || !['from', 'to', 'cap'].every((key) => Number.isInteger(m[key]) && m[key] >= 0 && m[key] < size * size))))) return null;
+      if (st.pendingCaptures && (!Array.isArray(st.pendingCaptures) || st.pendingCaptures.some((sq) => !Number.isInteger(sq) || sq < 0 || sq >= size * size))) return null;
+    } else if (st.kind === 'backgammon') {
+      if (!Array.isArray(st.points) || st.points.length !== 24 || st.points.some((n) => !Number.isInteger(n) || Math.abs(n) > 15)) return null;
+      if (!st.bar || !st.off || !['w', 'b'].every((c) => Number.isInteger(st.bar[c]) && st.bar[c] >= 0 && Number.isInteger(st.off[c]) && st.off[c] >= 0 && st.bar[c] + st.off[c] + st.points.reduce((n, v) => n + (bgOwn(v, c) ? Math.abs(v) : 0), 0) === 15)) return null;
+      if (!Array.isArray(st.moves) || st.moves.length > 4 || st.moves.some((n) => !Number.isInteger(n) || n < 1 || n > 6) || !Array.isArray(st.dice) || st.dice.length > 2 || st.dice.some((n) => !Number.isInteger(n) || n < 1 || n > 6)) return null;
+    } else {
+      if (![620, 760].includes(st.W) || st.H !== st.W || !['aim', 'settle', 'setup'].includes(st.phase) || !Array.isArray(st.discs) || st.discs.length > 32 || st.discs.length < 2) return null;
+      if (st.discs.some((d) => !d || !['w', 'b'].includes(d.team) || typeof d.alive !== 'boolean' || !['x', 'y', 'vx', 'vy', 'r', 'm'].every((key) => finite(d[key])) || d.r <= 0 || d.m <= 0)) return null;
+      if (!['deadline', 'simTime', 'accumulator', 'shotAt'].every((key) => st[key] == null || finite(st[key]))) return null;
+    }
     st.canvas = null;
     st.raf = 0;
     st.drag = null;
     st.setupSel = null;
-    if (st.kind === 'dodgeball') {
-      st.phase = st.phase === 'setup' ? 'setup' : 'aim';
-      st.deadline = Date.now() + 10000;
-    }
+    st.selected = null;
+    st.legal = [];
+    // Preserve settle/aim phase and the existing deadline. A snapshot is not a new turn.
     return st;
   },
 

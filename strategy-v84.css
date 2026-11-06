@@ -1,0 +1,80 @@
+/* Tactical modes: readable phase UI, stable panels, no real-time economy. */
+html[data-brawl="1"] #brawlBan { display:inline-flex !important; }
+.sq.strat-w { background-image:linear-gradient(rgba(74,134,255,calc(.2 + var(--claim,1)*.45)),rgba(74,134,255,calc(.2 + var(--claim,1)*.45))) !important; }
+.sq.strat-b { background-image:linear-gradient(rgba(198,40,40,calc(.2 + var(--claim,1)*.45)),rgba(198,40,40,calc(.2 + var(--claim,1)*.45))) !important; }
+#stratInfoPanel .sip-cards { flex-shrink:0; }
+#stratInfoPanel .sip-actions { flex-shrink:0; }
+
+.brawl-v84 { display:flex; flex-direction:column; gap:6px; width:100%; max-width:none; padding:8px; max-height:240px; overflow:auto; }
+.brawl-guidance { font-size:12px; font-weight:700; color:#e6d2ff; line-height:1.4; }
+.brawl-v84 .brawl-top { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.brawl-v84 .elixir-bar-wrap { flex:1; min-width:155px; height:25px; }
+.brawl-v84 .elixir-num { font-size:11px; }
+.brawl-v84 .brawl-deck { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
+.brawl-v84 .brawl-card { width:auto; min-width:0; height:auto; min-height:72px; display:flex; flex-direction:column; padding:6px 3px; }
+.brawl-v84 .brawl-card svg { height:30px; width:30px; }
+.brawl-v84 .brawl-card small { font-size:9px; }
+.brawl-v84 .brawl-card:disabled,.brawl-upgrades button:disabled { opacity:.42; cursor:not-allowed; }
+.brawl-upgrades { display:grid; grid-template-columns:repeat(3,minmax(0,1fr));gap:5px; }
+.brawl-upgrades button { background:#30283e; border:1px solid #8968a3; border-radius:8px; padding:7px; font-size:11px; display:flex; flex-direction:column; gap:3px; }
+.brawl-upgrades button:last-child { grid-column:1/-1; align-items:center; }
+.brawl-draft { z-index:110; }
+.brawl-draft .bd-card { max-height:85vh;overflow:auto; }
+.brawl-draft .bd-pool { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px; }
+.brawl-draft .brawl-card { width:auto;display:flex;flex-direction:column;min-height:110px;padding:10px; }
+.brawl-draft .brawl-card svg { width:48px;height:48px; }
+html[data-brawl="1"] .piece[data-hp]::after { content:attr(data-hp); position:absolute;right:5%;bottom:3%;font-size:calc(var(--sq)*.18);padding:1px 4px;border-radius:5px;background:#142d2be8;color:#bff5d1;z-index:2; }
+html[data-brawl="1"] .piece.hp-low::after { background:#75282a;color:white; }
+html[data-brawl="1"] .brawl-locked::before { pointer-events:none; }
+.strategy-bar { flex-shrink:0; max-width:none!important; padding:5px!important; }
+.strat-action { white-space:normal!important; line-height:1.35; font-size:11px!important; }
+.strat-toolbar { flex-wrap:wrap; gap:4px; }
+.strat-toolbar button { min-height:28px;font-size:11px; }
+.strat-timeline { display:flex;gap:3px;justify-content:center;padding-top:4px;font-size:9px; }
+.strat-timeline span { flex:1;text-align:center;border-radius:4px;background:var(--panel-card);padding:3px;color:var(--text-dim); }
+.strat-timeline .active { color:#fff;background:#597b35; }
+.strategy-info-panel { overflow:auto; }
+.strat-cards { display:flex!important;flex-direction:column;gap:5px; }
+.strat-economy { margin:2px;font-size:11px;color:var(--text-muted); }
+.strat-card.support { display:block!important;width:100%;min-height:32px;height:auto;padding:6px;font-size:11px; }
+.strat-recruit { display:flex;align-items:center;gap:6px;min-height:32px;background:var(--panel-card);border:1px solid var(--line-light);border-radius:6px;font-size:11px; }
+.strat-recruit svg { width:25px;height:25px; }
+.strat-recruit:disabled { opacity:.4; }
+.strat-recruit.active { border-color:#91cd63; }
+.strat-preview { position:absolute;pointer-events:none;z-index:42;display:grid;place-items:center;background:#ff80272a;border:2px dashed #ffb33c;color:#fff;font-size:calc(var(--sq)*.2);text-shadow:0 1px 3px #000; }
+.strat-toss { position:absolute;pointer-events:none;z-index:44; }
+.strat-toss svg{width:100%;height:100%;}
+.sq[data-object]::before {content:attr(data-object);position:absolute;left:4%;top:4%;font-size:calc(var(--sq)*.24);color:#ffd45e;z-index:2;text-shadow:0 1px 2px black;}
+.sq.strat-w { box-shadow:inset 0 0 0 3px rgba(127,201,255,calc(.18 + var(--claim,1)*.4)); }
+.sq.strat-b { box-shadow:inset 0 0 0 3px rgba(235,96,91,calc(.18 + var(--claim,1)*.4)); }
+.strat-tile { animation:strat-tile-3d 1.35s cubic-bezier(.2,.7,.4,1) both!important;transform-style:preserve-3d;box-shadow:3px 5px 0 #1a151b; }
+@keyframes strat-tile-3d {0%{transform:perspective(600px) translateZ(0) rotateX(0)}30%{transform:perspective(600px) translate3d(var(--tx),var(--ty),130px) rotateX(55deg) rotateY(35deg);opacity:1}100%{transform:perspective(600px) translate3d(var(--tx),180px,-180px) rotateX(180deg) rotateZ(var(--rz));opacity:0}}
+.imbo-rules { border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px; }
+.imbo-rules p { margin:7px 0;color:var(--text-muted); }
+.imbo-shared-bar{display:flex;gap:4px;flex-wrap:wrap;}
+#screen-imbo.active{padding:8px;overflow:auto;}
+#screen-imbo .imbo-screen{height:auto;min-height:100%;max-width:none;width:100%;padding:10px;}
+#screen-imbo .imbo-play{min-height:0;overflow:visible;}
+#screen-imbo .imbo-layout{min-height:0;}
+#screen-imbo .imbo-board-wrap{max-height:none;}
+#screen-imbo .imbo-canvas{aspect-ratio:1;width:min(620px,100%,62vh)!important;height:auto;max-height:none!important;}
+@media(min-width:1000px){#screen-imbo .imbo-layout{grid-template-columns:minmax(0,1fr) 260px;gap:16px;}#screen-imbo .imbo-side{display:flex;}#screen-imbo .imbo-main{min-width:0;}#screen-imbo .imbo-checkers{width:min(62vh,620px,100%);aspect-ratio:1;}#screen-imbo .imbo-side{max-height:65vh;overflow:auto;}}
+@media(max-width:999px){
+ html[data-strategy="1"] #gameShell {display:flex!important;flex-direction:column!important;padding:4px!important;overflow:auto!important;}
+ html[data-strategy="1"] #stage {flex:none!important;height:auto!important;min-height:0!important;width:100%!important;}
+ html[data-strategy="1"] #stratInfoPanel{position:static!important;order:2;width:100%!important;max-height:180px;flex-shrink:0;margin:5px 0!important;}
+ html[data-strategy="1"] #stratInfoPanel .sip-card{display:none;}
+ html[data-strategy="1"] .strat-cards{display:flex!important;flex-direction:row;flex-wrap:wrap;gap:4px;}
+ html[data-strategy="1"] .strat-economy{width:100%;}
+ html[data-strategy="1"] .strat-card.support{width:auto;}
+ html[data-strategy="1"] #sidePanel{position:fixed!important;}
+ .brawl-v84{max-height:195px;padding:5px;}
+ .brawl-guidance{font-size:10px;}
+ .brawl-v84 .brawl-card{min-height:59px;}
+ .brawl-v84 .brawl-card svg{width:25px;height:25px;}
+ .brawl-upgrades button{font-size:10px;padding:4px;}
+ #screen-imbo .imbo-layout{display:flex;flex-direction:column;}
+ #screen-imbo .imbo-side{width:100%;max-height:240px;overflow:auto;}
+}
+@media(prefers-reduced-motion:reduce){.strat-tile,.strat-shard,.strat-nuke-dark,.strat-flash,.strat-particle{animation:none!important;display:none!important;}}
+html[data-calm="1"] .v84-king-scared>svg,html[data-calm="1"] .v84-king-angry>svg{animation:none!important;}
