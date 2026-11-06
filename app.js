@@ -410,7 +410,7 @@ function chooseBotMoveOffThread(st, level, persona) {
   if (typeof Worker !== 'function') return Promise.resolve(chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261106-84.2', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261106-84.3', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -1536,22 +1536,30 @@ function damageFx(square, dmg, survived, type) {
   setTimeout(() => { ring.remove(); float.remove(); }, 950);
 }
 
+function clearMateWaves() {
+  clearTimeout(mateKingWaves.cleanupTimer);
+  document.querySelector('.mate-wave-layer')?.remove();
+}
 function mateKingWaves(sq) {
-  if (profile.calm || sq < 0 || !ui.st) return;
-  const layer = $('#hints');
-  if (!layer) return;
-  const { dx, dy } = disp(ui.st, sq);
-  const cx = (dx + .5) * ui.sq;
-  const cy = (dy + .5) * ui.sq;
+  clearMateWaves();
+  if (profile.calm || sq < 0 || !ui.st || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const kingCell = ui.squareEls[sq];
+  if (!kingCell) return;
+  const r = kingCell.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const size = Math.max(16, Math.min(r.width, r.height) * .45);
+  const reach = Math.hypot(Math.max(cx, innerWidth - cx), Math.max(cy, innerHeight - cy));
+  const layer = document.createElement('div');
+  layer.className = 'mate-wave-layer'; layer.setAttribute('aria-hidden', 'true');
+  layer.style.setProperty('--mate-size', size + 'px');
+  layer.style.setProperty('--mate-end', (2 * reach) + 'px');
   for (let i = 0; i < 5; i++) {
-    const wave = document.createElement('span');
-    wave.className = 'mate-wave';
-    wave.style.left = cx + 'px';
-    wave.style.top = cy + 'px';
-    wave.style.animationDelay = (i * 0.16).toFixed(2) + 's';
-    layer.appendChild(wave);
-    setTimeout(() => wave.remove(), 1800);
+    const wave = document.createElement('span'); wave.className = 'mate-wave';
+    wave.style.left = cx + 'px'; wave.style.top = cy + 'px';
+    wave.style.animationDelay = (i * .12).toFixed(2) + 's'; layer.appendChild(wave);
   }
+  document.body.appendChild(layer);
+  mateKingWaves.cleanupTimer = setTimeout(() => layer.remove(), 2900);
 }
 
 function renderResultKings(res) {
@@ -4550,6 +4558,7 @@ function markScreenSheen() {
 }
 
 function showScreen(name) {
+  if (name !== 'game') clearMateWaves();
   if (name !== 'game' && ui.cancelDrag) ui.cancelDrag();
   if (name !== 'game' && ui.reviewOnly) {
     if (ui.training) clearInterval(ui.training.auto);
@@ -6541,6 +6550,7 @@ function brawlKingAttack(st,m){return brawlSubmitAction({type:'move',from:m.from
 function brawlAfterMove(){}
 
 function newGame(opts = {}) {
+  clearMateWaves();
   if (ui.cancelDrag) ui.cancelDrag();
   stopBotWorker();
   clearTimeout(ui.specialBotTimer);
@@ -7916,7 +7926,14 @@ function renderMoves() {
     b.addEventListener('click', () => gotoPly(Number(b.dataset.ply)));
   });
   const active = box.querySelector('.mv.active');
-  if (active) active.scrollIntoView({ block: 'nearest' });
+  if (active) {
+    // scrollIntoView can scroll overflow:hidden ancestors on a rotated mobile table.
+    // Only scroll the move list itself; the board must stay at its screen position.
+    const listRect = box.getBoundingClientRect(), rowRect = active.getBoundingClientRect();
+    const flipped = ui.rotated ? -1 : 1;
+    if (rowRect.top < listRect.top) box.scrollTop += (rowRect.top - listRect.top) * flipped;
+    else if (rowRect.bottom > listRect.bottom) box.scrollTop += (rowRect.bottom - listRect.bottom) * flipped;
+  }
 }
 
 function updateNav() {
@@ -7942,6 +7959,7 @@ function updateNav() {
 }
 
 function gotoPly(ply) {
+  clearMateWaves();
   if (ui.cancelDrag) ui.cancelDrag();
   const max = ui.frames.length - 1;
   const target = Math.max(0, Math.min(max, ply));

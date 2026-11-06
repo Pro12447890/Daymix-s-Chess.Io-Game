@@ -4334,23 +4334,23 @@ html.calm .sr-king, html.calm .sr-result::after { animation: none !important; }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.9); border-width: 1px; }
 }
 
-/* Мат: красные волны от короля */
+/* Мат: далеко расходящиеся волны от короля, вне обрезаемой доски. */
+.mate-wave-layer { position:fixed; inset:0; overflow:hidden; pointer-events:none; z-index:140; }
 .mate-wave {
-  position: absolute;
-  width: calc(var(--sq, 64px) * .45);
-  height: calc(var(--sq, 64px) * .45);
-  transform: translate(-50%, -50%);
-  border: 3px solid #ff3b30;
-  border-radius: 50%;
-  box-shadow: 0 0 16px #ff3b30cc, inset 0 0 10px #ff3b3088;
-  pointer-events: none;
-  z-index: 8;
-  animation: mateWave 1.5s cubic-bezier(.1,.7,.3,1) both;
+  position:absolute;
+  width:var(--mate-size, 28px); height:var(--mate-size, 28px);
+  border-radius:50%; pointer-events:none;
+  transform:translate(-50%, -50%);
+  border:2px solid #ff5348;
+  box-shadow:0 0 9px #ff3b3055;
+  animation:mateWave 2.35s cubic-bezier(.2,.45,.3,1) both;
 }
 @keyframes mateWave {
-  0% { opacity: .95; transform: translate(-50%, -50%) scale(.25); border-width: 5px; }
-  65% { opacity: .65; }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(3); border-width: 1px; }
+  0% { opacity:.85; width:var(--mate-size,28px); height:var(--mate-size,28px); }
+  25% { opacity:.55; }
+  60% { opacity:.22; }
+  85% { opacity:.06; }
+  100% { opacity:0; width:var(--mate-end,1600px); height:var(--mate-end,1600px); }
 }
 .sq.king-mated { animation: matedPulse .7s ease-in-out infinite alternate, matedRedWave 1.4s ease-out; }
 @keyframes matedRedWave {
