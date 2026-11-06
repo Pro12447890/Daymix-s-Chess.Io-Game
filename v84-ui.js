@@ -1,7 +1,7 @@
 'use strict';
 /* Shared presentation: no gameplay randomness is consumed by cosmetic effects. */
 function v84LayoutBoard() {
-  if (innerWidth < 1000 || !ui.st) return false;
+  if (innerWidth < 1000 || !ui.st || profile.desktopLayout === 'legacy') return false;
   const shell = $('#gameShell'), stage = $('#stage'), wrap = $('#boardWrap'), panel = $('#sidePanel');
   if (!shell || !stage || !wrap) return false;
   const sr = shell.getBoundingClientRect(), center = innerWidth / 2 - sr.left;
@@ -53,9 +53,28 @@ function showGameReaction(emoji, remote = false) {
 }
 function v84ReactionBar(container) {
   if (!container || container.querySelector('.v84-reactions')) return;
-  const bar = document.createElement('div'); bar.className = 'v84-reactions'; bar.setAttribute('aria-label', 'Отправить реакцию');
-  for (const emoji of V84_REACTIONS) { const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = emoji; btn.title = 'Реакция ' + emoji; btn.onclick = () => showGameReaction(emoji); bar.appendChild(btn); }
-  container.appendChild(bar);
+  const bar = document.createElement('div'); bar.className = 'v84-reactions';
+  const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'v84-reaction-toggle';
+  toggle.textContent = '☺'; toggle.title = 'Реакции'; toggle.setAttribute('aria-label', 'Открыть реакции'); toggle.setAttribute('aria-expanded', 'false');
+  const menu = document.createElement('div'); menu.className = 'v84-reaction-menu hidden'; menu.setAttribute('aria-label', 'Выберите реакцию');
+  const close = () => { menu.classList.add('hidden'); toggle.setAttribute('aria-expanded', 'false'); };
+  toggle.onclick = () => {
+    if (!menu.classList.contains('hidden')) { close(); return; }
+    document.querySelectorAll('.v84-reaction-menu').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.v84-reaction-toggle').forEach(el => el.setAttribute('aria-expanded', 'false'));
+    const r = toggle.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(innerWidth - 232, r.right - 224)) + 'px';
+    menu.style.top = Math.max(8, Math.min(innerHeight - 52, r.bottom + 6)) + 'px';
+    menu.classList.remove('hidden'); toggle.setAttribute('aria-expanded', 'true');
+  };
+  for (const emoji of V84_REACTIONS) {
+    const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = emoji; btn.title = 'Реакция ' + emoji;
+    btn.onclick = () => { if (showGameReaction(emoji)) close(); }; menu.appendChild(btn);
+  }
+  document.addEventListener('click', e => { if (!bar.contains(e.target) && !menu.contains(e.target)) close(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  window.addEventListener('resize', close);
+  bar.appendChild(toggle); container.appendChild(bar); document.body.appendChild(menu);
 }
 function v84MateMood(sq) {
   if (sq < 0 || !ui.st) return;
@@ -91,6 +110,15 @@ function v84FunnyCapture(list) {
   return true;
 }
 function setupV84() {
+  const layoutSelect = $('#desktopLayoutSelect');
+  if (layoutSelect) {
+    layoutSelect.value = profile.desktopLayout === 'legacy' ? 'legacy' : 'centered';
+    layoutSelect.onchange = () => {
+      profile.desktopLayout = layoutSelect.value === 'legacy' ? 'legacy' : 'centered';
+      saveProfile(true); ui.layoutKey = '';
+      if (ui.st && ui.screen === 'game') renderBoard(false);
+    };
+  }
   v84ReactionBar($('#sidePanel .side-panel-header'));
   v84ReactionBar($('#imboPlay .imbo-modebar'));
   const opt = document.createElement('label'); opt.className = 'v84-funny-option';

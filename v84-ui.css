@@ -20,9 +20,12 @@
   #gameShell.v84-panel-below #stratInfoPanel .sip-glyph { width:30px;height:30px; }
   #gameShell.v84-panel-below #stratInfoPanel .sip-card { padding:4px; }
 }
-.v84-reactions { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
-.v84-reactions button { min-width:30px; min-height:30px; border:1px solid var(--line); background:var(--panel-card); border-radius:8px; padding:2px; font-size:19px; }
-.v84-reactions button:hover { background:var(--panel-card-hover); transform:translateY(-2px); }
+.v84-reactions { display:inline-flex; flex:0 0 28px; width:28px; height:28px; align-items:center; }
+.v84-reaction-toggle { width:28px; height:28px; padding:0; display:grid; place-items:center; border:1px solid var(--line); background:var(--panel-card); border-radius:7px; font-size:20px; }
+.v84-reaction-menu { position:fixed; z-index:200; display:flex; gap:4px; padding:6px; width:224px; background:var(--panel-card); border:1px solid var(--line-light); border-radius:10px; box-shadow:0 6px 20px #0007; }
+.v84-reaction-menu button { width:31px; height:31px; padding:0; border:0; background:transparent; border-radius:6px; font-size:22px; }
+.v84-reaction-menu button:hover, .v84-reaction-toggle:hover { background:var(--panel-card-hover); }
+.v84-reaction-toggle[aria-expanded="true"] { border-color:var(--accent-green); }
 .v84-reaction { position:fixed; left:50%; top:19%; transform:translateX(-50%); z-index:160; font-size:clamp(48px,8vw,90px); pointer-events:none; filter:drop-shadow(0 4px 10px #0008); animation:v84-react 2.3s both; }
 @keyframes v84-react { 0%{opacity:0;scale:.3} 12%{opacity:1;scale:1.15} 22%,72%{opacity:1;scale:1} 100%{opacity:0;translate:0 -45px} }
 .piece.v84-king-scared > svg { filter:sepia(1) saturate(4) hue-rotate(160deg); animation:v84-shiver .14s infinite; }

@@ -410,7 +410,7 @@ function chooseBotMoveOffThread(st, level, persona) {
   if (typeof Worker !== 'function') return Promise.resolve(chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261105-84', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261106-84.1', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -2017,6 +2017,7 @@ function renderProfile() {
   document.documentElement.dataset.theme = profile.theme;
   document.documentElement.dataset.pieces = profile.pieces;
   applySkin();
+  if ($('#desktopLayoutSelect')) $('#desktopLayoutSelect').value = profile.desktopLayout === 'legacy' ? 'legacy' : 'centered';
   $('#optFlip').checked = profile.flip;
   if ($('#optFlipAll')) $('#optFlipAll').checked = !!profile.flipAll;
   if ($('#optEpicFx')) $('#optEpicFx').checked = !!profile.epicFx;
@@ -4600,6 +4601,7 @@ function showScreen(name) {
   if (name === 'settings') renderSettings();
   if (name === 'home') { renderProfile(); }
   if (name === 'modes') renderModesGrid();
+  if (name === 'game') requestAnimationFrame(() => { if (ui.screen === 'game' && ui.st) renderBoard(false); });
   if (name === 'settings') requestAnimationFrame(() => renderThemePreview());
   if (name === 'imbo') {
     if (!ui.imbo) openImboHub();
@@ -4708,6 +4710,11 @@ function layoutBoard() {
   if (shellReset) shellReset.classList.remove('v84-centered', 'v84-panel-below');
   const stageReset = $('#stage');
   if (stageReset) { stageReset.style.left = ''; stageReset.style.height = ''; }
+  if (profile.desktopLayout === 'legacy' || innerWidth < 1000) {
+    const sideReset = $('#sidePanel'), infoReset = $('#stratInfoPanel');
+    if (sideReset) sideReset.style.width = '';
+    if (infoReset) { infoReset.style.width = ''; infoReset.style.height = ''; }
+  }
   const st = ui.st;
   if (!st) return;
   const stage = $('#stage');
