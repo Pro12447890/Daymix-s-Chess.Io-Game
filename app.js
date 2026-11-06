@@ -410,7 +410,7 @@ function chooseBotMoveOffThread(st, level, persona) {
   if (typeof Worker !== 'function') return Promise.resolve(chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261106-84.1', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261106-84.2', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -469,7 +469,7 @@ function maybeBotTurn() {
     bot.busy = false;
     if (valid() && move) { ui.botThinking = false; commitMove(move, { bot: true }); }
     if (ui.bot === bot) { ui.botThinking = false; renderStatus(); }
-  }, bot.fake ? 3000 + Math.random() * 12000 : (ui.persona ? personaDelay(level) : (BOT_DELAY[level] || 600)));
+  }, bot.fake ? 300 + Math.random() * 500 : (ui.persona ? personaDelay(level) : (BOT_DELAY[level] || 600)));
 }
 
 /* ─────────────────────── ЭКСПОРТ И ИМПОРТ ───────────────────────────── */
