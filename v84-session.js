@@ -34,19 +34,21 @@ function specialActionCommitted(kind,r,opts={}){
  const rec={san:specialLabel(kind,r),from,to,color:mover,action:JSON.parse(JSON.stringify(a)),special:kind,spent,at:Date.now(),clock:ui.clocks[mover],captured:!!captured};
  ui.moves.push(rec);ui.lastMove=from>=0&&to>=0?{from,to}:null;ui.frames.push(snap(st,ui.lastMove));ui.viewPly=ui.frames.length-1;
  ui.turnStart=now;ui.running=st.status==='play';ui.selected=-1;ui.hint=null;
- if(!opts.silent){renderAll(false);renderMoves();renderPgnBox();updateNav();
-  if(kind==='strategy')strategyAnimateEvents(r.events||[]);
-  else for(const e of r.events||[]){if(e.damage)damageFx(e.to,e.damage.dmg,e.damage.survived,e.damage.type);if(e.type==='deploy')brawlTrail(-1,e.to);if(e.type==='king-explosion'){const dead=(r.events||[]).find(x=>x.victim?.t==='k');if(dead)kingDeathFx({type:'k',color:e.color,square:dead.to});}}
-  const victims=(r.events||[]).filter(e=>e.type==='destroy').map(e=>({type:e.piece.t,color:e.piece.c,square:e.sq}));
-  if(kind==='brawl')for(const e of r.events||[])if(e.victim&&e.damage&&!e.damage.survived&&e.victim.t!=='k')victims.push({type:e.victim.t,color:e.victim.c,square:e.to});
-  if(victims.length&&!v84FunnyCapture(victims))captureFx(victims);
- }
- if(!opts.remote&&ui.mode==='online'&&ui.online?.started)netPublish({t:'mode-action',kind,action:rec.action,ply:ui.moves.length,hash:netPositionHash(st),cw:ui.clocks.w,cb:ui.clocks.b});
- if(!opts.replay&&!opts.silent)saveCurrentGame();
- if(st.status==='over'){if(!opts.silent)finishGame(st.result);}
- else if(!opts.replay&&!opts.silent){clearTimeout(ui.specialBotTimer);const seq=ui.moves.length;ui.specialBotTimer=setTimeout(()=>{if(ui.st!==st||seq!==ui.moves.length||ui.paused||ui.away||ui.gameLocked)return;kind==='strategy'?strategyMaybeBot():brawlMaybeBot();},450);}
- return true;
+  if(!opts.silent){renderAll(false);renderMoves();renderPgnBox();updateNav();}
+  if(!opts.remote&&ui.mode==='online'&&ui.online?.started)netPublish({t:'mode-action',kind,action:rec.action,ply:ui.moves.length,hash:netPositionHash(st),cw:ui.clocks.w,cb:ui.clocks.b});
+  if(!opts.replay&&!opts.silent)saveCurrentGame();
+  const next=()=>{
+    if(ui.st!==st)return;
+    if(st.status==='over'){if(!opts.silent)finishGame(st.result);return;}
+    if(opts.replay||opts.silent)return;
+    if(kind==='strategy')strategyMaybeBot();
+    else {clearTimeout(ui.specialBotTimer);const seq=ui.moves.length;ui.specialBotTimer=setTimeout(()=>{if(ui.st===st&&ui.moves.length===seq&&!ui.paused&&!ui.away&&!ui.gameLocked&&!ui.battleFxBusy)brawlMaybeBot();},650);}
+  };
+  if(!opts.silent&&!opts.replay&&typeof battleAnimateAction==='function')battleAnimateAction(kind,r,rec,next);
+  else next();
+  return true;
 }
+
 function applyIncomingSpecial(msg,s=ui.online){
  if(!s?.started||!ui.st||!specialMode()||msg.kind!==specialMode()||!msg.action||!['host','guest'].includes(msg.sender)||!Number.isInteger(msg.ply)||msg.ply<1)return false;
  if(msg.ply<=ui.moves.length){const old=ui.moves[msg.ply-1];return old?.special===msg.kind&&JSON.stringify(old.action)===JSON.stringify(msg.action);}

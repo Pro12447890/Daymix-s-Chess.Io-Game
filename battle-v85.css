@@ -1,0 +1,89 @@
+/* v85 battle screens: all content starts at the reachable top; no centered overflow. */
+html[data-strategy="1"] #screen-game,html[data-brawl="1"] #screen-game { min-height:0; }
+.battle-gold-badge { position:relative; overflow:hidden; isolation:isolate; border-radius:999px; }
+html[data-strategy="1"] .strat-gold-badge { display:flex!important; position:relative; overflow:hidden; isolation:isolate; flex-wrap:nowrap; justify-content:space-between; gap:8px; border-radius:999px!important; padding:8px 12px!important; border:1px solid #f3c348; background:#453711!important; color:#ffeaa0!important; font-size:12px!important; min-height:37px; }
+html[data-strategy="1"] .strat-gold-badge::before { content:'';position:absolute;inset:0;right:auto;width:var(--coins,0%);background:linear-gradient(100deg,#a7750b99,#eac331cc,#ffe89b77);z-index:-1;transition:width .65s ease; }
+html[data-strategy="1"] #barBottom .strat-gold-badge,html[data-strategy="1"] #barTop .strat-gold-badge { position:relative!important;left:auto!important;right:auto!important;top:auto!important;bottom:auto!important;transform:none!important;margin:0!important;width:100%!important;flex:1 1 100%!important;order:5!important; }
+html[data-strategy="1"] #barTop,html[data-strategy="1"] #barBottom { height:auto!important;min-height:102px!important;max-height:none!important;overflow:visible!important;display:flex!important;flex-wrap:wrap!important;gap:6px; }
+html[data-strategy="1"] #barBottom .history-nav { position:static!important;left:auto!important;right:auto!important;top:auto!important;transform:none!important;order:3; }
+html[data-strategy="1"] #barTop .pc-left,html[data-strategy="1"] #barBottom .pc-left { flex:1 1 58%!important;max-width:72%; }
+html[data-strategy="1"] .strat-gold-badge b { color:#fff6c4!important;font-size:16px!important;white-space:nowrap; }
+.strat-gold-badge b small { font-size:10px;opacity:.75; }
+.battle-next-income { font-size:10px;white-space:nowrap; }
+.battle-coin { font-size:19px; }
+.battle-country .pc-name { font-size:12px;white-space:normal!important; }
+.battle-country .pc-role { font-size:10px; }
+.battle-country .pc-avatar { font-size:25px; }
+.battle-country-card { display:flex;align-items:center;gap:9px;padding:10px;background:linear-gradient(120deg,#263b42,#24322b);border:1px solid #8caf67;border-radius:14px; }
+.battle-country-card>span { font-size:28px; }
+.battle-country-card b,.battle-country-card small { display:block; }
+.battle-country-card small { font-size:10px;color:#b8c6b4;margin-top:4px; }
+.battle-nuke-card { width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;min-height:58px;border:1px solid #eec151;border-radius:14px;background:linear-gradient(120deg,#59421d,#332719);text-align:left; }
+.battle-nuke-card b,.battle-nuke-card small { display:block; }
+.battle-nuke-card small { font-size:10px;line-height:1.45;color:#ffe5a0; }
+.battle-nuke-icon { font-size:31px;color:#ffe04c; }
+.battle-nuke-card:disabled { opacity:.55; }
+.battle-v85 button[data-locked="true"] { position:relative;filter:saturate(.65);opacity:.58;cursor:not-allowed; }
+.battle-lock { font-size:10px;display:inline-block;vertical-align:middle;margin-right:3px; }
+.battle-object-legend { padding:8px;border:1px solid var(--line);border-radius:9px;font-size:11px; }
+.battle-object-legend p { color:var(--text-muted);font-size:11px;line-height:1.5; }
+.battle-object-legend summary { cursor:pointer;font-weight:700; }
+.sq[data-object]::before { content:attr(data-object)!important;font-size:calc(var(--sq)*.32)!important;left:3%;top:3%; }
+html[data-strategy="1"] .piece[data-shield="true"]::before { content:'';position:absolute;inset:3%;border-radius:50%;border:2px solid #78dbff;box-shadow:inset 0 0 16px #55d1ff77,0 0 10px #70d6ff88;background:radial-gradient(circle at 30% 25%,#dcfbff70,transparent 35%,#239fff22);z-index:1;pointer-events:none;animation:battleShield 1.6s ease-in-out infinite alternate; }
+@keyframes battleShield { from{opacity:.7;scale:.98}to{opacity:1;scale:1.04} }
+.battle-projectile { position:fixed;left:0;top:0;pointer-events:none;z-index:135;font-size:30px;filter:drop-shadow(0 0 8px #ffe779); }
+.battle-action-toast { position:fixed;transform:translateX(-50%);max-width:min(90vw,440px);padding:9px 16px;border:1px solid #f5d37788;border-radius:999px;background:#202d22e8;color:#fff6c4;font-size:13px;font-weight:750;text-align:center;pointer-events:none;z-index:140;animation:battleAction 1.8s ease both; }
+@keyframes battleAction { 0%{opacity:0;translate:0 14px;scale:.8}15%,65%{opacity:1;translate:0 0;scale:1}100%{opacity:0;translate:0 -24px} }
+.battle-income { position:fixed;transform:translateX(-50%);font-size:22px;font-weight:850;color:#ffe457;text-shadow:0 2px 3px #000;z-index:145;pointer-events:none;animation:battleIncome 1.8s ease both; }
+@keyframes battleIncome { 0%{opacity:0;translate:0 12px}15%,50%{opacity:1;translate:0 -8px}100%{opacity:0;translate:0 -65px} }
+.battle-income-pulse { animation:battleCoinPulse .8s ease 2; }
+@keyframes battleCoinPulse { 50%{box-shadow:0 0 20px #ffe57c;filter:brightness(1.35)} }
+.battle-shockwave { position:fixed;width:15px;height:15px;transform:translate(-50%,-50%);border:4px solid #ffe99a;border-radius:50%;box-shadow:0 0 25px #ff903a,inset 0 0 15px #f8be51;pointer-events:none;z-index:139;animation:battleShock 2.2s cubic-bezier(.1,.45,.3,1) both; }
+@keyframes battleShock {0%{opacity:1;width:15px;height:15px}45%{opacity:.48}100%{opacity:0;width:var(--shock-end);height:var(--shock-end);border-width:1px}}
+html[data-strategy="1"] .strat-tile { animation-duration:2.6s!important; }
+html[data-strategy="1"] .board.battle-nuke-quake { animation:battleQuake 1.7s ease-in-out both; }
+@keyframes battleQuake {0%,100%{translate:0 0}10%{translate:10px -7px}20%{translate:-9px 6px}30%{translate:8px 5px}40%{translate:-7px -5px}55%{translate:5px 3px}70%{translate:-3px -2px}85%{translate:1px 0}}
+.battle-v85 #brawlPanel { max-height:none;overflow:visible;flex-shrink:0; }
+.battle-v85 .brawl-upgrades { order:1; }
+.battle-v85 .brawl-deck { order:2; }
+.battle-v85 #strategyBar { display:flex;flex-direction:column;gap:7px; }
+@media(min-width:1000px){
+ .battle-country { flex-wrap:wrap; }
+ .battle-country .strat-gold-badge { width:100%;flex:1 1 100%;order:4; }
+ #gameShell.v84-panel-below.battle-strategy #stratInfoPanel .sip-card { display:none; }
+}
+@media(max-width:999px){
+ html[data-strategy="1"] #gameShell,html[data-brawl="1"] #gameShell { display:flex!important;flex-direction:column!important;justify-content:flex-start!important;align-items:stretch!important;overflow-y:auto!important;overflow-x:hidden!important;height:100%!important;padding:8px!important;scroll-padding-top:8px;overscroll-behavior:contain; }
+ html[data-strategy="1"] #stage,html[data-brawl="1"] #stage { display:flex!important;flex-direction:column!important;justify-content:flex-start!important;align-items:center!important;position:relative!important;transform:none!important;height:auto!important;min-height:0!important;width:100%!important;flex:none!important;order:0;gap:8px!important;padding:0 0 10px; }
+ html[data-strategy="1"] #stage>*,html[data-brawl="1"] #stage>* { flex-shrink:0!important; }
+ html[data-strategy="1"] #stratInfoPanel { position:static!important;display:flex!important;order:1;transform:none!important;width:100%!important;max-height:none!important;height:auto!important;margin:8px 0!important;overflow:visible!important; }
+ html[data-strategy="1"] #stratInfoPanel .sip-card { display:block; }
+ html[data-strategy="1"] #stratInfoPanel .sip-glyph { float:left;width:42px;height:42px;margin:0 12px 5px 0; }
+ html[data-strategy="1"] #stratInfoPanel .sip-stats { display:grid;grid-template-columns:1fr 1fr;gap:4px 12px; }
+ html[data-strategy="1"] #sidePanel,html[data-brawl="1"] #sidePanel { position:fixed!important;top:0!important;right:0!important;bottom:56px!important;height:auto!important;width:min(360px,92vw)!important;max-width:none!important;z-index:160; }
+ html[data-strategy="1"] #barTop,html[data-strategy="1"] #barBottom { display:flex!important;flex-wrap:wrap!important;gap:7px!important;padding:8px!important;height:auto!important;min-height:105px; }
+ html[data-strategy="1"] .strat-gold-badge { width:100%!important;order:5;flex:1 1 100%; }
+ html[data-strategy="1"] .player-capsule .pc-left { max-width:70%; }
+ html[data-strategy="1"] .player-capsule .pc-title-line { align-items:flex-start;flex-direction:column; }
+ html[data-strategy="1"] .player-capsule .clock { display:none!important; }
+ html[data-strategy="1"] .player-capsule.bottom .history-nav { margin-left:auto; }
+ html[data-strategy="1"] .mobile-moves,html[data-brawl="1"] .mobile-moves { display:none!important; }
+ html[data-strategy="1"] #boardWrap,html[data-brawl="1"] #boardWrap { max-width:100%;margin:0; }
+ html[data-brawl="1"] #brawlPanel { max-height:none!important;overflow:visible!important;padding:8px!important; }
+ html[data-brawl="1"] .brawl-upgrades { grid-template-columns:1fr; }
+ html[data-brawl="1"] .brawl-upgrades button { min-height:45px;font-size:12px; }
+ html[data-brawl="1"] .brawl-deck { grid-template-columns:repeat(3,minmax(0,1fr))!important; }
+ html[data-brawl="1"] .brawl-card { min-height:86px!important; }
+ html[data-brawl="1"] .brawl-card svg { width:33px!important;height:33px!important; }
+ .battle-v85 .mobile-actions { flex-wrap:wrap;justify-content:center; }
+ .battle-v85 .mobile-actions button { min-height:36px; }
+ .battle-v85 .strat-toolbar { display:flex;flex-wrap:wrap; }
+ .battle-v85 .strat-recruit { min-height:40px; }
+ .battle-v85 .strat-action { font-size:12px!important; }
+}
+html[data-strategy="1"] .pc-title-line { flex-direction:column;align-items:flex-start!important;white-space:normal; }
+html[data-strategy="1"] #barBottom .pc-left { flex:1 1 45%!important; }
+html[data-strategy="1"] #barBottom .pc-name { max-width:none!important;overflow:visible!important;text-overflow:clip!important; }
+.battle-v85 #stratInfoPanel { overflow-y:auto!important; }
+.battle-v85 .brawl-card small { line-height:1.35; }
+@media(prefers-reduced-motion:reduce){.battle-projectile,.battle-action-toast,.battle-income,.battle-shockwave{animation:none!important}.battle-shockwave{display:none}.piece[data-shield="true"]::before,.battle-nuke-quake{animation:none!important}}

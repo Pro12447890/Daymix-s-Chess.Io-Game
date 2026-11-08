@@ -394,6 +394,23 @@ function chooseBotMove(st, level, persona) {
   return ranked[0].move;
 }
 
+function chooseEmergencyBotMove(st) {
+  const moves = legalMoves(st, st.turn);
+  if (!moves.length) return null;
+  const value = (type) => PIECE_VALUE[type] || 0;
+  const score = (move) => {
+    const victim = move.capture != null ? st.board[move.capture] : null;
+    const attacker = st.board[move.from];
+    let out = victim ? value(victim.t) * 100 - value(attacker?.t) : 0;
+    if (victim?.t === 'k') out += 100000;
+    if (move.promo) out += value(move.promo) * 20;
+    const x = move.to % st.W, y = Math.floor(move.to / st.W);
+    out += 8 - Math.abs(x - (st.W - 1) / 2) - Math.abs(y - (st.H - 1) / 2);
+    return out;
+  };
+  return moves.slice().sort((a, b) => score(b) - score(a))[0];
+}
+
 let botWorker = null;
 let botWorkerUrl = null;
 let botWorkSeq = 0;
@@ -403,19 +420,20 @@ function stopBotWorker() {
   if (botWorkerUrl) URL.revokeObjectURL(botWorkerUrl);
   botWorker = null;
   botWorkerUrl = null;
-  for (const task of botWork.values()) task.resolve(null);
+  for (const task of botWork.values()) { clearTimeout(task.timeout); task.resolve(null); }
   botWork.clear();
 }
-function chooseBotMoveOffThread(st, level, persona) {
-  if (typeof Worker !== 'function') return Promise.resolve(chooseBotMove(st, level, persona));
+function chooseBotMoveOffThread(st, level, persona, maxMs = 0) {
+  if (typeof Worker !== 'function') return Promise.resolve(maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261106-84.4', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261108-85', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
         + '; self.onmessage = (event) => { const d=event.data; try {'
         + 'const st=d.state; st.mode=modeById(st.modeId); st.flags=st.mode.flags; ui.persona=d.persona;'
+        + 'if(d.maxMs>0 && d.level!=="medium" && d.level!=="easy"){const fallback=chooseBotMove(st,"medium",d.persona);self.postMessage({id:d.id,fallback});}'
         + 'self.postMessage({id:d.id,move:chooseBotMove(st,d.level,d.persona)});'
         + '} catch(error) { self.postMessage({id:d.id,error:String(error)}); } };';
       botWorkerUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
@@ -423,27 +441,38 @@ function chooseBotMoveOffThread(st, level, persona) {
       botWorker.onmessage = (event) => {
         const task = botWork.get(event.data.id);
         if (!task) return;
+        if (event.data.fallback) { task.fallback = event.data.fallback; return; }
         botWork.delete(event.data.id);
+        clearTimeout(task.timeout);
         task.resolve(event.data.error && ui.st === task.state
-          ? chooseBotMove(task.state, task.level, task.persona) : event.data.move || null);
+          ? (task.maxMs>0?(task.fallback||chooseEmergencyBotMove(task.state)):chooseBotMove(task.state, task.level, task.persona)) : event.data.move || null);
       };
       botWorker.onerror = () => {
         const tasks = [...botWork.values()];
         botWork.clear();
         stopBotWorker();
         for (const task of tasks) {
-          task.resolve(ui.st === task.state ? chooseBotMove(task.state, task.level, task.persona) : null);
+          clearTimeout(task.timeout);
+          task.resolve(ui.st === task.state ? (task.fallback || chooseEmergencyBotMove(task.state)) : null);
         }
       };
     }
     return new Promise((resolve) => {
       const id = ++botWorkSeq;
-      botWork.set(id, { resolve, state: st, level, persona });
-      botWorker.postMessage({ id, state: st, level, persona });
+      const task = { resolve, state: st, level, persona, maxMs, timeout: 0 };
+      if (maxMs > 0) task.timeout = setTimeout(() => {
+        if (botWork.get(id) !== task) return;
+        botWork.delete(id);
+        if (botWorker) { botWorker.terminate(); botWorker = null; }
+        if (botWorkerUrl) { URL.revokeObjectURL(botWorkerUrl); botWorkerUrl = null; }
+        resolve(ui.st === st ? (task.fallback || chooseEmergencyBotMove(st)) : null);
+      }, maxMs);
+      botWork.set(id, task);
+      botWorker.postMessage({ id, state: st, level, persona, maxMs });
     });
   } catch (error) {
     stopBotWorker();
-    return Promise.resolve(ui.st === st ? chooseBotMove(st, level, persona) : null);
+    return Promise.resolve(ui.st === st ? (maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona)) : null);
   }
 }
 function maybeBotTurn() {
@@ -466,7 +495,8 @@ function maybeBotTurn() {
       && state.status === 'play' && !ui.paused && !ui.away && state.turn === bot.color;
     if (!valid()) { bot.busy = false; if (ui.bot === bot) { ui.botThinking = false; renderStatus(); } return; }
     if (state.flags.clashBrawl && brawlBotTryDeploy()) { bot.busy = false; ui.botThinking = false; renderStatus(); return; }
-    const move = await chooseBotMoveOffThread(state, level, ui.persona);
+    const searchBudget = bot.fake ? 1400 : 0;
+    const move = await chooseBotMoveOffThread(state, level, ui.persona, searchBudget);
     bot.busy = false;
     if (valid() && move) { ui.botThinking = false; commitMove(move, { bot: true }); }
     else if (valid() && !move) refreshClassicStatus(state);
@@ -4560,6 +4590,7 @@ function markScreenSheen() {
 }
 
 function showScreen(name) {
+  if(name!=='game'&&typeof battleFxClear==='function')battleFxClear();
   if (name !== 'game') clearMateWaves();
   if (name !== 'game' && ui.cancelDrag) ui.cancelDrag();
   if (name !== 'game' && ui.reviewOnly) {
@@ -4612,7 +4643,7 @@ function showScreen(name) {
   if (name === 'settings') renderSettings();
   if (name === 'home') { renderProfile(); }
   if (name === 'modes') renderModesGrid();
-  if (name === 'game') requestAnimationFrame(() => { if (ui.screen === 'game' && ui.st) renderBoard(false); });
+  if (name === 'game') requestAnimationFrame(() => { if (ui.screen === 'game' && ui.st) {renderBoard(false); if(ui.st.flags.strategy||ui.st.flags.clashBrawl)$('#gameShell').scrollTop=0;} });
   if (name === 'settings') requestAnimationFrame(() => renderThemePreview());
   if (name === 'imbo') {
     if (!ui.imbo) openImboHub();
@@ -4663,6 +4694,7 @@ function onlineCoachMayMove() {
 function viewState() {
   if (!ui.st) return null;
   const last = ui.frames.length - 1;
+  if (ui.battleFxState && ui.battleFxBusy && ui.viewPly >= last) return ui.battleFxState;
   if (ui.viewPly >= last) return ui.st;
   const f = ui.frames[ui.viewPly];
   return {
@@ -4716,6 +4748,7 @@ function squareAtPoint(st, clientX, clientY) {
 }
 
 function layoutBoard() {
+  if(typeof battleMobileLayout==='function' && battleMobileLayout())return;
   if (typeof v84LayoutBoard === 'function' && v84LayoutBoard()) return;
   const shellReset = $('#gameShell');
   if (shellReset) shellReset.classList.remove('v84-centered', 'v84-panel-below');
@@ -4873,7 +4906,7 @@ function renderSquares() {
       const influence = st.strategy?.influence?.[i];
       if (influence != null) el.style.setProperty('--claim', Math.abs(influence)/3);
       const object = st.strategy?.objects?.find(o=>o.sq===i);
-      if(object) { el.dataset.object = '⚑'; el.title=object.name+' · +'+object.income+' золота/раунд'; } else delete el.dataset.object;
+      if(object) { el.dataset.object = object.icon || (object.name==='Завод'?'🏭':object.name==='Порт'?'⚓':'🏙'); el.title=object.name+' · +'+object.income+' золота/раунд'; } else delete el.dataset.object;
       if(ui.strategy.recruit && terr[i]===st.turn && !st.board[i]) cls.push('brawl-deploy');
       if (terr[i] === 'w') cls.push('strat-w');
       else if (terr[i] === 'b') cls.push('strat-b');
@@ -4956,6 +4989,7 @@ function renderPieces(animate) {
       el.classList.remove('hp-low');
     }
     if (typeof v84RenderMood === 'function') v84RenderMood(el, p);
+    if(st.flags.strategy)el.dataset.shield=String((st.strategy.shield[p.id]||0)>0);else delete el.dataset.shield;
     const typeKey = p.t + '|' + p.c + '|' + (p.used || 0);
     if (el.dataset.tk !== typeKey) {
       el.innerHTML = pieceSvg(p.t);
@@ -5134,7 +5168,7 @@ function updateClockEls(override) {
 }
 
 function tickClocks() {
-  if (ui.gameLocked) return;
+  if (ui.gameLocked || ui.battleFxBusy) return;
   if (!ui.st || !ui.timeMs || !ui.running) return;
   if (ui.st.status !== 'play') return;
   if (ui.viewPly !== ui.frames.length - 1) return;
@@ -5239,13 +5273,13 @@ function strategyEnsure(st) {
     nextPhase: 'attack', nextRepeat: false, notice: '',
     upgrades: { w: { income: 0, arsenal: 0, logistics: 0 }, b: { income: 0, arsenal: 0, logistics: 0 } },
     nukeUsed: { w: false, b: false }, territory, influence,
-    nextPiece: 1, objects: [ { sq: 2 * st.W + 2, name: 'Завод', income: 4 },
-      { sq: (st.H - 3) * st.W + st.W - 3, name: 'Порт', income: 4 },
-      { sq: Math.floor(st.H / 2) * st.W + Math.floor(st.W / 2), name: 'Столица торговли', income: 6 } ],
+    nextPiece: 1, objects: [ { sq: 2 * st.W + 2, name: 'Завод', icon:'🏭', income: 4 },
+      { sq: (st.H - 3) * st.W + st.W - 3, name: 'Порт', icon:'⚓', income: 4 },
+      { sq: Math.floor(st.H / 2) * st.W + Math.floor(st.W / 2), name: 'Торговый город', icon:'🏙', income: 6 } ],
     mines: [], rad: [], lastMoved: {},
   };
   for (const p of st.board) if (p) st.strategy.hp[p.id] = STRAT[p.t].hp;
-  const neutral=st.strategy.objects[2].sq; st.strategy.territory[neutral]=null; st.strategy.influence[neutral]=0;
+  // Every starting square belongs to its own half; objects do not recolor enemy land.
   strategyPlanPhase(st);
   return st.strategy;
 }
@@ -5403,7 +5437,7 @@ function strategyAdvance(st, mover, events) {
     s.phase = s.nextPhase; s.phaseRepeated = repeat; s.phaseSide = 0; st.turn = 'w';
     if (old === 'attack') {
       strategyRuleRadiation(st, events); s.round++;
-      for (const color of ['w', 'b']) s.gold[color] = Math.min(s.cap, s.gold[color] + strategyRuleIncome(st, color));
+      for (const color of ['w', 'b']) { const before=s.gold[color];s.gold[color]=Math.min(s.cap,s.gold[color]+strategyRuleIncome(st,color));events.push({type:'income',color,amount:s.gold[color]-before}); }
     }
     s.notice = repeat ? `Тактический сюрприз: ещё одна фаза ${s.phase === 'move' ? 'манёвров' : 'атаки'}!` : '';
     strategyPlanPhase(st);
@@ -5422,7 +5456,7 @@ function strategyReduceAction(st, action) {
   const costFor = type => strategyRuleCost(st, p, type, action.from);
   const pay = cost => { if (s.gold[mover] < cost) return false; s.gold[mover] -= cost; return true; };
   if (kind === 'pass') {
-    s.gold[mover] = Math.min(s.cap, s.gold[mover] + (s.phase === 'move' ? 6 : 3));
+    const beforeGold=s.gold[mover];s.gold[mover] = Math.min(s.cap, s.gold[mover] + (s.phase === 'move' ? 6 : 3));events.push({type:'income',color:mover,amount:s.gold[mover]-beforeGold});
     events.push({ type: 'pass', color: mover });
   } else if (kind === 'upgrade') {
     const meta = STRAT_UPGRADES[action.upgrade], levels = s.upgrades[mover];
@@ -5542,9 +5576,12 @@ function strategyBindState(st = ui.st) {
 function strategyPerformAction(action, opts = {}) {
   const st = opts.state || ui.st;
   if (!st || !st.flags.strategy) return { ok: false, reason: 'Не Стратегия' };
-  if (!opts.remote && !opts.replay && !opts.bot && (ui.viewPly !== ui.frames.length - 1 && !canBranchHere() || ui.paused || ui.gameLocked || ui.spectator
+  if (!opts.remote && !opts.replay && !opts.bot && (ui.viewPly !== ui.frames.length - 1 && !canBranchHere() || ui.paused || ui.away || ui.gameLocked || ui.battleFxBusy || ui.spectator
     || (ui.mode === 'online' && st.turn !== myColor()) || (ui.bot && st.turn === ui.bot.color))) return { ok: false, reason: 'Сейчас действие недоступно' };
+  if(!opts.remote && ui.battleFxBusy)return {ok:false,reason:'Дождитесь окончания атаки'};
+  const before=captureNetworkState(st);
   const result = strategyReduceAction(st, action);
+  if(result.ok)result.before=before;
   if (!result.ok) { if (!opts.silent && !opts.remote) toast(result.reason); return result; }
   if (st === ui.st) {
     strategyBindState(st); ui.selected = -1;
@@ -5555,41 +5592,53 @@ function strategyPerformAction(action, opts = {}) {
 }
 function strategyReceiveAction(action, opts = {}) { return strategyPerformAction(action, { ...opts, remote: true }); }
 function strategyScheduleBot() {
+  return strategyMaybeBot();
+}
+function strategyScheduleBotLegacy() {
   const st = ui.st, seq = st?.strategy?.seq;
   if (!st || !ui.bot || st.turn !== ui.bot.color || st.status !== 'play') return;
   setTimeout(() => { if (ui.st === st && st.strategy.seq === seq) strategyMaybeBot(); }, 450);
 }
-function strategyChooseBotAction(st) {
-  const s = strategyEnsure(st), color = st.turn;
-  if (s.phase === 'move') {
-    const moves = legalMoves(st, color).filter(m => strategyRuleCost(st, st.board[m.from], 'move', m.from) <= s.gold[color]);
-    moves.sort((a, b) => (st.board[b.to] ? 10 : 0) - (st.board[a.to] ? 10 : 0)
-      + (s.territory[a.to] === color ? 0 : 2) - (s.territory[b.to] === color ? 0 : 2)
-      + (color === 'w' ? Math.floor(b.to/st.W)-Math.floor(a.to/st.W) : Math.floor(a.to/st.W)-Math.floor(b.to/st.W)));
-    return moves.length ? { kind: 'move', ...moves[0] } : { kind: 'pass' };
-  }
-  const options = [];
-  for (let from = 0; from < st.board.length; from++) {
-    const p = st.board[from]; if (!p || p.c !== color) continue;
-    for (const special of [null, ...(p.t === 'q' ? ['rocket'] : p.t === 'r' ? ['catapult'] : p.t === 'k' && !s.nukeUsed[color] && s.round >= STRAT_NUKE.round ? ['nuke'] : [])]) {
-      if (strategyRuleCost(st, p, special === 'nuke' ? 'nuke' : 'attack', from) > s.gold[color]) continue;
-      for (const to of strategyRuleAttackData(st, p, from, special).targets) {
-        const q = st.board[to]; let score = q && q.c !== color ? strategyRuleDamage(st, p) + (q.t === 'k' ? 25 : 0) : 0;
-        if (special === 'nuke') score = strategyNukePreview(st, to).reduce((n,c) => { const v=st.board[c.sq]; return n + (v ? Math.min(strategyPieceHp(st,v),c.damage)*(v.c===color?-1:1) : 0); },0);
-        if (score > 0) options.push({ kind: 'attack', from, to, special, score });
+function strategyAvailableBotActions(st) {
+  const s=strategyEnsure(st),color=st.turn,options=[];
+  if(s.phase==='move') {
+    for(const m of legalMoves(st,color))if(strategyRuleCost(st,st.board[m.from],'move',m.from)<=s.gold[color])options.push({kind:'move',...m});
+    for(const [piece,cost]of Object.entries({p:12,b:26,n:28,r:46,q:65}))if(cost<=s.gold[color]&&st.board.filter(p=>p&&p.c===color).length<24)for(let to=0;to<st.board.length;to++)if(!st.board[to]&&s.territory[to]===color)options.push({kind:'deploy',piece,to});
+  } else {
+    for(let from=0;from<st.board.length;from++) {
+      const p=st.board[from];if(!p||p.c!==color)continue;
+      for(const special of [null,...(p.t==='q'?['rocket']:p.t==='r'?['catapult']:p.t==='k'&&!s.nukeUsed[color]&&s.round>=STRAT_NUKE.round?['nuke']:[])]) {
+        if(strategyRuleCost(st,p,special==='nuke'?'nuke':'attack',from)>s.gold[color])continue;
+        for(const to of strategyRuleAttackData(st,p,from,special).targets) {
+          if(special==='nuke'){const net=strategyNukePreview(st,to).reduce((n,c)=>{const q=st.board[c.sq];return n+(q?Math.min(strategyPieceHp(st,q),c.damage)*(q.c===color?-1:1):0);},0);if(net<=0)continue;}
+          else if(!st.board[to]||st.board[to].c===color)continue;
+          options.push({kind:'attack',from,to,special});
+        }
       }
+      if(p.t==='n'&&s.gold[color]>=15&&!s.mines.some(m=>m.sq===from))options.push({kind:'mine',from});
     }
   }
-  options.sort((a,b)=>b.score-a.score);
-  return options[0] || { kind: 'pass' };
+  for(const [upgrade,meta]of Object.entries(STRAT_UPGRADES)){const lv=s.upgrades[color][upgrade];if(lv<meta.max&&meta.base+lv*15<=s.gold[color])options.push({kind:'upgrade',upgrade});}
+  for(let to=0;to<st.board.length;to++){const p=st.board[to];if(!p||p.c!==color)continue;if(s.gold[color]>=20&&strategyPieceHp(st,p)<STRAT[p.t].hp)options.push({kind:'support',support:'heal',to});if(s.gold[color]>=25&&(s.shield[p.id]||0)<30)options.push({kind:'support',support:'shield',to});}
+  return options;
+}
+function strategyChooseBotAction(st) {
+  const options=strategyAvailableBotActions(st);
+  return options.length?options[Math.floor(Math.random()*options.length)]:{kind:'pass'};
 }
 function strategyMaybeBot() {
-  const st = ui.st;
-  if (!st || !ui.bot || st.turn !== ui.bot.color || st.status !== 'play' || ui.paused || ui.away || ui.gameLocked) return false;
-  if (ui.mode === 'online' && ui.role !== 'host') return false;
-  const result = strategyPerformAction(strategyChooseBotAction(st), { bot: true });
-  if (!result.ok) strategyPerformAction({ kind: 'pass' }, { bot: true });
-  ui.bot.busy = false; ui.botThinking = false; return true;
+  const st=ui.st,bot=ui.bot;
+  if(!st||!bot||st.turn!==bot.color||st.status!=='play'||ui.paused||ui.away||ui.gameLocked||ui.battleFxBusy)return false;
+  if(ui.mode==='online'&&ui.role!=='host')return false;
+  if(ui.strategyBotTimer||bot.busy)return false;
+  const seq=st.strategy.seq,delay=1000+Math.random()*2000;bot.busy=true;ui.botThinking=true;renderStatus();
+  ui.strategyBotTimer=setTimeout(()=>{
+    ui.strategyBotTimer=0;bot.busy=false;ui.botThinking=false;
+    if(ui.st!==st||ui.bot!==bot||st.strategy.seq!==seq||st.turn!==bot.color||st.status!=='play'||ui.paused||ui.away||ui.gameLocked||ui.battleFxBusy)return;
+    const result=strategyPerformAction(strategyChooseBotAction(st),{bot:true});
+    if(!result.ok)strategyPerformAction({kind:'pass'},{bot:true});
+  },delay);
+  return true;
 }
 function strategyAimAt(sq, x = .5, y = .5, fire = false) {
   const s = ui.strategy, st = ui.st;
@@ -5643,6 +5692,8 @@ function strategyInit(st) {
 }
 
 function stopStrategy() {
+  clearTimeout(ui.strategyBotTimer);ui.strategyBotTimer=0;
+  if(ui.bot){ui.bot.busy=false;ui.botThinking=false;}
   if (ui.strategy && ui.strategy.radTimer) clearInterval(ui.strategy.radTimer);
   ui.strategy = null;
   document.documentElement.dataset.strategy = '0';
@@ -5689,7 +5740,7 @@ function strategyIncome(color) {
 function strategyDrawHand() { strategyRenderCards(); }
 
 function strategyCanAct() {
-  return !!(ui.st && ui.strategy && ui.st.status==='play' && !ui.paused && !ui.away && !ui.gameLocked && !ui.spectator && (!ui.bot || ui.st.turn!==ui.bot.color) && (ui.mode!=='online'||ui.st.turn===myColor()) && (ui.viewPly===ui.frames.length-1||canBranchHere()));
+  return !!(ui.st && ui.strategy && ui.st.status==='play' && !ui.paused && !ui.away && !ui.gameLocked && !ui.battleFxBusy && !ui.spectator && (!ui.bot || ui.st.turn!==ui.bot.color) && (ui.mode!=='online'||ui.st.turn===myColor()) && (ui.viewPly===ui.frames.length-1||canBranchHere()));
 }
 function strategyRender() {
   const st=viewState(), s=st?.strategy; if(!s)return;
@@ -5793,25 +5844,14 @@ function strategyCellXY(sq) {
   return { x: (dx + 0.5) * ui.sq, y: (dy + 0.5) * ui.sq };
 }
 
-function strategyProjectile(from, to, icon) {
-  const layer = $('#brawlLayer');
-  if (!layer || !ui.st) return;
-  const a = strategyCellXY(from);
-  const b = strategyCellXY(to);
-  const el = document.createElement('span');
-  el.className = 'strat-proj';
-  el.textContent = icon || '•';
-  el.style.left = '0px';
-  el.style.top = '0px';
-  layer.appendChild(el);
-  const midX = (a.x + b.x) / 2;
-  const midY = ['🚀','🪨','☢'].includes(icon) ? Math.min(a.y,b.y)-46 : (a.y+b.y)/2;
-  el.animate([
-    { transform: `translate(${a.x}px,${a.y}px) scale(.7)`, opacity: 0 },
-    { transform: `translate(${midX}px,${midY}px) scale(1.35)`, opacity: 1, offset: .55 },
-    { transform: `translate(${b.x}px,${b.y}px) scale(.8)`, opacity: .9 },
-  ], { duration: 420, easing: 'cubic-bezier(.2,.7,.3,1)' });
-  setTimeout(() => { el.remove(); strategyBurst(to, '#ffd45e'); }, 420);
+function strategyProjectile(from, to, icon, duration = 1100) {
+  const a=ui.squareEls[from]?.getBoundingClientRect(),b=ui.squareEls[to]?.getBoundingClientRect();
+  if(!a||!b)return;
+  const ax=a.left+a.width/2,ay=a.top+a.height/2,bx=b.left+b.width/2,by=b.top+b.height/2;
+  const el=document.createElement('span');el.className='battle-projectile';el.textContent=icon||'•';document.body.appendChild(el);
+  const lob=['🚀','🪨','☢'].includes(icon),midY=lob?Math.max(12,Math.min(ay,by)-90):(ay+by)/2;
+  el.animate([{transform:`translate(${ax-15}px,${ay-15}px) scale(.9)`,opacity:1},{transform:`translate(${(ax+bx)/2-15}px,${midY-15}px) scale(${icon==='☢'?1.7:1.15})`,opacity:1,offset:.5},{transform:`translate(${bx-15}px,${by-15}px) scale(1)`,opacity:1}],{duration,easing:lob?'cubic-bezier(.35,.1,.65,.9)':'linear'});
+  setTimeout(()=>el.remove(),duration+50);
 }
 
 function strategyBurst(sq, color) {
@@ -5866,7 +5906,7 @@ function strategyNuke(sq) {
   const dark = document.createElement('div');
   dark.className = 'strat-nuke-dark';
   board.appendChild(dark);
-  setTimeout(() => dark.remove(), 800);
+  setTimeout(() => dark.remove(), 1600);
   const flash = document.createElement('div');
   flash.className = 'strat-flash';
   board.appendChild(flash);
@@ -5893,7 +5933,7 @@ function strategyNuke(sq) {
       tile.style.setProperty('--ty', (-60 - Math.random() * 160) + 'px');
       tile.style.setProperty('--rz', (Math.random() * 180 - 90) + 'deg');
       layer.appendChild(tile);
-      setTimeout(() => tile.remove(), 1350);
+      setTimeout(() => tile.remove(), 2700);
     }
   }
   for (let i = 0; i < 26; i++) {
@@ -5909,10 +5949,12 @@ function strategyNuke(sq) {
     layer.appendChild(shard);
     setTimeout(() => shard.remove(), 1000);
   }
-  board.classList.remove('shake-2');
-  void board.offsetWidth;
-  board.classList.add('shake-2');
-  setTimeout(() => board.classList.remove('shake-2'), 500);
+  board.classList.remove('battle-nuke-quake');
+  void board.offsetWidth;board.classList.add('battle-nuke-quake');
+  battleShockwave(sq);
+  for(const node of ui.pieceNodes.values())node.animate([{rotate:'0deg',scale:'1'},{rotate:'-10deg',scale:'.9',offset:.2},{rotate:'9deg',scale:'1.05',offset:.4},{rotate:'-5deg',scale:'.85 1.1',offset:.65},{rotate:'0deg',scale:'1'}],{duration:1600,easing:'ease-in-out'});
+  sound.capture();buzz([60,40,100,60,140]);
+  setTimeout(()=>board.classList.remove('battle-nuke-quake'),1800);
   const ring = document.createElement('span');
   ring.className = 'strat-ring';
   ring.style.left = strategyCellXY(sq).x + 'px';
@@ -6139,7 +6181,10 @@ function brawlSubmitAction(action, opts = {}) {
   const s = brawlEnsure(st), actor = s.draft ? s.draft.turn : st.turn;
   if (!opts.remote && !opts.bot && ui.bot && actor === ui.bot.color) return false;
   if (!opts.remote && ui.mode === 'online' && actor !== myColor()) return false;
+  if(!opts.remote&&ui.battleFxBusy)return false;
+  const before=captureNetworkState(st);
   const result = brawlApplyAction(st, action, {color:actor});
+  if(result.ok)result.before=before;
   if (!result.ok) { toast(result.reason); return false; }
   ui.brawl = st.brawl;
   if (typeof ui.onBrawlAction === 'function') ui.onBrawlAction(result, opts);
@@ -6490,7 +6535,7 @@ function stopBrawl() {
 }
 function brawlBindState(st=ui.st) { if(!st?.flags.clashBrawl)return; ui.brawl=brawlEnsure(st); ui.brawl.selected=null; }
 function brawlColor() { return ui.mode==='online' ? myColor() : (ui.st?.brawl?.draft?.turn || ui.st?.turn || 'w'); }
-function brawlCanAct() { const st=ui.st,s=st?.brawl,actor=s?.draft?.turn||st?.turn; return !!(s&&st.status==='play'&&!ui.paused&&!ui.away&&!ui.gameLocked&&!ui.spectator&&(ui.mode!=='online'||actor===myColor())&&(!ui.bot||actor!==ui.bot.color)); }
+function brawlCanAct() { const st=ui.st,s=st?.brawl,actor=s?.draft?.turn||st?.turn; return !!(s&&st.status==='play'&&!ui.paused&&!ui.away&&!ui.gameLocked&&!ui.battleFxBusy&&!ui.spectator&&(ui.mode!=='online'||actor===myColor())&&(!ui.bot||actor!==ui.bot.color)); }
 function brawlCanDeploy(sq,color) { const st=ui.st,s=st?.brawl; return !!(s&&s.stage==='main'&&!s.draft&&s.selected!=null&&!st.board[sq]&&brawlDeploymentCell(st,sq,color)); }
 function renderBrawl() {
   const st=ui.st,s=st?.brawl; if(!s)return; ui.brawl=s;
@@ -6539,6 +6584,7 @@ function brawlKingAttack(st,m){return brawlSubmitAction({type:'move',from:m.from
 function brawlAfterMove(){}
 
 function newGame(opts = {}) {
+  if(typeof battleFxClear==='function')battleFxClear();
   clearMateWaves();
   if (ui.cancelDrag) ui.cancelDrag();
   stopBotWorker();
@@ -6649,7 +6695,7 @@ function newGame(opts = {}) {
   if (mode.flags.inverted && (opts.mode || 'local') === 'local') ui.orientation = 'b';
   if (mode.flags.ultraBalance) ui.orientation = 'w';
   ui.mode = opts.mode || 'local';
-  if (ui.mode === 'local' && !opts.bot && profile.flip && window.innerWidth < 1000) {
+  if (ui.mode === 'local' && !opts.bot && profile.flip && !mode.flags.strategy && !mode.flags.clashBrawl && window.innerWidth < 1000) {
     if (profile.flipAll) ui.rotated = ui.st.turn !== ui.orientation;
     else ui.tableRotated = ui.st.turn !== ui.orientation;
     if (ui.tableRotated) $('#board').classList.add('board-rotated');
@@ -6813,6 +6859,7 @@ function renderPlayers() {  const st = ui.st;
   updateLinkDots();
   renderCaptured();
   updateClockEls();
+  if(typeof battleRenderUi==='function')battleRenderUi();
 }
 
 function updateLinkDots() {
@@ -6832,6 +6879,7 @@ const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, j: 5, g: 5, k: 0 };
 function renderCaptured() {
   const st = ui.st;
   if (!st || !ui.frames.length) return;
+  if(st.flags.strategy||st.flags.clashBrawl){for(const id of ['topCaptured','bottomCaptured','topMaterial','bottomMaterial'])$('#'+id).textContent='';return;}
   const startBoard = ui.frames[0].board;
   const count = (board) => {
     const map = {};
@@ -6913,6 +6961,7 @@ function renderAll(animate) {
   if (ui.strategy) strategyRender();
   if (ui.screen === 'settings') renderThemePreview();
   if (ui.brawl) { renderBrawlHp(); renderBrawl(); }
+  if(typeof battleRenderUi==='function')battleRenderUi();
 }
 
 function renderStatus() {
@@ -7047,7 +7096,7 @@ function onSquareClick(sq) {
     return;
   }
   if (!ui.st || ui.st.status !== 'play') return;
-  if (ui.gameLocked) return;
+  if (ui.gameLocked || ui.battleFxBusy) return;
   if (ui.paused) return;
   if (ui.imported) { toast('Импортированная партия — только просмотр'); return; }
   if (ui.bot && ui.st.turn === ui.bot.color) return;
@@ -7963,6 +8012,7 @@ function updateNav() {
 }
 
 function gotoPly(ply) {
+  if(typeof battleFxClear==='function')battleFxClear();
   clearMateWaves();
   if (ui.cancelDrag) ui.cancelDrag();
   const max = ui.frames.length - 1;
@@ -10370,7 +10420,7 @@ function bindEvents() {
     if (dragState || (e.button !== undefined && e.button !== 0)) return;
     const sqEl = e.target.closest('.sq');
     if (ui.spectator || ui.reviewOnly) return;
-    if (!sqEl || !ui.st || ui.st.status !== 'play' || ui.gameLocked || ui.paused || ui.imported) return;
+    if (!sqEl || !ui.st || ui.st.status !== 'play' || ui.gameLocked || ui.battleFxBusy || ui.paused || ui.imported) return;
     if (ui.viewPly !== ui.frames.length - 1 && !canBranchHere()) return;
     if (ui.st.flags.clashBrawl && ui.st.brawl.stage !== 'main') return;
     if (ui.st.flags.strategy && ui.st.strategy.phase === 'attack') return;
