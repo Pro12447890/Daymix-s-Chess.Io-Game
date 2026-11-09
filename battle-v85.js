@@ -69,7 +69,7 @@ function battleShowAction(text,color='w') {
 }
 function battleIncomeEvents(events) {
   for(const event of events||[]){if(event.type!=='income')continue;const c=event.color;
-    const badge=$('#stratGoldBadge'+c.toUpperCase());if(!badge)continue;
+     const badge=$('#gameShell')?.classList.contains('strategy-phone')?document.querySelector(`.strategy-phone-money[data-side="${c}"]`):$('#stratGoldBadge'+c.toUpperCase());if(!badge)continue;
     badge.classList.remove('battle-income-pulse');void badge.offsetWidth;badge.classList.add('battle-income-pulse');
     const el=document.createElement('span'),r=badge.getBoundingClientRect();el.className='battle-income';el.textContent=`+${event.amount} 🪙`;el.style.left=r.left+r.width/2+'px';el.style.top=r.top+'px';document.body.appendChild(el);setTimeout(()=>{el.remove();badge.classList.remove('battle-income-pulse');},1800);
   }

@@ -431,7 +431,7 @@ function chooseBotMoveOffThread(st, level, persona, maxMs = 0) {
   if (typeof Worker !== 'function') return Promise.resolve(maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261109-85.2', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261109-85.3', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -5086,7 +5086,7 @@ function renderHints() {
   if (!ui.st || (ui.viewPly !== ui.frames.length - 1 && !canBranchHere()) || ui.selected < 0) {
     if (layer.childNodes.length || ui.hintKey) layer.innerHTML = '';
     ui.hintKey = '';
-    ui.hintAt = 0;
+    // Не обнуляем время последней анимации: быстрый повторный клик тоже ограничен.
     return;
   }
   const moves = getUiLegalMoves(ui.st).filter((m) => m.from === ui.selected);
@@ -5097,6 +5097,11 @@ function renderHints() {
   const key = [ui.selected, ui.st.turn, ui.st.full, ui.viewPly, ui.sq,
     ui.orientation, ui.rotated ? 1 : 0, ui.tableRotated ? 1 : 0, marks].join('|');
   const now = performance.now();
+  const phone = innerWidth < 1000;
+  // Ходы уже пересчитаны выше. Повторная отрисовка той же группы не перезапускает анимацию.
+  if (phone && key === ui.hintKey && layer.childNodes.length && now - (ui.hintAnimationAt ?? -Infinity) < 200) return;
+  const animateHints = !phone || ui.hintAnimationState !== ui.st || now - (ui.hintAnimationAt ?? -Infinity) >= 200;
+  if (animateHints && moves.length) { ui.hintAnimationAt = now; ui.hintAnimationState = ui.st; }
   layer.innerHTML = '';
   const sq = ui.sq;
   moves.forEach((m, index) => {
@@ -5104,7 +5109,8 @@ function renderHints() {
     const dot = document.createElement('div');
     const capture = m.capture != null || m.ep || (m.caps && m.caps.length);
     dot.className = 'hint ' + (capture ? 'capture' : 'quiet');
-    dot.style.setProperty('--d', (index * 0.012).toFixed(3) + 's');
+    if (!animateHints) dot.classList.add('hint-static');
+    dot.style.setProperty('--d', (phone ? 0 : index * 0.012).toFixed(3) + 's');
     dot.style.width = sq + 'px';
     dot.style.height = sq + 'px';
     dot.style.transform = `translate(${dx * sq}px, ${dy * sq}px)`;
