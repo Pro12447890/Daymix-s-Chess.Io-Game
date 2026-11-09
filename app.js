@@ -35,6 +35,7 @@ const DEFAULT_PROFILE = {
   square: false,
   timeMs: 5 * 60 * 1000,
   timeLabel: '5 минут',
+  botTimeHandicap: false,
   publicRoom: false,
   points: 0,
   trainingDate: '',
@@ -416,6 +417,9 @@ let botWorkerUrl = null;
 let botWorkSeq = 0;
 const botWork = new Map();
 function stopBotWorker() {
+  clearTimeout(ui.botLockRetry); ui.botLockRetry=0;
+  if(ui.bot){clearTimeout(ui.bot.turnTimer);ui.bot.busy=false;}
+  ui.botThinking=false;
   if (botWorker) botWorker.terminate();
   if (botWorkerUrl) URL.revokeObjectURL(botWorkerUrl);
   botWorker = null;
@@ -427,7 +431,7 @@ function chooseBotMoveOffThread(st, level, persona, maxMs = 0) {
   if (typeof Worker !== 'function') return Promise.resolve(maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261108-85', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261109-85.1', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -475,33 +479,53 @@ function chooseBotMoveOffThread(st, level, persona, maxMs = 0) {
     return Promise.resolve(ui.st === st ? (maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona)) : null);
   }
 }
+function retryBotAfterEffect(state, bot) {
+  clearTimeout(ui.botLockRetry);
+  const ply=state.plySeq;
+  ui.botLockRetry=setTimeout(()=>{
+    ui.botLockRetry=0;
+    if(ui.st===state && ui.bot===bot && state.plySeq===ply && state.status==='play') maybeBotTurn();
+  },150);
+}
 function maybeBotTurn() {
-  if (ui.paused || ui.away || ui.gameLocked) return;
-  if (ui.st?.flags.strategy) { strategyMaybeBot(); return; }
-  if (ui.st?.flags.clashBrawl) { brawlMaybeBot(); return; }
-  const coopHost = ui.mode === 'online' && ui.online && ui.online.coop && ui.role === 'host';
-  if (!ui.bot || !ui.st || ui.st.status !== 'play' || (ui.mode !== 'local' && !coopHost)) return;
-  if (ui.st.turn !== ui.bot.color || ui.bot.busy) return;
-  if (refreshClassicStatus()) return;
-  const bot = ui.bot;
-  const state = ui.st;
-  const ply = state.plySeq;
-  bot.busy = true;
-  ui.botThinking = true;
-  renderStatus();
-  const level = ui.persona ? personaLevel() : bot.level;
-  bot.turnTimer = setTimeout(async () => {
-    const valid = () => ui.bot === bot && ui.st === state && state.plySeq === ply
-      && state.status === 'play' && !ui.paused && !ui.away && state.turn === bot.color;
-    if (!valid()) { bot.busy = false; if (ui.bot === bot) { ui.botThinking = false; renderStatus(); } return; }
-    if (state.flags.clashBrawl && brawlBotTryDeploy()) { bot.busy = false; ui.botThinking = false; renderStatus(); return; }
-    const searchBudget = bot.fake ? 1400 : 0;
-    const move = await chooseBotMoveOffThread(state, level, ui.persona, searchBudget);
-    bot.busy = false;
-    if (valid() && move) { ui.botThinking = false; commitMove(move, { bot: true }); }
-    else if (valid() && !move) refreshClassicStatus(state);
-    if (ui.bot === bot) { ui.botThinking = false; renderStatus(); }
-  }, bot.fake ? 300 + Math.random() * 500 : (ui.persona ? personaDelay(level) : (BOT_DELAY[level] || 600)));
+  clearTimeout(ui.botLockRetry); ui.botLockRetry=0;
+  const state=ui.st,bot=ui.bot;
+  const coopHost=ui.mode==='online'&&ui.online?.coop&&ui.role==='host';
+  if(!state||!bot||state.status!=='play'||(ui.mode!=='local'&&!coopHost))return;
+  if((state.brawl?.draft?.turn||state.turn)!==bot.color||ui.paused||ui.away||ui.reviewOnly)return;
+  if(ui.gameLocked||ui.battleFxBusy){retryBotAfterEffect(state,bot);return;}
+  if(state.flags.strategy){strategyMaybeBot();return;}
+  if(state.flags.clashBrawl){brawlMaybeBot();return;}
+  if(bot.busy||refreshClassicStatus())return;
+  const ply=state.plySeq;
+  bot.busy=true;ui.botThinking=true;renderStatus();
+  const level=ui.persona?personaLevel():bot.level;
+  const valid=()=>ui.bot===bot&&ui.st===state&&state.plySeq===ply&&state.status==='play'&&!ui.paused&&!ui.away&&state.turn===bot.color&&!ui.reviewOnly;
+  const release=()=>{bot.busy=false;if(ui.bot===bot){ui.botThinking=false;renderStatus();}};
+  bot.turnTimer=setTimeout(async()=>{
+    bot.turnTimer=0;
+    if(!valid()){release();return;}
+    if(ui.gameLocked||ui.battleFxBusy){release();retryBotAfterEffect(state,bot);return;}
+    const searchBudget=bot.fake?1400:(level==='engine'?5000:2500);
+    try {
+      const move=await chooseBotMoveOffThread(state,level,ui.persona,searchBudget);
+      release();
+      if(!valid())return;
+      if(ui.gameLocked||ui.battleFxBusy){retryBotAfterEffect(state,bot);return;}
+      if(move&&commitMove(move,{bot:true}))return;
+      // A stale/invalid worker result must not leave a legal turn asleep.
+      if(!valid()||refreshClassicStatus(state))return;
+      const fallback=chooseEmergencyBotMove(state);
+      if(fallback)commitMove(fallback,{bot:true});
+    } catch(error) {
+      release();
+      if(!valid())return;
+      if(ui.gameLocked||ui.battleFxBusy){retryBotAfterEffect(state,bot);return;}
+      if(refreshClassicStatus(state))return;
+      const fallback=chooseEmergencyBotMove(state);
+      if(fallback)commitMove(fallback,{bot:true});
+    }
+  },bot.fake?300+Math.random()*500:(ui.persona?personaDelay(level):(BOT_DELAY[level]||600)));
 }
 
 /* ─────────────────────── ЭКСПОРТ И ИМПОРТ ───────────────────────────── */
@@ -517,7 +541,7 @@ function buildGameJson() {
     state: specialMode(st) ? captureNetworkState(st) : undefined,
     exportedAt: new Date().toISOString(),
     mode: { id: st.modeId, name: st.mode.name, W: st.W, H: st.H, square: !!st.square, seed: st.seed },
-    time: { ms: ui.timeMs, label: ui.timeMs ? profile.timeLabel : 'без ограничений' },
+    time: { ms: ui.timeMs, label: ui.timeMs ? profile.timeLabel : 'без ограничений', initialClocks: ui.initialClocks ? {...ui.initialClocks} : {w:ui.timeMs,b:ui.timeMs}, remainingClocks: {...ui.clocks} },
     players: {
       w: names.w || { name: 'Белые', avatar: 'k' },
       b: names.b || { name: 'Чёрные', avatar: 'k' },
@@ -526,7 +550,7 @@ function buildGameJson() {
     endedAt: st.status === 'over' ? new Date().toISOString() : null,
     result: st.result || null,
     viewSide: myColor(),
-    bot: ui.bot ? { level: ui.bot.level, color: ui.bot.color, name: ui.bot.name, fake: !!ui.bot.fake } : null,
+    bot: ui.bot ? { level: ui.bot.level, color: ui.bot.color, name: ui.bot.name, fake: !!ui.bot.fake, timeHandicap: !!ui.bot.timeHandicap } : null,
     moves: ui.moves.map((m, i) => ({
       n: i + 1,
       side: m.color,
@@ -768,6 +792,8 @@ function importGameText(raw, opts = {}) {
 
 function importGameData(data, opts = {}) {
   if (!data) return false;
+  stopBotWorker();
+  clearTimeout(queenDrama.timer);queenDrama.timer=0;$('#queenDrama')?.classList.add('hidden');ui.gameLocked=false;
   const review = !!opts.review;
   if (review) ui.reviewFrom = opts.from || ui.reviewFrom || (ui.screen === 'stats' ? 'stats' : 'home');
   const mode = modeById(data.mode && data.mode.id) || modeById('classic');
@@ -784,7 +810,11 @@ function importGameData(data, opts = {}) {
   ui.away = false;
   ui.paused = false;
   ui.timeMs = Number(data.time && data.time.ms) || 0;
-  ui.clocks = { w: ui.timeMs, b: ui.timeMs };
+  ui.initialClocks={w:ui.timeMs,b:ui.timeMs};
+  if(data.bot?.timeHandicap&&!data.bot.fake&&!mode.flags.captureRace&&!mode.flags.royalBattle&&ui.timeMs>0&&['w','b'].includes(data.bot.color))ui.initialClocks[data.bot.color]=ui.timeMs/10;
+  const initial=data.time?.initialClocks;
+  if(initial&&['w','b'].every(c=>Number.isFinite(initial[c])&&initial[c]>=0&&initial[c]<=ui.timeMs))ui.initialClocks={...initial};
+  ui.clocks={...ui.initialClocks};
   ui.st = createState(mode.id, { square: !!(data.mode && data.mode.square), seed: data.mode && data.mode.seed });
   ui.modePick = mode.id;
   ui.frames = [snap(ui.st)];
@@ -837,6 +867,8 @@ function importGameData(data, opts = {}) {
     ui.lastMove = { from, to };
   }
   if(specialMode(ui.st)) bindSpecialState(ui.st);
+  const remaining=data.time?.remainingClocks;
+  if(!review&&remaining&&['w','b'].every(c=>Number.isFinite(remaining[c])&&remaining[c]>=0&&remaining[c]<=ui.initialClocks[c]))ui.clocks={...remaining};
   ui.viewPly = review ? 0 : ui.frames.length - 1;
   updateStatus(ui.st);
   if (data.result) {
@@ -1085,10 +1117,12 @@ function resumeSavedGame() {
       color: savedBot.color || (profile.side === 'w' ? 'b' : 'w'),
       name: savedBot.name || ('Бот · ' + botLabel(savedBot.level)),
       fake: !!savedBot.fake,
+      timeHandicap: !!savedBot.timeHandicap && !savedBot.fake,
     }
     : null;
   ui.timeMs = data.timeMs || 0;
-  ui.clocks = { w: data.clocks ? data.clocks.w : ui.timeMs, b: data.clocks ? data.clocks.b : ui.timeMs };
+  const savedClocks=data.clocks||data.time?.remainingClocks||ui.initialClocks;
+  ui.clocks={w:savedClocks?.w??ui.timeMs,b:savedClocks?.b??ui.timeMs};
   ui.playerSide = savedBot ? other(savedBot.color) : (profile.side === 'b' ? 'b' : 'w');
   if (data.orientation) ui.orientation = data.orientation;
   else ui.orientation = ui.playerSide;
@@ -1262,6 +1296,7 @@ function queenDrama(item) {
   void box.offsetWidth;
   box.classList.add('run');
   ui.gameLocked = true;
+  const effectState=ui.st;
   const wrap = $('#boardWrap');
   clearTimeout(queenDrama.timer);
   queenDrama.timer = setTimeout(() => {
@@ -1270,7 +1305,11 @@ function queenDrama(item) {
     bolts.innerHTML = '';
     halves.innerHTML = '';
     if (wrap) wrap.classList.remove('drama-zoom');
-    if (ui.st && ui.st.status === 'play' && !ui.paused) ui.gameLocked = false;
+    queenDrama.timer=0;
+    if(ui.st!==effectState)return;
+    // Release this animation lock even while paused; resume will wake the bot.
+    ui.gameLocked=false;
+    if(ui.st?.status==='play'&&!ui.paused&&!ui.away)maybeBotTurn();
   }, 1500);
 }
 
@@ -2034,6 +2073,7 @@ const ui = {
 /* ───────────────────────────── 4. ОТРИСОВКА ───────────────────────────── */
 
 function renderProfile() {
+  $$('[data-bot-time-handicap]').forEach(el=>{el.checked=!!profile.botTimeHandicap;});
   if ($('#nickInput')) $('#nickInput').value = profile.name;
   if ($('#sbName')) $('#sbName').textContent = profile.name;
   if ($('#sbPoints')) $('#sbPoints').textContent = `${profile.points} очков`;
@@ -6584,6 +6624,8 @@ function brawlKingAttack(st,m){return brawlSubmitAction({type:'move',from:m.from
 function brawlAfterMove(){}
 
 function newGame(opts = {}) {
+  clearTimeout(queenDrama.timer); queenDrama.timer=0;
+  $('#queenDrama')?.classList.add('hidden');
   if(typeof battleFxClear==='function')battleFxClear();
   clearMateWaves();
   if (ui.cancelDrag) ui.cancelDrag();
@@ -6679,6 +6721,9 @@ function newGame(opts = {}) {
   $('#promo').classList.add('hidden');
   ui.timeMs = opts.timeMs != null ? opts.timeMs : profile.timeMs;
   ui.clocks = { w: ui.timeMs, b: ui.timeMs };
+  const shortBotClock=!!(opts.bot&&!opts.bot.fake&&!opts.spectator&&ui.timeMs>0&&!mode.flags.captureRace&&!mode.flags.royalBattle&&(opts.bot.timeHandicap??profile.botTimeHandicap));
+  if(shortBotClock)ui.clocks[opts.bot.color||other(playerSide)]=ui.timeMs/10;
+  ui.initialClocks={...ui.clocks};
   if ($('#brawlBanModal')) $('#brawlBanModal').classList.add('hidden');
   if (mode.flags.clashBrawl) initBrawl(ui.st);
   else if (mode.flags.royalBattle) royalInit(ui.st);
@@ -6705,6 +6750,7 @@ function newGame(opts = {}) {
   ui.bot = opts.bot
     ? {
       ...opts.bot,
+      timeHandicap: shortBotClock,
       name: opts.bot.persona
         ? (opts.bot.name || (personaById(opts.bot.persona) || {}).title || 'Бот')
         : opts.bot.fake ? (opts.bot.name || 'Игрок') : ('Бот · ' + botLabel(opts.bot.level)),
@@ -6800,6 +6846,7 @@ function renderMeta() {
   const bits = [];
   bits.push(`поле ${st.W}×${st.H}`);
   bits.push(ui.timeMs ? profile.timeLabel : 'без ограничений');
+  if(ui.bot?.timeHandicap)bits.push('у бота 1/10 времени на партию');
   if (st.flags.fog) bits.push('туман войны');
   if (st.flags.explode) bits.push('взрывы');
   if (st.flags.checksToWin) bits.push('победа по трём шахам');
@@ -9799,6 +9846,7 @@ function confirmLeaveGame() {
 }
 
 function hardStopBotGame() {
+  stopBotWorker();
   ui.scored = true;
   ui.running = false;
   clearInterval(ui.timer);
@@ -9889,6 +9937,11 @@ function setSound(on) {
 }
 
 function bindEvents() {
+  $$('[data-bot-time-handicap]').forEach(el=>el.addEventListener('change',()=>{
+    profile.botTimeHandicap=el.checked;
+    $$('[data-bot-time-handicap]').forEach(box=>{box.checked=profile.botTimeHandicap;});
+    saveProfile(true);
+  }));
   $$('.sb-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.id === 'sbNavBots') {
