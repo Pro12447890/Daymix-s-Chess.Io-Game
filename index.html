@@ -36,10 +36,10 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=20261109-85.1">
-<link rel="stylesheet" href="v84-ui.css?v=20261109-85.1">
-<link rel="stylesheet" href="strategy-v84.css?v=20261109-85.1">
-<link rel="stylesheet" href="battle-v85.css?v=20261109-85.1">
+  <link rel="stylesheet" href="style.css?v=20261109-85.2">
+<link rel="stylesheet" href="v84-ui.css?v=20261109-85.2">
+<link rel="stylesheet" href="strategy-v84.css?v=20261109-85.2">
+<link rel="stylesheet" href="battle-v85.css?v=20261109-85.2">
 </head>
 <body>
 
@@ -171,10 +171,6 @@
             <button class="btn-game-green btn-lg" id="btnPlayLocal" type="button">Играть здесь</button>
           </div>
 
-          <label class="toggle bot-handicap-toggle" title="Действует со следующей партии, не влияет на ботов с человеческими никами">
-            <input type="checkbox" id="optBotTimeHandicap" data-bot-time-handicap>
-            <span>Боту в 10 раз меньше времени <small>5 минут у вас → 30 секунд у бота. Не для ботов-людей.</small></span>
-          </label>
           <div class="bot-row">
             <span class="bot-label">С ботом:</span>
             <button class="bot-level" data-level="easy" type="button">лёгкий</button>
@@ -183,7 +179,13 @@
             <button class="bot-level" data-level="gm" type="button">гроссмейстер</button>
           </div>
 
-          <div class="fake-bots" id="fakeBots"></div>
+          <div class="fake-handicap-row">
+            <div class="fake-bots" id="fakeBots"></div>
+            <label class="bot-handicap-inline" title="Только для обычных ботов; боты с никами играют без ограничения">
+              <input type="checkbox" id="optBotTimeHandicap" data-bot-time-handicap>
+              <span><b>Меньше времени боту</b><small id="botTimeHandicapHint">Блиц ÷3 · остальное ÷5</small></span>
+            </label>
+          </div>
 
           <div class="profile-pop hidden" id="profilePop">
         <div class="pp-head">
@@ -389,7 +391,7 @@
               </div>
             </div>
             <div class="set-note">Партии, очки и статистика хранятся в этом браузере. История — последние 60 партий.</div>
-            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-11-09-85.1 · бот после взятия ферзя и гандикап времени ×10</div>
+            <div class="set-note build-stamp" id="buildStamp">Версия сборки: 2026-11-09-85.2 · гандикап справа: блиц ÷3, остальное ÷5</div>
             <div class="theme-preview-slot" id="themePreviewSlot">
               <div class="theme-preview" id="themePreview"></div>
             </div>
@@ -910,10 +912,6 @@
   <div class="modal-card">
     <div class="modal-head"><b>Игра с ботом</b><button class="icon-btn" id="botClose" type="button">✕</button></div>
     <p class="modal-note">Бот играет за противоположный цвет и умеет все режимы.</p>
-    <label class="toggle bot-handicap-toggle">
-      <input type="checkbox" id="modalBotTimeHandicap" data-bot-time-handicap>
-      <span>Боту в 10 раз меньше времени <small>Только запас времени на партию; скорость анимаций и бот-люди не меняются.</small></span>
-    </label>
     <div class="bot-modal-grid">
       <button class="bot-choice" data-level="easy" type="button">
         <span class="bc-icon">🙂</span>
@@ -1007,12 +1005,12 @@
   </defs>
 </svg>
 
-<script src="engine.js?v=20261109-85.1"></script>
-<script src="app.js?v=20261109-85.1"></script>
-<script src="v84-session.js?v=20261109-85.1"></script>
-<script src="v84-ui.js?v=20261109-85.1"></script>
-<script src="v84-imbo.js?v=20261109-85.1"></script>
-<script src="battle-v85.js?v=20261109-85.1"></script>
+<script src="engine.js?v=20261109-85.2"></script>
+<script src="app.js?v=20261109-85.2"></script>
+<script src="v84-session.js?v=20261109-85.2"></script>
+<script src="v84-ui.js?v=20261109-85.2"></script>
+<script src="v84-imbo.js?v=20261109-85.2"></script>
+<script src="battle-v85.js?v=20261109-85.2"></script>
   <div class="zombie-intro hidden" id="zombieIntro" aria-hidden="true">
     <div class="zi-side zi-left">
       <span>➕</span><span>✚</span><span>➕</span><span>✚</span><span>➕</span>

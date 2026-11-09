@@ -431,7 +431,7 @@ function chooseBotMoveOffThread(st, level, persona, maxMs = 0) {
   if (typeof Worker !== 'function') return Promise.resolve(maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261109-85.1', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261109-85.2', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -550,7 +550,7 @@ function buildGameJson() {
     endedAt: st.status === 'over' ? new Date().toISOString() : null,
     result: st.result || null,
     viewSide: myColor(),
-    bot: ui.bot ? { level: ui.bot.level, color: ui.bot.color, name: ui.bot.name, fake: !!ui.bot.fake, timeHandicap: !!ui.bot.timeHandicap } : null,
+    bot: ui.bot ? { level: ui.bot.level, color: ui.bot.color, name: ui.bot.name, fake: !!ui.bot.fake, timeHandicap: !!ui.bot.timeHandicap, timeHandicapDivisor: ui.bot.timeHandicapDivisor || null } : null,
     moves: ui.moves.map((m, i) => ({
       n: i + 1,
       side: m.color,
@@ -811,7 +811,7 @@ function importGameData(data, opts = {}) {
   ui.paused = false;
   ui.timeMs = Number(data.time && data.time.ms) || 0;
   ui.initialClocks={w:ui.timeMs,b:ui.timeMs};
-  if(data.bot?.timeHandicap&&!data.bot.fake&&!mode.flags.captureRace&&!mode.flags.royalBattle&&ui.timeMs>0&&['w','b'].includes(data.bot.color))ui.initialClocks[data.bot.color]=ui.timeMs/10;
+  if(data.bot?.timeHandicap&&!data.bot.fake&&!mode.flags.captureRace&&!mode.flags.royalBattle&&ui.timeMs>0&&['w','b'].includes(data.bot.color))ui.initialClocks[data.bot.color]=botHandicapClock(ui.timeMs);
   const initial=data.time?.initialClocks;
   if(initial&&['w','b'].every(c=>Number.isFinite(initial[c])&&initial[c]>=0&&initial[c]<=ui.timeMs))ui.initialClocks={...initial};
   ui.clocks={...ui.initialClocks};
@@ -1118,6 +1118,7 @@ function resumeSavedGame() {
       name: savedBot.name || ('Бот · ' + botLabel(savedBot.level)),
       fake: !!savedBot.fake,
       timeHandicap: !!savedBot.timeHandicap && !savedBot.fake,
+      timeHandicapDivisor: Number(savedBot.timeHandicapDivisor) || (savedBot.timeHandicap ? botClockDivisor(ui.timeMs) : 1),
     }
     : null;
   ui.timeMs = data.timeMs || 0;
@@ -1712,6 +1713,21 @@ function celebrate() {
 }
 /* ─────────────────────────── 2. КОНТРОЛИ ВРЕМЕНИ ──────────────────────── */
 
+function botClockDivisor(ms) {
+  return ms > 0 && ms <= 180000 ? 3 : 5;
+}
+function botHandicapClock(ms) {
+  return Math.max(1000, Math.round(ms / botClockDivisor(ms)));
+}
+function updateBotHandicapHint() {
+  const el = $('#botTimeHandicapHint');
+  if (!el) return;
+  const divisor = botClockDivisor(profile.timeMs);
+  const seconds = Math.round(botHandicapClock(profile.timeMs) / 1000);
+  const value = seconds >= 60 ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')}` : `${seconds} секунд`;
+  el.textContent = `${profile.timeMs <= 180000 ? 'Блиц' : 'Этот контроль'} ÷${divisor}: бот получит ${value}`;
+}
+
 const TIME_GROUPS = [
   {
     id: 'blitz', title: 'Блиц', hint: 'до трёх минут',
@@ -2074,6 +2090,7 @@ const ui = {
 
 function renderProfile() {
   $$('[data-bot-time-handicap]').forEach(el=>{el.checked=!!profile.botTimeHandicap;});
+  updateBotHandicapHint();
   if ($('#nickInput')) $('#nickInput').value = profile.name;
   if ($('#sbName')) $('#sbName').textContent = profile.name;
   if ($('#sbPoints')) $('#sbPoints').textContent = `${profile.points} очков`;
@@ -2498,6 +2515,7 @@ function renderTimeGroups() {
         box.querySelectorAll('.time-item').forEach((el) => el.classList.toggle('active', el === b));
         box.querySelectorAll('details.time-group').forEach((d) => closeTimeGroup(d));
         renderTimeSummary();
+        updateBotHandicapHint();
       });
       list.appendChild(b);
     }
@@ -6722,7 +6740,8 @@ function newGame(opts = {}) {
   ui.timeMs = opts.timeMs != null ? opts.timeMs : profile.timeMs;
   ui.clocks = { w: ui.timeMs, b: ui.timeMs };
   const shortBotClock=!!(opts.bot&&!opts.bot.fake&&!opts.spectator&&ui.timeMs>0&&!mode.flags.captureRace&&!mode.flags.royalBattle&&(opts.bot.timeHandicap??profile.botTimeHandicap));
-  if(shortBotClock)ui.clocks[opts.bot.color||other(playerSide)]=ui.timeMs/10;
+  const botClockDivisorUsed=shortBotClock?botClockDivisor(ui.timeMs):1;
+  if(shortBotClock)ui.clocks[opts.bot.color||other(playerSide)]=botHandicapClock(ui.timeMs);
   ui.initialClocks={...ui.clocks};
   if ($('#brawlBanModal')) $('#brawlBanModal').classList.add('hidden');
   if (mode.flags.clashBrawl) initBrawl(ui.st);
@@ -6751,6 +6770,7 @@ function newGame(opts = {}) {
     ? {
       ...opts.bot,
       timeHandicap: shortBotClock,
+      timeHandicapDivisor: botClockDivisorUsed,
       name: opts.bot.persona
         ? (opts.bot.name || (personaById(opts.bot.persona) || {}).title || 'Бот')
         : opts.bot.fake ? (opts.bot.name || 'Игрок') : ('Бот · ' + botLabel(opts.bot.level)),
@@ -6846,7 +6866,7 @@ function renderMeta() {
   const bits = [];
   bits.push(`поле ${st.W}×${st.H}`);
   bits.push(ui.timeMs ? profile.timeLabel : 'без ограничений');
-  if(ui.bot?.timeHandicap)bits.push('у бота 1/10 времени на партию');
+  if(ui.bot?.timeHandicap)bits.push(`у бота в ${ui.bot.timeHandicapDivisor||botClockDivisor(ui.timeMs)} раз меньше времени`);
   if (st.flags.fog) bits.push('туман войны');
   if (st.flags.explode) bits.push('взрывы');
   if (st.flags.checksToWin) bits.push('победа по трём шахам');
