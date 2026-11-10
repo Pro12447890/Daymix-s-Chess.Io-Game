@@ -431,7 +431,7 @@ function chooseBotMoveOffThread(st, level, persona, maxMs = 0) {
   if (typeof Worker !== 'function') return Promise.resolve(maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261110-86.1', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261110-87', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -982,30 +982,16 @@ const INFERNAL_LINES = [
 const GRAY_STEPS = [0, 0.16, 0.32, 0.48, 0.62, 0.75];
 
 function updateSameStreak(id, mover) {
+  // Repeated moves of one piece only enable the draw indicator; they never cause stalemate.
   if (!id) return false;
   if (!ui.pieceStreak) ui.pieceStreak = { w: { id: null, n: 0 }, b: { id: null, n: 0 } };
   const slot = ui.pieceStreak[mover] || { id: null, n: 0 };
-  if (slot.id === id) slot.n += 1;
-  else { slot.id = id; slot.n = 1; }
+  slot.n = slot.id === id ? slot.n + 1 : 1;
+  slot.id = id;
   ui.pieceStreak[mover] = slot;
-  const n = slot.n;
-  const endgame = phaseFor(ui.st) === 'endgame';
-  const online = ui.mode === 'online';
-  const mine = online && mover === myColor();
-  const shell = $('#gameShell');
-  if (shell) {
-    const level = mine && n >= 5 ? Math.min(5, n - 4) : 0;
-    shell.style.setProperty('--gray', String(GRAY_STEPS[level]));
-  }
-  const ring = $('#repRing');
-  if (ring) {
-    const show = endgame && n >= 5 && (!online || mine);
-    ring.classList.toggle('hidden', !show);
-    ring.style.setProperty('--p', `${Math.min(360, ((n - 4) / 4) * 360)}deg`);
-    const label = ring.querySelector('span');
-    if (label) label.textContent = n >= 8 ? '8×' : `${Math.min(4, n - 4)}/4`;
-  }
-  return online && mine && endgame && n >= 8;
+  $('#gameShell')?.style.setProperty('--gray', '0');
+  $('#repRing')?.classList.add('hidden');
+  return false;
 }
 
 function fastRookWave(st, sq) {
@@ -2148,7 +2134,7 @@ function renderProfile() {
     const botGame = !!(ui.bot && ui.st);
     $('#gFlip').disabled = botGame;
     $('#gFlip').checked = botGame ? false : profile.flip;
-    $('#gFlip').title = botGame ? 'С ботом доска не переворачивается' : '';
+    $('#gFlip').title = botGame ? 'Настройка часов для второго игрока на одном устройстве' : '';
   }
   $('#gAutoQueen').checked = profile.autoQueen;
   if ($('#optSound')) $('#optSound').checked = profile.sound !== false;
@@ -4777,6 +4763,7 @@ function viewState() {
     board: f.board,
     lastMove: f.lastMove || null,
     turn: f.turn,
+    half: f.half ?? 0, full: f.full ?? ui.st.full,
     ep: f.ep,
     castling: f.castling,
     blocked: f.blocked,
@@ -4978,7 +4965,7 @@ function renderSquares() {
     if (ui.strategy) {
       const terr = st.strategy?.territory || {};
       const influence = st.strategy?.influence?.[i];
-      if (influence != null) el.style.setProperty('--claim', Math.abs(influence)/3);
+      if (influence != null) el.style.setProperty('--claim', Math.abs(influence)/(st.strategy.economyVersion >= 87 ? 4 : 3));
       const object = st.strategy?.objects?.find(o=>o.sq===i);
       if(object) { el.dataset.object = object.icon || (object.name==='Завод'?'🏭':object.name==='Порт'?'⚓':'🏙'); el.title=object.name+' · +'+object.income+' золота/раунд'; } else delete el.dataset.object;
       if(ui.strategy.recruit && terr[i]===st.turn && !st.board[i]) cls.push('brawl-deploy');
@@ -5285,6 +5272,7 @@ function snap(st, lastMove = null) {
     lastMove: lastMove ? { ...lastMove } : null,
     turn: st.turn,
     full: st.full, half: st.half,
+    repetitionKey: typeof canonicalDrawKey === 'function' ? canonicalDrawKey(st) : null,
     mv: { w: { ...st.mv.w }, b: { ...st.mv.b } },
     ep: st.ep,
     castling: { w: { ...st.castling.w }, b: { ...st.castling.b } },
@@ -5313,9 +5301,11 @@ const BRAWL_UPGRADES = {
   power: { name: '⚔ Оружие', text: '+2 к урону всех своих фигур', cost: 5 },
   heal: { name: '💚 Ремонт', text: '+8 HP всем своим, не выше максимума', cost: 4 },
   shield: { name: '🛡 Купол', text: 'Вдвое меньше входящего урона до следующего своего хода', cost: 4 },
-  economy: { name: '💜 Генератор', text: '+1 эликсир в начале следующих своих ходов (до +3)', cost: 7 },
-  reserve: { name: '📦 Резерв', text: '+4 к вместимости эликсира (до 28)', cost: 4 },
+  economy: { name: '💜 Генератор', text: '+1 эликсир в начале следующих своих ходов (5 уровней)', cost: 7 },
+  reserve: { name: '📦 Резерв', text: '+20 к вместимости эликсира (5 уровней)', cost: 4 },
 };
+function brawlUpgradeLevel(s, color, kind) { return s.upgradeLevels?.[color]?.[kind] || 0; }
+function brawlUpgradeCost(s, color, kind) { return Math.ceil(BRAWL_UPGRADES[kind].cost * 1.8 ** brawlUpgradeLevel(s, color, kind)); }
 function brawlDeck() {
   return ['p', 'b', 'n', 'r', 'q'].map((t) => ({ t, cost: BRAWL_COST[t] }));
 }
@@ -5334,22 +5324,35 @@ const STRAT = {
 };
 const STRAT_NUKE = { round: 5, cost: 120, center: 150, inner: 80, outer: 30 };
 const STRAT_UPGRADES = {
-  income: { name: 'Экономика', base: 30, max: 3 },
-  arsenal: { name: 'Арсенал', base: 35, max: 3 },
-  logistics: { name: 'Снабжение', base: 25, max: 3 },
+  income: { name: 'Экономика', base: 30, max: 5 },
+  arsenal: { name: 'Арсенал', base: 35, max: 5 },
+  logistics: { name: 'Снабжение', base: 25, max: 5 },
 };
+const STRAT_ECONOMY_SHARE = [1/10, 1/5, 1/4, 1/3, 1/2, 2/3];
+function strategyUpgradeCost(key, level) { return Math.ceil(STRAT_UPGRADES[key].base * 1.8 ** level); }
+function strategyMoney(value) { return String(Math.round(Number(value || 0) * 100) / 100).replace('.', ','); }
+function strategyMigrateEconomy(s) {
+  if (s.economyVersion === 87) return s;
+  s.economyVersion = 87;
+  s.cap = Math.max(1000, s.cap || 0);
+  for (const key of Object.keys(s.influence)) {
+    s.influence[key] = Math.max(-4, Math.min(4, Math.round((s.influence[key] || 0) / 3 * 2) * 2));
+    s.territory[key] = s.influence[key] === 4 ? 'w' : s.influence[key] === -4 ? 'b' : null;
+  }
+  return s;
+}
 
 /* Only rule data lives in st.strategy. Selections/aiming are non-enumerable and
    rebuilt after JSON import: no DOM, Set, timers or wall-clock in the reducer. */
 function strategyEnsure(st) {
-  if (st.strategy && st.strategy.version === 84) return st.strategy;
+  if (st.strategy && st.strategy.version === 84) return strategyMigrateEconomy(st.strategy);
   const territory = {}, influence = {};
   for (let i = 0; i < st.board.length; i++) {
     const owner = Math.floor(i / st.W) < st.H / 2 ? 'w' : 'b';
-    territory[i] = owner; influence[i] = owner === 'w' ? 3 : -3;
+    territory[i] = owner; influence[i] = owner === 'w' ? 4 : -4;
   }
   st.strategy = {
-    version: 84, hp: {}, shield: {}, moved: {}, gold: { w: 35, b: 35 }, cap: 180,
+    version: 84, economyVersion: 87, hp: {}, shield: {}, moved: {}, gold: { w: 35, b: 35 }, cap: 1000,
     factions: { w: 'Светлая республика', b: 'Тёмная федерация' },
     phase: 'move', phaseSide: 0, round: 1, seq: 0, phaseRepeated: false,
     nextPhase: 'attack', nextRepeat: false, notice: '',
@@ -5433,7 +5436,7 @@ function strategyUpdateTerritory(st) {
     const x = sq % st.W, y = Math.floor(sq / st.W);
     /* One-rank home borders cannot be repainted. */
     if (y === 0 || y === st.H - 1) {
-      s.influence[sq] = y === 0 ? 3 : -3; s.territory[sq] = y === 0 ? 'w' : 'b'; continue;
+      s.influence[sq] = y === 0 ? 4 : -4; s.territory[sq] = y === 0 ? 'w' : 'b'; continue;
     }
     let dw = Infinity, db = Infinity;
     for (let i = 0; i < st.board.length; i++) {
@@ -5445,15 +5448,49 @@ function strategyUpdateTerritory(st) {
     if (dw === db) continue;
     const favored = dw < db ? 1 : -1;
     const n = s.influence[sq] || 0;
-    /* Three interactions convert a fully hostile cell: -3,-1,+1,+3. */
-    s.influence[sq] = Math.max(-3, Math.min(3, n + favored * 2));
-    if (Math.abs(s.influence[sq]) === 3) s.territory[sq] = s.influence[sq] > 0 ? 'w' : 'b';
+    /* Four interactions: hostile -4,-2,0,+2,+4; each step transfers 25%. */
+    s.influence[sq] = Math.max(-4, Math.min(4, n + favored * 2));
+    s.territory[sq] = s.influence[sq] === 4 ? 'w' : s.influence[sq] === -4 ? 'b' : null;
   }
 }
-function strategyRuleIncome(st, color) {
+function strategyTerritoryShare(st, sq, color) {
+  const s = st.strategy, scale = s.economyVersion === 87 ? 4 : 3;
+  const value = Math.max(-scale, Math.min(scale, Number(s.influence[sq]) || 0));
+  const white = Math.round(((value / scale + 1) / 2) * 4) / 4;
+  return color === 'w' ? white : 1 - white;
+}
+function strategyIncomePlan(st, color, cycle = Math.floor((st.strategy.seq || 0) / 4) + 1) {
+  const s = st.strategy, cells = [];
+  for (let sq = 0; sq < st.board.length; sq++) {
+    const share = strategyTerritoryShare(st, sq, color);
+    if (share > 0) cells.push({ sq, share, amount: share, boosted: false });
+  }
+  // Stable per collection: previews and rendering never consume the game's PRNG.
+  const rank = sq => {
+    let v = ((st.seed >>> 0) ^ Math.imul(cycle, 0x9e3779b1) ^ Math.imul(sq + 1, 0x85ebca6b) ^ (color === 'w' ? 0x12ab : 0x34cd)) >>> 0;
+    v = Math.imul(v ^ (v >>> 16), 0x7feb352d); v = Math.imul(v ^ (v >>> 15), 0x846ca68b);
+    return (v ^ (v >>> 16)) >>> 0;
+  };
+  const level = Math.max(0, Math.min(5, s.upgrades[color].income || 0));
+  const boostCount = Math.floor(cells.length * STRAT_ECONOMY_SHARE[level]);
+  const boosted = new Set(cells.slice().sort((a,b) => rank(a.sq) - rank(b.sq) || a.sq - b.sq).slice(0, boostCount).map(c => c.sq));
+  for (const cell of cells) if (boosted.has(cell.sq)) { cell.amount *= 2; cell.boosted = true; }
+  // Objects remain an explicit bonus, paid only with the same four-action collection.
+  const objects = s.objects.map(o => ({ sq:o.sq, amount:o.income * strategyTerritoryShare(st,o.sq,color), object:true })).filter(o => o.amount > 0);
+  const territory = cells.reduce((n,c) => n + c.amount, 0), bonus = objects.reduce((n,o) => n + o.amount, 0);
+  return { cells, objects, territory, bonus, total: territory + bonus, boostCount, level };
+}
+function strategyRuleIncome(st, color) { return strategyIncomePlan(st, color).total; }
+function strategyCollectIncome(st, events) {
   const s = st.strategy;
-  const objects = s.objects.filter(o => s.territory[o.sq] === color).reduce((n, o) => n + o.income, 0);
-  return 10 + s.upgrades[color].income * 4 + objects;
+  for (const color of ['w', 'b']) {
+    const plan = strategyIncomePlan(st, color, Math.floor(s.seq / 4));
+    const before = s.gold[color];
+    s.gold[color] = Math.min(s.cap, before + plan.total);
+    let remaining = s.gold[color] - before;
+    const cells = [...plan.cells, ...plan.objects].map(cell => { const amount = Math.min(remaining, cell.amount); remaining -= amount; return { ...cell, amount }; }).filter(cell => cell.amount > 0);
+    events.push({ type:'income', color, amount:s.gold[color]-before, before, after:s.gold[color], cells, territory:plan.territory, bonus:plan.bonus, collection:true, cycle:s.seq/4 });
+  }
 }
 function strategyRuleAttackData(st, p, from, special = null) {
   const aim = new Set(), targets = new Set();
@@ -5519,11 +5556,11 @@ function strategyAdvance(st, mover, events) {
     s.phase = s.nextPhase; s.phaseRepeated = repeat; s.phaseSide = 0; st.turn = 'w';
     if (old === 'attack') {
       strategyRuleRadiation(st, events); s.round++;
-      for (const color of ['w', 'b']) { const before=s.gold[color];s.gold[color]=Math.min(s.cap,s.gold[color]+strategyRuleIncome(st,color));events.push({type:'income',color,amount:s.gold[color]-before}); }
     }
     s.notice = repeat ? `Тактический сюрприз: ещё одна фаза ${s.phase === 'move' ? 'манёвров' : 'атаки'}!` : '';
     strategyPlanPhase(st);
   }
+  if (s.seq % 4 === 0) strategyCollectIncome(st, events);
   strategyCleanup(st, events);
 }
 function strategyReduceAction(st, action) {
@@ -5543,7 +5580,7 @@ function strategyReduceAction(st, action) {
   } else if (kind === 'upgrade') {
     const meta = STRAT_UPGRADES[action.upgrade], levels = s.upgrades[mover];
     if (!meta || levels[action.upgrade] >= meta.max) return fail('Улучшение уже максимальное');
-    const cost = meta.base + levels[action.upgrade] * 15;
+    const cost = strategyUpgradeCost(action.upgrade, levels[action.upgrade]);
     if (!pay(cost)) return fail(`Улучшение стоит ${cost}, в казне ${s.gold[mover]}`);
     levels[action.upgrade]++; events.push({ type: 'upgrade', upgrade: action.upgrade, color: mover });
   } else if (kind === 'support') {
@@ -5700,7 +5737,7 @@ function strategyAvailableBotActions(st) {
       if(p.t==='n'&&s.gold[color]>=15&&!s.mines.some(m=>m.sq===from))options.push({kind:'mine',from});
     }
   }
-  for(const [upgrade,meta]of Object.entries(STRAT_UPGRADES)){const lv=s.upgrades[color][upgrade];if(lv<meta.max&&meta.base+lv*15<=s.gold[color])options.push({kind:'upgrade',upgrade});}
+  for(const [upgrade,meta]of Object.entries(STRAT_UPGRADES)){const lv=s.upgrades[color][upgrade];if(lv<meta.max&&strategyUpgradeCost(upgrade,lv)<=s.gold[color])options.push({kind:'upgrade',upgrade});}
   for(let to=0;to<st.board.length;to++){const p=st.board[to];if(!p||p.c!==color)continue;if(s.gold[color]>=20&&strategyPieceHp(st,p)<STRAT[p.t].hp)options.push({kind:'support',support:'heal',to});if(s.gold[color]>=25&&(s.shield[p.id]||0)<30)options.push({kind:'support',support:'shield',to});}
   return options;
 }
@@ -5811,12 +5848,7 @@ function strategyAddGold(color, amount) {
 }
 
 function strategyIncome(color) {
-  const s = ui.st && ui.st.strategy;
-  if (!s) return;
-  let amount = 5;
-  if (s.x2) { amount *= 2; s.x2 = false; }
-  strategyAddGold(color, amount);
-  toast(`+${amount} в казну`);
+  return ui.st?.strategy ? strategyRuleIncome(ui.st, color) : 0;
 }
 
 function strategyDrawHand() { strategyRenderCards(); }
@@ -5835,9 +5867,9 @@ function strategyRender() {
   $('#stratSkipMove').textContent='Пропустить (+6)'; $('#stratSkipAttack').textContent='Пропустить (+3)';
   for(const id of ['stratSkipMove','stratSkipAttack'])$('#'+id).disabled=!can;
   for(const [id,key] of [['stratX2','income'],['stratPlus','arsenal'],['stratCap','logistics']]){
-    const el=$('#'+id),meta=STRAT_UPGRADES[key],level=s.upgrades[own][key],cost=meta.base+level*15;if(!el)continue;
-    el.textContent=`${meta.name} ${level}/${meta.max} · ${cost}💰`;el.disabled=!can||level>=meta.max||s.gold[own]<cost;
-    el.title=key==='income'?'Доход +4 за раунд. Занимает действие.':key==='arsenal'?'Урон всех бойцов +4. Занимает действие.':'Стоимость движения −15%. Занимает действие.';
+    const el=$('#'+id),meta=STRAT_UPGRADES[key],level=s.upgrades[own][key],cost=strategyUpgradeCost(key,level);if(!el)continue;
+    el.textContent=`${meta.name} ${level}/${meta.max}${level>=meta.max?' · МАКС':` · ${cost}💰`}`;el.disabled=!can||level>=meta.max||s.gold[own]<cost;
+    el.title=key==='income'?`Удвоение дохода ${['1/10','1/5','1/4','1/3','1/2','2/3'][level]} клеток. Сбор каждые 4 действия. Покупка списывает золото и занимает действие.`:key==='arsenal'?'Урон всех бойцов +4 за уровень. Покупка списывает золото и занимает действие.':'Стоимость движения −15% за уровень. Покупка списывает золото и занимает действие.';
   }
   let timeline=$('#strategyTimeline');if(!timeline){timeline=document.createElement('div');timeline.id='strategyTimeline';timeline.className='strat-timeline';$('#strategyBar').appendChild(timeline);}
   timeline.innerHTML=['Белые: шаг','Чёрные: шаг','Белые: атака','Чёрные: атака'].map((v,i)=>`<span class="${i===(s.phase==='move'?0:2)+s.phaseSide?'active':''}">${v}</span>`).join('');
@@ -5848,7 +5880,7 @@ function strategyRender() {
 function strategyRenderCards() {
   const box=$('#stratCards'),st=ui.st,s=ui.strategy;if(!box||!s)return;box.innerHTML='';
   const can=strategyCanAct(),color=st.turn;
-  const info=document.createElement('p');info.className='strat-economy';info.textContent=`Доход +${strategyRuleIncome(st,color)} / раунд · ядерка ${s.nukeUsed[color]?'использована':s.round<5?'с 5-го раунда':'готова при 120💰'} · каждое улучшение занимает действие.`;box.appendChild(info);
+  const info=document.createElement('p');info.className='strat-economy';info.textContent=`Доход +${strategyMoney(strategyRuleIncome(st,color))} / 4 действия · до сбора ${4-s.seq%4} · ядерка ${s.nukeUsed[color]?'использована':s.round<5?'с 5-го раунда':'готова при 120💰'} · улучшения платные, цена ×1,8 за уровень.`;box.appendChild(info);
   for(const [kind,text,cost] of [['heal','💚 Ремонт +25 HP',20],['shield','🛡 Щит +30',25]]){
     const b=document.createElement('button');b.type='button';b.className='strat-card support';b.textContent=`${text} · ${cost}💰`;b.disabled=!can||s.gold[color]<cost;b.onclick=()=>{s.recruit=null;s.support=s.support===kind?null:kind;toast(s.support?'Нажми свою фигуру для поддержки':'Поддержка отменена');renderSquares();};box.appendChild(b);
   }
@@ -6109,6 +6141,12 @@ function brawlEnsure(st) {
       draft: null, stage: 'main', offer: [], prepared: -1, nextPiece: 1, ranked: false });
     s.selected = null;
   }
+  if (!s.upgradeLevels) {
+    s.upgradeLevels = {};
+    for (const c of ['w','b']) s.upgradeLevels[c] = { power: Math.min(5, Math.floor(s.power[c]/2)), heal: 0, shield: 0, economy: Math.min(5, Math.max(0,s.income[c]-3)), reserve: Math.min(5, Math.max(0,Math.round((s.maxByColor[c]-16)/4))) };
+    for (const c of ['w','b']) s.maxByColor[c] = 16 + 20*s.upgradeLevels[c].reserve;
+    s.max = Math.max(s.maxByColor.w,s.maxByColor.b);
+  }
   for (let i = 0; i < st.board.length; i++) {
     const p = st.board[i];
     if (p && p.hp == null) st.board[i] = { ...p, hp: BRAWL_HP[p.t], maxHp: BRAWL_HP[p.t] };
@@ -6122,8 +6160,8 @@ function brawlPrepareTurn(st) {
   s.selected = null;
   s.offer = [];
   if (stateRandom(st) < 0.5) {
-    const pool = Object.keys(BRAWL_UPGRADES);
-    while (s.offer.length < 3) s.offer.push(pool.splice(Math.floor(stateRandom(st) * pool.length), 1)[0]);
+    const pool = Object.keys(BRAWL_UPGRADES).filter(k => brawlUpgradeLevel(s, st.turn, k) < 5);
+    while (s.offer.length < 3 && pool.length) s.offer.push(pool.splice(Math.floor(stateRandom(st) * pool.length), 1)[0]);
   }
   s.stage = s.offer.length ? 'upgrade' : 'main';
   s.phase = s.plies < 6 ? 'develop' : 'battle';
@@ -6172,15 +6210,16 @@ function brawlApplyAction(st, action, opts = {}) {
     if (action.kind != null) {
       const u = BRAWL_UPGRADES[action.kind];
       if (!u || !s.offer.includes(action.kind)) return brawlActionFail('Усиление не предложено');
-      if (s.elixir[mover] < u.cost) return brawlActionFail('Не хватает эликсира; можно отказаться');
-      if (action.kind === 'economy' && s.income[mover] >= 6) return brawlActionFail('Генератор уже максимальный');
-      if (action.kind === 'reserve' && s.maxByColor[mover] >= 28) return brawlActionFail('Резерв уже максимальный');
-      s.elixir[mover] -= u.cost;
+      const level = brawlUpgradeLevel(s, mover, action.kind), cost = brawlUpgradeCost(s, mover, action.kind);
+      if (level >= 5) return brawlActionFail('Усиление уже 5/5');
+      if (s.elixir[mover] < cost) return brawlActionFail('Не хватает эликсира; можно отказаться');
+      s.elixir[mover] -= cost;
+      s.upgradeLevels[mover][action.kind] = level + 1;
       if (action.kind === 'power') s.power[mover] += 2;
       if (action.kind === 'heal') st.board = st.board.map((p) => p && p.c === mover ? { ...p, hp: Math.min(p.maxHp || BRAWL_HP[p.t], p.hp + 8) } : p);
       if (action.kind === 'shield') s.shieldTurns[mover] = 1;
       if (action.kind === 'economy') s.income[mover]++;
-      if (action.kind === 'reserve') s.maxByColor[mover] += 4;
+      if (action.kind === 'reserve') { s.maxByColor[mover] += 20; s.max = Math.max(s.maxByColor.w,s.maxByColor.b); }
       result.events.push({ type: 'upgrade', kind: action.kind });
     }
     s.stage = 'main'; s.offer = [];
@@ -6239,7 +6278,7 @@ function brawlBotAction(st) {
     return { type: 'draft-card', id: ranked[0].id };
   }
   if (s.stage === 'upgrade') {
-    const affordable = s.offer.filter((k) => s.elixir[color] >= BRAWL_UPGRADES[k].cost && (k !== 'economy' || s.income[color] < 6) && (k !== 'reserve' || s.maxByColor[color] < 28));
+    const affordable = s.offer.filter(k => brawlUpgradeLevel(s,color,k)<5 && s.elixir[color]>=brawlUpgradeCost(s,color,k));
     const kind = affordable.find((k) => k === 'economy') || (s.elixir[color] >= 10 ? affordable[0] : null);
     return { type: 'upgrade', kind: kind || null };
   }
@@ -6627,6 +6666,7 @@ function renderBrawl() {
   let guidance=panel.querySelector('.brawl-guidance');
   if(!guidance){guidance=document.createElement('div');guidance.className='brawl-guidance';panel.prepend(guidance);}
   guidance.textContent=`${actor==='w'?'Белые':'Чёрные'} · ${s.plies<6?`Развитие ${s.plies}/6 — граница закрыта`:'Бой — взорви короля'} · ${s.stage==='upgrade'?'Усиление или отказ → затем действие':'Поставь фигуру / походи / пропусти'}`;
+  let levels=panel.querySelector('.brawl-levels');if(!levels){levels=document.createElement('div');levels.className='brawl-levels';guidance.after(levels);}levels.textContent=Object.entries(BRAWL_UPGRADES).map(([key,meta])=>`${meta.name} ${brawlUpgradeLevel(s,color,key)}/5`).join(' · ');
   const fill=$('#brawlElixirFill'),num=$('#brawlElixirNum'),max=s.maxByColor[color];
   if(fill)fill.style.width=s.elixir[color]/max*100+'%';
   if(num)num.textContent=`${s.elixir[color]}/${max} · доход +${s.income[color]}/свой ход`;
@@ -6635,7 +6675,7 @@ function renderBrawl() {
   let upgrades=panel.querySelector('.brawl-upgrades');if(!upgrades){upgrades=document.createElement('div');upgrades.className='brawl-upgrades';panel.appendChild(upgrades);}
   upgrades.innerHTML='';upgrades.classList.toggle('hidden',s.stage!=='upgrade'||!!s.draft);
   if(s.stage==='upgrade'&&!s.draft){
-    for(const key of s.offer){const meta=BRAWL_UPGRADES[key],btn=document.createElement('button');btn.type='button';btn.innerHTML=`<b>${meta.name} · ${meta.cost} 💜</b><small>${meta.text}</small>`;btn.disabled=!can||s.elixir[color]<meta.cost;btn.onclick=()=>brawlSubmitAction({type:'upgrade',kind:key});upgrades.appendChild(btn);}
+    for(const key of s.offer){const meta=BRAWL_UPGRADES[key],btn=document.createElement('button'),level=brawlUpgradeLevel(s,color,key),cost=brawlUpgradeCost(s,color,key);btn.type='button';btn.innerHTML=`<b>${meta.name} ${level}/5 · ${cost} 💜</b><small>${meta.text} · цена ×1,8 за уровень</small>`;btn.disabled=!can||level>=5||s.elixir[color]<cost;btn.onclick=()=>brawlSubmitAction({type:'upgrade',kind:key});upgrades.appendChild(btn);}
     const skip=document.createElement('button');skip.type='button';skip.textContent='Без усиления → к действию';skip.disabled=!can;skip.onclick=()=>brawlSubmitAction({type:'upgrade',kind:null});upgrades.appendChild(skip);
   }
   const deck=$('#brawlDeck');if(deck){deck.innerHTML='';s.decks[color].forEach((card,index)=>{
@@ -6782,10 +6822,10 @@ function newGame(opts = {}) {
   if (mode.flags.inverted && (opts.mode || 'local') === 'local') ui.orientation = 'b';
   if (mode.flags.ultraBalance) ui.orientation = 'w';
   ui.mode = opts.mode || 'local';
-  if (ui.mode === 'local' && !opts.bot && profile.flip && !mode.flags.strategy && !mode.flags.clashBrawl && window.innerWidth < 1000) {
-    if (profile.flipAll) ui.rotated = ui.st.turn !== ui.orientation;
-    else ui.tableRotated = ui.st.turn !== ui.orientation;
-    if (ui.tableRotated) $('#board').classList.add('board-rotated');
+  if (ui.mode === 'local' && !opts.bot && !opts.spectator && window.innerWidth < 1000) {
+    ui.orientation = 'w';
+    ui.rotated = false;
+    ui.tableRotated = false;
   }
   ui.role = opts.role || null;
   ui.spectator = !!opts.spectator;
@@ -7151,7 +7191,7 @@ function resultReason(res) {
       center: 'king in the centre', checks: 'three checks', kingOnly: 'opponent has only a king',
       abort: 'game aborted', brawl: 'king defeated', devoured: 'all pieces eaten',
       raceKing: 'king reached the edge', idle: 'white made no first move',
-      monotony: 'one piece — stalemate', queenLost: 'queen lost', extreme: 'huge advantage',
+      monotony: 'legacy repetition rule', queenLost: 'queen lost', extreme: 'huge advantage',
     };
     return en[res.reason] || res.reason;
   }
@@ -7358,16 +7398,12 @@ function commitMove(m, opts = {}) {
   const evalAfter = evaluateWhite(st);
   if (ui.persona) personaAfterMove(mover, evalBefore, evalAfter);
   const movedPiece = st.board[match.to];
-  const monotony = updateSameStreak(movedPiece ? movedPiece.id : null, mover);
+  updateSameStreak(movedPiece ? movedPiece.id : null, mover);
 
   if (st.flags.checksToWin && inCheck(st, st.turn)) st.mv[mover].checks += 1;
 
   let res = updateStatus(st);
-  if (!res && monotony) {
-    res = { winner: null, reason: 'monotony' };
-    st.status = 'over';
-    st.result = res;
-  }
+  if (!res && typeof repeatedPositionResult === 'function') res = repeatedPositionResult(st, ui.frames);
   if (!res && st.flags.checksToWin && st.mv[mover].checks >= st.flags.checksToWin) {
     res = { winner: mover, reason: 'checks' };
     st.status = 'over';
@@ -7414,19 +7450,10 @@ function commitMove(m, opts = {}) {
     setTimeout(() => board.classList.remove('shake'), 450);
   }
 
-  let flippedNow = false;
-  const prevRotated = ui.rotated;
-  const prevTable = ui.tableRotated;
-  if (ui.mode === 'local' && !ui.bot && profile.flip && !opts.remote && !opts.silent
-      && window.innerWidth < 1000) {
-    if (profile.flipAll) {
-      ui.rotated = st.turn !== ui.orientation;
-      ui.tableRotated = false;
-    } else {
-      ui.rotated = false;
-      ui.tableRotated = st.turn !== ui.orientation;
-    }
-    flippedNow = ui.rotated !== prevRotated || ui.tableRotated !== prevTable;
+  const flippedNow = false;
+  if (typeof localFaceToFace === 'function' && localFaceToFace()) {
+    ui.rotated = false;
+    ui.tableRotated = false;
   }
   if (!opts.silent) {
     document.body.classList.toggle('flip-all', !!ui.rotated);
@@ -7439,7 +7466,8 @@ function commitMove(m, opts = {}) {
       annihilationFx(st, undo.annihilationCells || [match.from, match.to, ...undo.removed.map((r) => r.sq)]);
     }
     if (capInfo.length) {
-      captureFx(capInfo);
+      if (capInfo.some(c => c.type === 'q') && typeof captureAfterArrival === 'function') captureAfterArrival(capInfo);
+      else captureFx(capInfo);
       /* Частицы телефонной версии теперь работают и на ПК, независимо от «Эпично». */
       if (!profile.calm && !capInfo.some((c) => c.type === 'q')) {
         softBurst(st, match.to);
@@ -8230,6 +8258,7 @@ function frameViewAt(ply) {
     board: f.board,
     lastMove: f.lastMove || null,
     turn: f.turn,
+    half: f.half ?? 0, full: f.full ?? ui.st.full,
     ep: f.ep,
     castling: f.castling,
     blocked: f.blocked,
@@ -10163,7 +10192,7 @@ function bindEvents() {
   if ($('#optFlipAll')) $('#optFlipAll').addEventListener('change', (e) => {
     profile.flipAll = e.target.checked;
     saveProfile();
-    toast(profile.flipAll ? 'Переворачиваться будет весь игровой стол' : 'Переворачивается только доска');
+    toast(profile.flipAll ? 'Ник чёрных повёрнут ко второму игроку' : 'Ник чёрных повёрнут к вам');
   });
   $('#optFlip').addEventListener('change', (e) => {
     profile.flip = e.target.checked;
@@ -10385,6 +10414,10 @@ function bindEvents() {
   });
   $('#railSound').addEventListener('click', () => setSound(profile.sound === false));
   $('#railFlip').addEventListener('click', () => {
+    if (typeof localFaceToFace === 'function' && localFaceToFace()) {
+      profile.flip = !profile.flip; profile.flipAll = profile.flip;
+      saveProfile(); syncLocalSeats(); renderPlayers(); return;
+    }
     if (profile.flipAll) {
       ui.rotated = !ui.rotated;
       ui.tableRotated = false;

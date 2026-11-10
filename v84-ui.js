@@ -1,7 +1,35 @@
 'use strict';
 /* Shared presentation: no gameplay randomness is consumed by cosmetic effects. */
+const v84BattleDesktopAnchors = new Map();
+function v84BattleDesktopMove(el,parent){
+  if(!el||!parent)return;
+  if(!v84BattleDesktopAnchors.has(el)){const marker=document.createComment('battle-desktop-home:'+el.id);el.before(marker);v84BattleDesktopAnchors.set(el,marker);}
+  if(el.parentElement!==parent)parent.appendChild(el);
+}
+function v84BattleDesktopRestore(){
+  for(const [el,marker]of v84BattleDesktopAnchors){if(marker.parentNode){marker.before(el);marker.remove();}}
+  v84BattleDesktopAnchors.clear();
+  $('#gameShell')?.classList.remove('v84-battle-desktop','v84-battle-narrow');
+  $('#v84BattleRight')?.classList.add('hidden');$('#v84BattleLeft')?.classList.add('hidden');
+}
+function v84BattleDesktopSync(){
+  const active=innerWidth>=1000&&ui.screen==='game'&&ui.st&&(ui.st.flags.strategy||ui.st.flags.clashBrawl);
+  if(!active){if(v84BattleDesktopAnchors.size)v84BattleDesktopRestore();return false;}
+  const shell=$('#gameShell');if(!shell)return false;
+  if(shell.dataset.battleDesktopMode&&shell.dataset.battleDesktopMode!==ui.st.modeId)v84BattleDesktopRestore();
+  shell.dataset.battleDesktopMode=ui.st.modeId;
+  if(typeof strategyPhoneRestore==='function')strategyPhoneRestore();
+  for(const [id,label]of [['v84BattleLeft','Карточки и армия'],['v84BattleRight','Действия и история']])if(!$('#'+id)){const column=document.createElement('aside');column.id=id;column.className='v84-battle-column';column.setAttribute('aria-label',label);shell.appendChild(column);}
+  const left=$('#v84BattleLeft'),right=$('#v84BattleRight');left.classList.remove('hidden');right.classList.remove('hidden');
+  if(ui.st.flags.strategy){v84BattleDesktopMove($('#stratInfoPanel'),left);v84BattleDesktopMove($('#strategyBar'),right);}
+  else v84BattleDesktopMove($('#brawlPanel'),left);
+  v84BattleDesktopMove($('#sidePanel'),right);
+  shell.classList.add('v84-battle-desktop');shell.classList.remove('v84-panel-below');
+  return true;
+}
 function v84LayoutBoard() {
-  if (innerWidth < 1000 || !ui.st || profile.desktopLayout === 'legacy') return false;
+  const battle=v84BattleDesktopSync();
+  if (innerWidth < 1000 || !ui.st || (profile.desktopLayout === 'legacy'&&!battle)) return false;
   const shell = $('#gameShell'), stage = $('#stage'), wrap = $('#boardWrap'), panel = $('#sidePanel');
   if (!shell || !stage || !wrap) return false;
   const sr = shell.getBoundingClientRect(), center = innerWidth / 2 - sr.left;
@@ -9,31 +37,35 @@ function v84LayoutBoard() {
   const panelW = Math.min(340, Math.max(240, innerWidth * .22));
   const infoW = ui.strategy ? 210 : 0;
   const top = $('#barTop'), bottom = $('#barBottom');
-  const extras = [top, bottom, ui.brawl && $('#brawlPanel'), ui.strategy && $('#strategyBar')].filter(Boolean);
-  const bars = extras.reduce((n, el) => n + el.offsetHeight + 5, 8);
+  // Only player bars consume the centre's height; cards live in side columns.
+  const bars = battle ? 108 : [top,bottom].filter(Boolean).reduce((n,el)=>n+el.offsetHeight+5,8);
   const height = Math.max(160, sr.height - bars - 20);
   const idealW = Math.min(height * ui.st.W / ui.st.H, 2 * (Math.min(center, sr.width - center) - 14));
-  // Keep the board at viewport center. Right/left auxiliaries move below it when necessary.
   const sideSpace = sr.width - center - idealW / 2 - 20;
-  const below = sideSpace < panelW || (ui.strategy && center - idealW / 2 - 20 < infoW);
+  const below = !battle&&(sideSpace < panelW || (ui.strategy && center - idealW / 2 - 20 < infoW));
   shell.classList.toggle('v84-panel-below', below);
   shell.classList.add('v84-centered');
   shell.style.setProperty('--v84-center', center + 'px');
   shell.style.setProperty('--v84-panel-w', panelW + 'px');
-   const reserve = below ? (ui.strategy ? 250 : 155) : 0;
-  const sq = Math.max(16, Math.floor(Math.min(170, idealW / ui.st.W, (height - reserve) / ui.st.H)));
-  const w = sq * ui.st.W, h = sq * ui.st.H;
-  ui.sq = sq;
-  wrap.style.width = w + 'px'; wrap.style.height = h + 'px'; wrap.style.padding = '0';
-  stage.style.flex = 'none'; stage.style.width = w + 'px';
-  stage.style.left = center + 'px'; stage.style.height = (below ? sr.height - reserve - 12 : sr.height - 16) + 'px';
-  if (top) top.style.width = w + 'px'; if (bottom) bottom.style.width = w + 'px';
-  if (panel) { panel.style.height = below ? (reserve - 12) + 'px' : Math.min(sr.height - 24, h + bars) + 'px'; panel.style.width = below ? Math.min(sr.width - 24, w + (ui.strategy ? 210 : 0)) + 'px' : panelW + 'px'; }
-  if (info) { info.style.marginTop = '0'; info.style.height = below ? (reserve - 12) + 'px' : h + 'px'; }
-  shell.style.setProperty('--v84-board-w', w + 'px'); shell.style.setProperty('--v84-board-h', h + 'px');
-  document.documentElement.style.setProperty('--sq', sq + 'px');
-  ui.layoutKey = '';
-  return true;
+  const reserve = below ? (ui.strategy ? 250 : 155) : 0;
+  const sq = Math.max(16,Math.floor(Math.min(170,idealW/ui.st.W,(height-reserve)/ui.st.H)));
+  const w=sq*ui.st.W,h=sq*ui.st.H;
+  ui.sq=sq;wrap.style.width=w+'px';wrap.style.height=h+'px';wrap.style.padding='0';
+  stage.style.flex='none';stage.style.width=w+'px';stage.style.left=center+'px';stage.style.height=(below?sr.height-reserve-12:sr.height-16)+'px';
+  if(top)top.style.width=w+'px';if(bottom)bottom.style.width=w+'px';
+  if(battle){
+    const roomLeft=center-w/2-24,roomRight=sr.width-center-w/2-24;
+    const narrow=Math.min(roomLeft,roomRight)<180;shell.classList.toggle('v84-battle-narrow',narrow);
+    shell.style.setProperty('--v84-left-w',Math.max(175,Math.min(300,roomLeft))+'px');
+    shell.style.setProperty('--v84-right-w',Math.max(210,Math.min(360,roomRight))+'px');
+    if(panel){panel.style.height='';panel.style.width='';}
+    if(info){info.style.marginTop='0';info.style.height='';info.style.width='';}
+  }else{
+    if(panel){panel.style.height=below?(reserve-12)+'px':Math.min(sr.height-24,h+bars)+'px';panel.style.width=below?Math.min(sr.width-24,w+(ui.strategy?210:0))+'px':panelW+'px';}
+    if(info){info.style.marginTop='0';info.style.height=below?(reserve-12)+'px':h+'px';}
+  }
+  shell.style.setProperty('--v84-board-w',w+'px');shell.style.setProperty('--v84-board-h',h+'px');
+  document.documentElement.style.setProperty('--sq',sq+'px');ui.layoutKey='';return true;
 }
 
 const V84_REACTIONS = ['👍', '😂', '😮', '😅', '🔥', '🤝'];

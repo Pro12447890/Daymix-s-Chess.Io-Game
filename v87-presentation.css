@@ -1,0 +1,28 @@
+/* v87: fixed seats, draw indicator, softer queen impact. */
+.brawl-levels{font-size:11px;line-height:1.6;color:var(--text-muted);padding:5px 8px;overflow-wrap:anywhere;}
+@media(max-width:999px){
+ body.local-face-to-face #board,body.local-face-to-face #gameShell{rotate:none;}
+ body.local-face-to-face #pieces .piece.b > .pc-svg{rotate:180deg;}
+ body.local-face-to-face.local-seat-clocks #topClock{rotate:180deg;}
+ body.local-face-to-face.local-seat-names #barTop .pc-left{rotate:180deg;}
+ body.local-face-to-face.local-seat-clocks .strategy-phone-money[data-side="b"] [data-phone-clock]{display:inline-block;rotate:180deg;}
+ body.local-face-to-face.local-seat-names .strategy-phone-money[data-side="b"] > span{rotate:180deg;}
+ body.local-face-to-face .mobile-moves.turn-flip,body.local-face-to-face .mobile-moves.table-flip{transform:none;}
+}
+#drawProgress{position:absolute;inset:0;z-index:75;pointer-events:none;overflow:visible;}
+.draw-progress-ring{position:absolute;pointer-events:none;}
+.draw-progress-ring svg{width:100%;height:100%;overflow:visible;}
+.draw-progress-ring circle{fill:none;stroke-width:3;}
+.draw-progress-ring .draw-track{stroke:#dce0e520;}
+.draw-progress-ring .draw-fill{stroke:#dce0e5b8;stroke-linecap:round;transition:stroke-dasharray .35s ease;}
+.draw-progress-ring > span{position:absolute;bottom:0;left:50%;translate:-50% 0;font-size:clamp(9px,calc(var(--sq)*.19),17px);font-weight:600;color:#dde1e7;background:#242424a8;padding:1px 4px;border-radius:7px;text-align:center;line-height:1.1;white-space:nowrap;text-shadow:0 1px 2px #111;}
+.draw-progress-ring small{display:block;font-size:clamp(6px,calc(var(--sq)*.1),10px);font-weight:400;color:#d7dbe2;}
+body.local-face-to-face .draw-progress-ring.b{rotate:180deg;}
+.queen-arrival-ghost{pointer-events:none;opacity:.9;}
+.queen-drama.run{animation:queenArrivalFade 1.5s ease both;}
+@keyframes queenArrivalFade{0%{opacity:0}18%,75%{opacity:1}100%{opacity:0}}
+.queen-drama.run .drama-flash{animation:queenArrivalLight 1.4s ease-in-out both;}
+@keyframes queenArrivalLight{0%{background:#201127;opacity:0}24%{background:#24152dcc;opacity:.72}48%{background:#7e498550;opacity:.8}100%{background:transparent;opacity:0}}
+.queen-drama.run .drama-half{animation:queenArrivalSplit 1.1s cubic-bezier(.25,.1,.7,1) .12s both;}
+@keyframes queenArrivalSplit{0%{transform:translate(0,0) rotate(0) scale(.96);opacity:0}20%{transform:translate(0,0) rotate(0) scale(1);opacity:1}60%{opacity:1}100%{transform:translate(var(--dx,60px),var(--dy,100px)) rotate(var(--rot,30deg)) scale(.86);opacity:0}}
+@media(prefers-reduced-motion:reduce){.queen-drama{display:none!important}.draw-progress-ring .draw-fill{transition:none}}

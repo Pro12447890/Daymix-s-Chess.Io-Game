@@ -1,7 +1,30 @@
 'use strict';
-function battleFxClear() {
+function battleFxClear(keepIncome = false) {
   clearTimeout(ui.battleFxTimer); ui.battleFxTimer=0; ui.battleFxBusy=false;ui.battleFxState=null;
-  document.querySelectorAll('.battle-projectile,.battle-action-toast,.battle-shockwave,.battle-piece-ghost,.battle-income').forEach(el=>el.remove());
+  document.querySelectorAll('.battle-projectile,.battle-action-toast,.battle-shockwave,.battle-piece-ghost').forEach(el=>el.remove());
+  if (!keepIncome) battleIncomeClear();
+}
+function battleIncomeClear() {
+  cancelAnimationFrame(ui.battleIncomeFrame); ui.battleIncomeFrame=0; ui.battleIncomeVisual=null;
+  for(const id of ui.battleIncomeTimers||[])clearTimeout(id);ui.battleIncomeTimers=[];
+  document.querySelectorAll('.battle-income,.battle-income-coin').forEach(el=>el.remove());
+  document.querySelectorAll('.battle-income-pulse').forEach(el=>el.classList.remove('battle-income-pulse'));
+}
+function battleDisplayedGold(color, st = ui.st) {
+  const visual = ui.battleIncomeVisual;
+  return visual && visual.state === ui.st && st?.strategy?.seq === ui.st?.strategy?.seq ? (visual.gold[color] ?? st.strategy.gold[color]) : (st?.strategy?.gold[color] || 0);
+}
+function battleIncomeBadge(color) {
+  const candidates=[...document.querySelectorAll(`.strategy-phone-money[data-side="${color}"]`),$('#stratGoldBadge'+color.toUpperCase())].filter(Boolean);
+  return candidates.find(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight;})||candidates[0];
+}
+function battlePaintIncomeGold() {
+  const st=ui.st;if(!st?.strategy)return;
+  for(const color of ['w','b']) {
+    const amount=battleDisplayedGold(color,st);
+    for(const el of document.querySelectorAll(`[data-battle-gold="${color}"]`))el.textContent=strategyMoney(amount);
+    for(const badge of [$('#stratGoldBadge'+color.toUpperCase()),...document.querySelectorAll(`.strategy-phone-money[data-side="${color}"]`)])if(badge){badge.style.setProperty('--coins',100*amount/st.strategy.cap+'%');badge.style.setProperty('--money',100*amount/st.strategy.cap+'%');}
+  }
 }
 function battleLockButton(button, reason) {
   if(!button)return;
@@ -18,10 +41,10 @@ function battleRenderCountry(st,color,prefix) {
   $('#'+prefix+'Role').textContent=(color===myColor()?'Ваше государство':'Противник')+' · штаб '+(st.board.find(p=>p?.c===color&&p.t==='k')?strategyPieceHp(st,st.board.find(p=>p?.c===color&&p.t==='k')):0)+' HP';
   $('#'+prefix+'Avatar').textContent=color==='w'?'🏛':'🏰';
   const badge=$('#stratGoldBadge'+(color==='w'?'W':'B'));
-  if(badge){if(badge.parentElement!==bar)bar.appendChild(badge);badge.style.setProperty('--coins',`${Math.min(100,100*s.gold[color]/s.cap)}%`);
-    badge.setAttribute('aria-label',`Казна ${s.factions[color]}: ${s.gold[color]} из ${s.cap}, доход ${strategyRuleIncome(st,color)} за раунд`);
-    badge.title=`Казна · следующий доход +${strategyRuleIncome(st,color)} монет / раунд`;
-    badge.innerHTML=`<span class="battle-coin">🪙</span><b>${s.gold[color]} <small>/ ${s.cap}</small></b><span class="battle-next-income">+${strategyRuleIncome(st,color)} / раунд</span>`;
+  if(badge){const displayed=battleDisplayedGold(color,st);if(badge.parentElement!==bar)bar.appendChild(badge);badge.style.setProperty('--coins',`${Math.min(100,100*displayed/s.cap)}%`);
+    badge.setAttribute('aria-label',`Казна ${s.factions[color]}: ${strategyMoney(s.gold[color])} из ${s.cap}, доход ${strategyMoney(strategyRuleIncome(st,color))} за 4 действия`);
+    badge.title=`Следующий сбор +${strategyMoney(strategyRuleIncome(st,color))} монет через ${4-s.seq%4} действия`;
+    badge.innerHTML=`<span class="battle-coin">🪙</span><b><span data-battle-gold="${color}">${strategyMoney(displayed)}</span> <small>/ ${s.cap}</small></b><span class="battle-next-income">+${strategyMoney(strategyRuleIncome(st,color))} / 4 действия</span>`;
   }
 }
 function battleRenderUi() {
@@ -44,9 +67,9 @@ function battleRenderUi() {
     nuke.innerHTML=`<span class="battle-nuke-icon">☢</span><span><b>Ядерный удар · ${STRAT_NUKE.cost} 🪙</b><small>${reason||'Выбери цель → подтверди повторным нажатием'} · 1 запуск на сторону</small></span>`;
     nuke.onclick=()=>{const king=findKing(ui.st,ui.st.turn);if(king<0)return;ui.strategy.special='nuke';ui.strategy.previewTarget=null;strategySelectAttacker(king);toast('Ядерный удар: выбери цель. Удар заденет и своих.');};battleLockButton(nuke,reason||'Два нажатия на цель для подтверждения');
     let country=$('#battleCountryCard');if(!country){country=document.createElement('div');country.id='battleCountryCard';country.className='battle-country-card';$('#stratInfoPanel').prepend(country);}
-    const levels=s.upgrades[own];country.innerHTML=`<span>${own==='w'?'🏛':'🏰'}</span><div><b>${escapeHtml(s.factions[own])}</b><small>Экономика ${levels.income}/3 · Арсенал ${levels.arsenal}/3 · Снабжение ${levels.logistics}/3</small></div>`;
+    const levels=s.upgrades[own];country.innerHTML=`<span>${own==='w'?'🏛':'🏰'}</span><div><b>${escapeHtml(s.factions[own])}</b><small>Экономика ${levels.income}/5 · Арсенал ${levels.arsenal}/5 · Снабжение ${levels.logistics}/5</small></div>`;
     let legend=$('#battleObjectLegend');if(!legend){legend=document.createElement('details');legend.id='battleObjectLegend';legend.className='battle-object-legend';$('#stratInfoPanel').appendChild(legend);}
-    legend.innerHTML='<summary>Объекты и захват земли</summary><p>🏭 Завод: +4 · ⚓ Порт: +4 · 🏙 Торговый город: +6 монет за раунд владельцу клетки. Цвет рамки показывает владельца. Три взаимодействия вокруг своих фигур захватывают клетку; при споре выигрывает ближайшая фигура.</p>';
+    legend.innerHTML='<summary>Доход территории и объектов</summary><p>Сбор обеим странам каждые 4 действия: полная клетка — 1 монета, 75% — 0,75, половина — по 0,5 обеим. Захват идёт четвертями. 🏭 Завод +4 · ⚓ Порт +4 · 🏙 Город +6 дополнительно за тот же сбор, пропорционально доле клетки.</p><p>Экономика 0→5: удваивается доход 1/10, 1/5, 1/4, 1/3, 1/2, 2/3 ваших доходных клеток (число округляется вниз). Улучшения стоят ×1,8 за каждый следующий уровень и списывают монеты.</p>';
     $('#stratSpecial').title='Выбери коня (мина), ладью (катапульта) или ферзя (ракета). Ядерка — отдельная карточка ниже.';
   }
 }
@@ -68,19 +91,45 @@ function battleShowAction(text,color='w') {
   const r=$('#board').getBoundingClientRect();el.style.left=Math.max(8,r.left+r.width/2)+'px';el.style.top=Math.max(10,r.top+r.height*.12)+'px';document.body.appendChild(el);setTimeout(()=>el.remove(),1800);
 }
 function battleIncomeEvents(events) {
-  for(const event of events||[]){if(event.type!=='income')continue;const c=event.color;
-     const badge=$('#gameShell')?.classList.contains('strategy-phone')?document.querySelector(`.strategy-phone-money[data-side="${c}"]`):$('#stratGoldBadge'+c.toUpperCase());if(!badge)continue;
-    badge.classList.remove('battle-income-pulse');void badge.offsetWidth;badge.classList.add('battle-income-pulse');
-    const el=document.createElement('span'),r=badge.getBoundingClientRect();el.className='battle-income';el.textContent=`+${event.amount} 🪙`;el.style.left=r.left+r.width/2+'px';el.style.top=r.top+'px';document.body.appendChild(el);setTimeout(()=>{el.remove();badge.classList.remove('battle-income-pulse');},1800);
+  const income=(events||[]).filter(e=>e.type==='income'&&e.amount>0),st=ui.st;if(!income.length||!st?.strategy)return;
+  const quiet=profile.calm||matchMedia('(prefers-reduced-motion: reduce)').matches;
+  battleIncomeClear();
+  const visual={state:st,gold:{...st.strategy.gold},started:performance.now(),rows:[]};ui.battleIncomeVisual=visual;ui.battleIncomeTimers=[];
+  for(const event of income){
+    const color=event.color,badge=battleIncomeBadge(color);if(!badge)continue;
+    const before=event.before??st.strategy.gold[color]-event.amount;
+    visual.gold[color]=Math.min(visual.gold[color],before);
+    const cells=event.cells?.length?event.cells:[{sq:findKing(st,color),amount:event.amount}];
+    const step=cells.length>1?Math.min(38,1400/(cells.length-1)):0,flight=quiet?0:650;
+    visual.rows.push({color,before,after:event.after??st.strategy.gold[color],cells,step,flight});
+    badge.classList.add('battle-income-pulse');
+    const label=document.createElement('span'),br=badge.getBoundingClientRect();label.className='battle-income';label.textContent=`+${strategyMoney(event.amount)} 🪙`;label.style.left=br.left+br.width/2+'px';label.style.top=br.top+'px';document.body.appendChild(label);
+    if(!quiet)cells.forEach((cell,i)=>{const id=setTimeout(()=>{
+      if(ui.battleIncomeVisual!==visual||ui.st!==st)return;
+      const target=battleIncomeBadge(color),from=ui.squareEls[cell.sq]?.getBoundingClientRect(),to=target?.getBoundingClientRect();if(!from||!to)return;
+      const coin=document.createElement('span');coin.className='battle-income-coin'+(cell.boosted?' doubled':'');coin.textContent=cell.boosted?'×2':'🪙';coin.title='+'+strategyMoney(cell.amount);const x=from.left+from.width/2,y=from.top+from.height/2;coin.style.left=x+'px';coin.style.top=y+'px';document.body.appendChild(coin);
+      const dx=to.left+to.width/2-x,dy=to.top+to.height/2-y;
+      const animation=coin.animate([{transform:'translate(-50%,-50%) scale(.4)',opacity:0},{transform:'translate(-50%,-50%) scale(1)',opacity:1,offset:.18},{transform:`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) scale(.45)`,opacity:.1}],{duration:flight,easing:'cubic-bezier(.25,.7,.25,1)',fill:'forwards'});animation.onfinish=()=>coin.remove();
+    },i*step);ui.battleIncomeTimers.push(id);});
   }
+  const duration=quiet?220:2200;
+  const tick=now=>{if(ui.battleIncomeVisual!==visual||ui.st!==st){battleIncomeClear();return;}
+    const elapsed=now-visual.started;
+    for(const row of visual.rows){const collected=quiet?(row.after-row.before)*Math.min(1,elapsed/duration):row.cells.reduce((n,c,i)=>n+(elapsed>=i*row.step+row.flight?c.amount:0),0);visual.gold[row.color]=Math.min(row.after,row.before+collected);}
+    battlePaintIncomeGold();
+    if(elapsed<duration)ui.battleIncomeFrame=requestAnimationFrame(tick);else {battleIncomeClear();battlePaintIncomeGold();}
+  };
+  battlePaintIncomeGold();ui.battleIncomeFrame=requestAnimationFrame(tick);
 }
 function battleAnimationDuration(events) {
-  if(profile.calm||matchMedia('(prefers-reduced-motion: reduce)').matches)return 120;
-  const shot=events.find(e=>e.type==='shot');return shot?(shot.special==='nuke'?4000:shot.special==='rocket'||shot.special==='catapult'?1800:1250):events.some(e=>['move','deploy','knockback'].includes(e.type))?700:350;
+  const income=events.some(e=>e.type==='income'&&e.amount>0);
+  if(profile.calm||matchMedia('(prefers-reduced-motion: reduce)').matches)return income?300:120;
+  const shot=events.find(e=>e.type==='shot'),base=shot?(shot.special==='nuke'?4000:shot.special==='rocket'||shot.special==='catapult'?1800:1250):events.some(e=>['move','deploy','knockback'].includes(e.type))?700:350;
+  return Math.max(base,income?2300:0);
 }
 function battleAnimateAction(kind,result,record,done) {
   const events=result.events||[],st=ui.st,duration=battleAnimationDuration(events),shot=events.find(e=>e.type==='shot');
-  battleFxClear();ui.battleFxBusy=true;
+  battleFxClear(true);ui.battleFxBusy=true;
   const before=result.before;if(before)ui.battleFxState=restoreNetworkState(before);
   renderBoard(false);battleRenderUi();battleShowAction(record.san,result.mover);battleIncomeEvents(events);
   const quiet=profile.calm||matchMedia('(prefers-reduced-motion: reduce)').matches;

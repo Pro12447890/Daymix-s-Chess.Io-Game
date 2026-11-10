@@ -2,26 +2,32 @@
 .hint.hint-static::before { animation:none!important;opacity:1;transform:scale(1); }
 .strategy-phone-root { display:none; }
 @media(max-width:999px){
- html[data-strategy="1"] #gameShell.strategy-phone { display:block!important;height:100%!important;min-height:0!important;padding:5px!important;overflow:hidden!important; }
+ html[data-strategy="1"] #gameShell.strategy-phone { display:block!important;height:100%!important;min-height:0!important;padding:2px 4px!important;overflow:hidden!important; }
  #gameShell.strategy-phone > #stage,#gameShell.strategy-phone > #stratInfoPanel { display:none!important; }
  #gameShell.strategy-phone .strategy-phone-root { display:flex;flex-direction:column;height:100%;min-height:0;width:100%;overflow:hidden; }
- .strategy-phone-header { flex:none;padding:3px 2px 6px; }
+ .strategy-phone-header { flex:none;padding:0 2px 3px; }
  .strategy-phone-turn { color:#e2e8d9;text-align:center;font-size:11px;font-weight:700;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
  .strategy-phone-money-row { display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px; }
  .strategy-phone-money { isolation:isolate;position:relative;overflow:hidden;border:1px solid #c3a14c;border-radius:14px;background:#423713;display:grid;grid-template-columns:1fr auto;gap:2px 3px;text-align:left;padding:6px 8px;min-height:49px; }
  .strategy-phone-money::before {content:'';position:absolute;inset:0;right:auto;width:var(--money);z-index:-1;background:linear-gradient(100deg,#a8740866,#f0cb5866);transition:width .6s ease;}
  .strategy-phone-money span {grid-column:1/-1;font-size:9px;color:#ffe9a4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
  .strategy-phone-money b{font-size:14px;color:#fff5c1;white-space:nowrap;}
+ .strategy-phone-money b [data-battle-gold]{display:inline;grid-column:auto;font-size:inherit;font-weight:inherit;color:inherit;overflow:visible;text-overflow:clip;}
  .strategy-phone-money small{font-size:9px;font-weight:400;}
  .strategy-phone-money em{font-size:8px;font-style:normal;color:#f5da8a;align-self:center;}
- .strategy-phone-tabs {display:grid;grid-template-columns:repeat(4,1fr);gap:4px;flex:none;margin:0 0 5px;padding:0 2px;}
+ .strategy-phone-tabs {display:grid;grid-template-columns:repeat(3,1fr);gap:4px;flex:none;margin:0 0 5px;padding:0 2px;}
  .strategy-phone-tabs button {background:var(--panel-card);border:1px solid var(--line);border-radius:8px;padding:8px 2px;min-height:36px;font-size:11px;}
  .strategy-phone-tabs button[aria-selected="true"] {background:#719d3f;border-color:#a3c66d;color:#fff;font-weight:700;}
- .strategy-phone-content {position:relative;flex:1;min-height:0;overflow:hidden;}
- .strategy-phone-pane {height:100%;min-height:0;display:flex;flex-direction:column;gap:7px;overflow:hidden;}
- #strategyPhonePane-board {align-items:center;justify-content:center;gap:6px;}
- #gameShell.strategy-phone #boardWrap {flex:none!important;max-width:100%;}
- .strategy-phone-field-help{display:flex;align-items:center;gap:6px;width:100%;padding:4px 3px;flex:none;min-height:46px;}
+ .strategy-phone-content {position:relative;display:flex;flex:1 1 0;min-height:110px;width:100%;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;}
+ .strategy-phone-content::-webkit-scrollbar{display:none;}
+ .strategy-phone-pane {height:100%;min-height:0;min-width:100%;width:100%;flex:0 0 100%;box-sizing:border-box;display:flex;flex-direction:column;gap:7px;overflow-y:auto;overflow-x:hidden;scroll-snap-align:start;scroll-snap-stop:always;overscroll-behavior-y:contain;padding-bottom:8px;}
+ .strategy-phone-pane>*{flex-shrink:0;}
+ #strategyPhonePane-board {display:flex;flex-direction:column;flex:none;align-items:center;justify-content:flex-start;gap:2px;min-height:0;}
+ #gameShell.strategy-phone #boardWrap {flex:none!important;max-width:100%;margin:0!important;}
+ .strategy-phone-field-help{display:flex;align-items:center;gap:6px;width:100%;padding:3px;flex:none;min-height:30px;}
+ .strategy-phone-subtabs{position:sticky;top:0;z-index:2;background:var(--bg-darker);padding:3px 0;}
+ .strategy-phone-board.field-attention #boardWrap{animation:phoneFieldAttention .45s ease;}
+ @keyframes phoneFieldAttention{50%{box-shadow:0 0 0 2px #c5dc8d88;}}
  .strategy-phone-field-help span {flex:1;font-size:11px;color:var(--text-muted);line-height:1.4;}
  .strategy-phone-field-help button,.strategy-phone-history-tools button,.strategy-phone-subtabs button {min-height:32px;border:1px solid var(--line-light);border-radius:7px;background:var(--panel-card);font-size:11px;padding:5px 7px;}
  #strategyPhonePane-actions {padding:3px;}
@@ -73,6 +79,9 @@
 }
 @media(max-width:999px) and (max-height:680px){
  .strategy-phone-header{padding-bottom:3px;}.strategy-phone-turn{font-size:10px;}.strategy-phone-money{min-height:43px;padding:4px 7px;}.strategy-phone-tabs button{padding:5px 1px;min-height:31px;font-size:10px;}
- .strategy-phone-pane{gap:4px;}.strategy-phone-state-card{padding:7px;}.strategy-phone-state-card dl{gap:3px;margin:4px 0;}.strategy-phone-state-card dl>div{padding:4px;}.strategy-phone-state-card p{margin:3px 0;}
- #gameShell.strategy-phone #stratCards .strat-recruit{height:32px;min-height:32px;}.strategy-phone-field-help{min-height:37px;}
 }
+@media(max-width:999px){
+ body.local-face-to-face.local-seat-names .strategy-phone-money[data-side="b"]>span{transform:rotate(180deg);}
+ body.local-face-to-face.local-seat-clocks .strategy-phone-money[data-side="b"] [data-phone-clock]{display:inline-block;transform:rotate(180deg);}
+}
+@media(prefers-reduced-motion:reduce){.strategy-phone-board.field-attention #boardWrap{animation:none!important;}}

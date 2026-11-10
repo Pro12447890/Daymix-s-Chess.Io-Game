@@ -73,12 +73,13 @@ function validSpecialState(st) {
   const sides=(v,min,max)=>v&&['w','b'].every(c=>numeric(v[c],min,max));
   if(st.flags.strategy){const s=st.strategy;
     if(!s||s.version!==84||!['move','attack'].includes(s.phase)||![0,1].includes(s.phaseSide)||!Number.isInteger(s.seq)||s.seq<0||!numeric(s.round,1,100000)||!sides(s.gold,0,10000)||!numeric(s.cap,1,10000)||!s.hp||!s.shield||!s.moved||!s.territory||!s.influence||!s.upgrades||!s.nukeUsed||!s.factions||!Array.isArray(s.objects)||s.objects.length>10||!Array.isArray(s.rad)||s.rad.length>2||!Array.isArray(s.mines)||s.mines.length>64)return false;
-    if(!['w','b'].every(c=>s.upgrades[c]&&['income','arsenal','logistics'].every(k=>Number.isInteger(s.upgrades[c][k])&&s.upgrades[c][k]>=0&&s.upgrades[c][k]<=3)&&typeof s.nukeUsed[c]==='boolean'))return false;
+    if(!['w','b'].every(c=>s.upgrades[c]&&['income','arsenal','logistics'].every(k=>Number.isInteger(s.upgrades[c][k])&&s.upgrades[c][k]>=0&&s.upgrades[c][k]<=5)&&typeof s.nukeUsed[c]==='boolean'))return false;
     if(st.board.some(p=>p&&!numeric(s.hp[p.id],0,1000)))return false;
     if(s.objects.some(o=>!Number.isInteger(o.sq)||o.sq<0||o.sq>=st.board.length||!numeric(o.income,0,100)))return false;
   }
   if(st.flags.clashBrawl){const s=st.brawl;
-    if(!s||s.version!==84||!Number.isInteger(s.seq)||s.seq<0||!Number.isInteger(s.plies)||s.plies<0||!['develop','battle'].includes(s.phase)||!['upgrade','main','over'].includes(s.stage)||!sides(s.elixir,0,100)||!sides(s.maxByColor,1,100)||!sides(s.income,0,10)||!sides(s.power,0,10000)||!s.decks||!['w','b'].every(c=>Array.isArray(s.decks[c])&&s.decks[c].length<=6&&s.decks[c].every(card=>BRAWL_COST[card.t]===card.cost))||!Array.isArray(s.offer)||s.offer.some(k=>!BRAWL_UPGRADES[k]))return false;
+    if(!s||s.version!==84||!Number.isInteger(s.seq)||s.seq<0||!Number.isInteger(s.plies)||s.plies<0||!['develop','battle'].includes(s.phase)||!['upgrade','main','over'].includes(s.stage)||!sides(s.elixir,0,200)||!sides(s.maxByColor,1,200)||!sides(s.income,0,10)||!sides(s.power,0,10000)||!s.decks||!['w','b'].every(c=>Array.isArray(s.decks[c])&&s.decks[c].length<=6&&s.decks[c].every(card=>BRAWL_COST[card.t]===card.cost))||!Array.isArray(s.offer)||s.offer.some(k=>!BRAWL_UPGRADES[k]))return false;
+    if(s.upgradeLevels&&!['w','b'].every(c=>s.upgradeLevels[c]&&Object.keys(BRAWL_UPGRADES).every(k=>Number.isInteger(s.upgradeLevels[c][k])&&s.upgradeLevels[c][k]>=0&&s.upgradeLevels[c][k]<=5)))return false;
     if(st.board.some(p=>p&&(!numeric(p.hp,0,1000)||!numeric(p.maxHp,1,1000))))return false;
     if(s.draft&&(!['w','b'].includes(s.draft.turn)||!['ban','pick'].includes(s.draft.step)||!s.draft.pools||!s.draft.picks||!s.draft.bans))return false;
   }

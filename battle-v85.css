@@ -86,4 +86,8 @@ html[data-strategy="1"] #barBottom .pc-left { flex:1 1 45%!important; }
 html[data-strategy="1"] #barBottom .pc-name { max-width:none!important;overflow:visible!important;text-overflow:clip!important; }
 .battle-v85 #stratInfoPanel { overflow-y:auto!important; }
 .battle-v85 .brawl-card small { line-height:1.35; }
-@media(prefers-reduced-motion:reduce){.battle-projectile,.battle-action-toast,.battle-income,.battle-shockwave{animation:none!important}.battle-shockwave{display:none}.piece[data-shield="true"]::before,.battle-nuke-quake{animation:none!important}}
+.battle-income-coin { position:fixed;z-index:146;pointer-events:none;font-size:19px;line-height:1;font-weight:900;color:#ffe679;filter:drop-shadow(0 1px 4px #4a3000);will-change:transform,opacity; }
+.battle-income-coin.doubled { min-width:25px;padding:3px;border-radius:50%;border:1px solid #fff1a0;background:#b97d08;font-size:12px;text-align:center;box-shadow:0 0 12px #ffd73d88; }
+[data-battle-gold] { font-variant-numeric:tabular-nums; }
+.battle-income-pulse [data-battle-gold] { color:#fff6c4;text-shadow:0 0 7px #f2cf59aa; }
+@media(prefers-reduced-motion:reduce){.battle-projectile,.battle-action-toast,.battle-income,.battle-shockwave{animation:none!important}.battle-shockwave,.battle-income-coin{display:none}.piece[data-shield="true"]::before,.battle-nuke-quake{animation:none!important}}
