@@ -18,11 +18,16 @@ function strategyPhoneEnsure(){
   content.addEventListener('scroll',()=>{if(!content.clientWidth)return;const key=STRATEGY_PHONE_TABS[Math.max(0,Math.min(STRATEGY_PHONE_TABS.length-1,Math.round(content.scrollLeft/content.clientWidth)))];if(key!==ui.strategyPhoneTab){ui.strategyPhoneTab=key;strategyPhoneMarkTab();}},{passive:true});
   nav.addEventListener('keydown',e=>{if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;e.preventDefault();const index=STRATEGY_PHONE_TABS.indexOf(ui.strategyPhoneTab);const key=STRATEGY_PHONE_TABS[(index+(e.key==='ArrowRight'?1:2))%3];strategyPhoneSelect(key);$('#strategyPhoneTab-'+key).focus();});
   root.append(header,board,nav,content);$('#gameShell').appendChild(root);
-  for(const [paneId,type,items] of [['actions','action',[['combat','Бой'],['development','Развитие'],['army','Армия']]],['countries','country',[['own','Своя'],['enemy','Враг'],['objects','Объекты']]]]){
-    const sub=document.createElement('div');sub.className='strategy-phone-subtabs';
+  for(const [paneId,type,items] of [['actions','action',[['combat','Приказы'],['development','Развитие'],['army','Армия']]],['countries','country',[['own','Моя страна'],['enemy','Противник'],['objects','Объекты']]]]){
+    const sub=document.createElement('div');sub.className='strategy-phone-subtabs';sub.setAttribute('aria-label',type==='action'?'Категории действий':'Статистика государств');
     for(const [key,label]of items){const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.subTab=key;b.onclick=()=>{ui['strategyPhone'+(type==='action'?'Action':'Country')+'Tab']=key;strategyPhoneSubtabs();strategyPhoneRenderSummary();};sub.appendChild(b);}
     $('#strategyPhonePane-'+paneId).prepend(sub);
   }
+  for(const [key,title,detail]of [['actions','Центр управления','Приказы, развитие и подкрепления'],['countries','Обзор государства','Силы, владения и экономика'],['history','Журнал действий','Вся партия по порядку']]){
+    const heading=document.createElement('div');heading.className='strategy-menu-heading';heading.innerHTML=`<div><h2>${title}</h2><p>${detail}</p></div><span class="strategy-menu-kicker">${key==='history'?'ХРОНИКА':'СТРАТЕГИЯ'}</span>`;
+    const pane=$('#strategyPhonePane-'+key),nav=pane.querySelector('.strategy-phone-subtabs');if(nav)nav.after(heading);else pane.prepend(heading);
+  }
+  const context=document.createElement('div');context.id='strategyPhoneActionContext';context.className='strategy-action-context';$('#strategyPhonePane-actions .strategy-menu-heading').after(context);
   const help=document.createElement('div');help.id='strategyPhoneFieldHelp';help.className='strategy-phone-field-help';
   const call=document.createElement('button');call.type='button';call.textContent='Действия ↔';call.onclick=()=>strategyPhoneSelect('actions');help.appendChild(call);board.appendChild(help);
   const historyTools=document.createElement('div');historyTools.className='strategy-phone-history-tools';
@@ -51,15 +56,20 @@ function strategyPhoneMoney(value){return typeof strategyMoney==='function'?stra
 function strategyPhoneGold(color,st){return typeof battleDisplayedGold==='function'?battleDisplayedGold(color,st):st.strategy.gold[color];}
 function strategyPhoneRenderSummary(){
   if(!ui.st?.flags.strategy||innerWidth>=1000||!$('#gameShell').classList.contains('strategy-phone'))return;
-  const st=viewState(),s=st.strategy,own=strategyPhoneOwnSide(),enemy=other(own),phase=s.phase==='move'?'Манёвры':'Атака';
-  const header=$('#strategyPhoneHeader');header.innerHTML='';
-  const title=document.createElement('div');title.className='strategy-phone-turn';title.textContent=`Р${s.round} · ${phase} · ${strategyShortName(s.factions[st.turn],16)}${ui.botThinking?' · думает':''}`;header.appendChild(title);
-  const countries=document.createElement('div');countries.className='strategy-phone-money-row';
-  for(const [c,label]of [[own,'Вы'],[enemy,'Враг']]){const el=document.createElement('button');el.type='button';el.className='strategy-phone-money';el.dataset.side=c;el.style.setProperty('--money',100*strategyPhoneGold(c,st)/s.cap+'%');el.innerHTML=`<span>${label}: ${escapeHtml(strategyShortName(s.factions[c],15))}</span><b><span data-battle-gold="${c}">${strategyPhoneMoney(strategyPhoneGold(c,st))}</span> <small>/ ${s.cap} 🪙</small></b><em>+${strategyPhoneMoney(strategyRuleIncome(st,c))}/4 действия <span data-phone-clock="${c}"></span></em>`;el.onclick=()=>{ui.strategyPhoneCountryTab=c===own?'own':'enemy';strategyPhoneSelect('countries');};countries.appendChild(el);}header.appendChild(countries);
+  const st=viewState(),s=st.strategy,live=ui.st.strategy,own=strategyPhoneOwnSide(),enemy=other(own),phase=s.phase==='move'?'Манёвры':'Атака';
+  const header=$('#strategyPhoneHeader'),headerKey=own+'|'+live.factions[own]+'|'+live.factions[enemy];
+  if(header.dataset.key!==headerKey){
+    header.dataset.key=headerKey;
+    header.innerHTML=`<div class="strategy-phone-topline"><span class="strategy-phone-turn"></span><span class="strategy-phone-clock" data-phone-clock="${own}" aria-label="Мои часы"></span></div><div class="strategy-phone-money-row"><button type="button" class="strategy-phone-money strategy-phone-my-treasury" data-side="${own}"><div class="phone-treasury-heading"><span>Моя казна</span><small>${escapeHtml(strategyShortName(live.factions[own],16))}</small></div><div class="phone-treasury-amount"><i aria-hidden="true">🪙</i><strong data-battle-gold="${own}"></strong><small>монет</small></div><div class="phone-treasury-available" data-phone-available="${own}"></div><div class="phone-treasury-footer"><span data-phone-income="${own}"></span><span data-phone-countdown></span></div><div class="treasury-cycle">${[0,1,2,3].map(i=>`<i data-cycle-step="${i}"></i>`).join('')}</div></button><button type="button" class="strategy-phone-money strategy-phone-enemy-treasury" data-side="${enemy}"><div class="phone-enemy-label">Противник</div><small class="phone-enemy-country">${escapeHtml(strategyShortName(live.factions[enemy],17))}</small><strong data-battle-gold="${enemy}"></strong><span class="phone-enemy-unit">монет</span><span class="phone-enemy-income" data-phone-income="${enemy}"></span><span class="phone-enemy-clock" data-phone-clock="${enemy}"></span></button></div>`;
+    for(const button of header.querySelectorAll('.strategy-phone-money'))button.onclick=()=>{ui.strategyPhoneCountryTab=button.dataset.side===own?'own':'enemy';strategyPhoneSelect('countries');};
+  }
+  header.querySelector('.strategy-phone-turn').textContent=`Раунд ${s.round} · ${phase}${ui.botThinking?' · ход бота':''}`;
+  const actionContext=$('#strategyPhoneActionContext');if(actionContext){const yours=st.turn===own;actionContext.innerHTML=`<span class="strategy-turn-dot ${yours?'is-own':''}"></span><div><b>${yours?'Ваш ход':escapeHtml(strategyShortName(s.factions[st.turn],24))+' · ход'}</b><small>${s.phase==='move'?'Передвиньте фигуру, купите развитие или подкрепление':'Выберите бойца на доске и цель атаки'}</small></div>`;}
+  strategyDesignControls();
   const help=$('#strategyPhoneFieldHelp');let hint=help.querySelector('span');if(!hint){hint=document.createElement('span');help.prepend(hint);}hint.textContent=ui.battleFxBusy?'Действие выполняется…':ui.strategy.recruit?'Нажми пустую свою клетку':ui.strategy.support?'Нажми свою фигуру':ui.strategy.special==='nuke'?'Выбери цель ядерки и подтверди':s.phase==='attack'?'Фигура → подсвеченная цель':'Фигура → клетка · меню свайпом ↔';
   const history=$('#strategyPhonePane-history');let list=$('#strategyPhoneMoves');if(!list){list=document.createElement('div');list.id='strategyPhoneMoves';list.className='strategy-phone-moves';history.appendChild(list);}
-  const key=ui.moves.length+'|'+ui.viewPly;if(list.dataset.key!==key){list.dataset.key=key;list.innerHTML='';if(!ui.moves.length)list.textContent='Пока нет действий';else for(let i=0;i<ui.moves.length;i++){const m=ui.moves[i],b=document.createElement('button');b.type='button';b.className=i+1===ui.viewPly?'active':'';b.textContent=`${i+1}. ${m.color==='w'?'Б':'Ч'} · ${m.san}`;b.onclick=()=>gotoPly(i+1);list.appendChild(b);}}
-  const pane=$('#strategyPhonePane-countries');let stats=$('#strategyPhoneStats');if(!stats){stats=document.createElement('div');stats.id='strategyPhoneStats';const nav=pane.querySelector('.strategy-phone-subtabs');if(nav)nav.after(stats);else pane.prepend(stats);}stats.innerHTML='';
+  const key=ui.moves.length+'|'+ui.viewPly;if(list.dataset.key!==key){list.dataset.key=key;list.innerHTML='';if(!ui.moves.length)list.innerHTML='<div class="strategy-history-empty"><b>История начинается здесь</b><span>Сделайте первый ход на доске</span></div>';else for(let i=0;i<ui.moves.length;i++){const m=ui.moves[i],b=document.createElement('button');b.type='button';b.className=i+1===ui.viewPly?'active':'';b.innerHTML=`<span class="strategy-history-number">${i+1}</span><span class="strategy-history-detail"><small>${m.color==='w'?'Светлая республика':'Тёмная федерация'}</small><b>${escapeHtml(m.san)}</b></span><span class="strategy-history-arrow">›</span>`;b.onclick=()=>gotoPly(i+1);list.appendChild(b);}}
+  const pane=$('#strategyPhonePane-countries');let stats=$('#strategyPhoneStats');if(!stats){stats=document.createElement('div');stats.id='strategyPhoneStats';pane.querySelector('.strategy-menu-heading').after(stats);}stats.innerHTML='';
   const selectedCountry=ui.strategyPhoneCountryTab||'own';
   for(const [c,label]of (selectedCountry==='objects'?[]:selectedCountry==='enemy'?[[enemy,'Государство врага']]:[[own,'Ваше государство']])){
     const army=st.board.filter(p=>p&&p.c===c),king=army.find(p=>p.t==='k'),hp=army.reduce((n,p)=>n+strategyPieceHp(st,p),0),maxHp=army.reduce((n,p)=>n+STRAT[p.t].hp,0),shields=army.reduce((n,p)=>n+(s.shield[p.id]||0),0),land=Object.values(s.territory).filter(x=>x===c).length,objects=s.objects.filter(o=>s.territory[o.sq]===c),u=s.upgrades[c];
@@ -99,18 +109,46 @@ function strategyPhoneLayout(){
 }
 function strategyPhoneToField(){if(innerWidth<1000&&ui.st?.flags.strategy){const board=$('#strategyPhonePane-board');if(board){board.classList.remove('field-attention');void board.offsetWidth;board.classList.add('field-attention');}}}
 function strategyPhoneUpdateClocks(){
-  if(!$('#gameShell')?.classList.contains('strategy-phone'))return;
+  if(!ui.st?.strategy||!$('#gameShell')?.classList.contains('strategy-phone'))return;
   for(const el of document.querySelectorAll('[data-phone-clock]')){
     const color=el.dataset.phoneClock;let ms=ui.clocks[color];
     if(ui.running&&!ui.paused&&!ui.away&&ui.st.status==='play'&&ui.st.turn===color)ms=Math.max(0,ms-(performance.now()-ui.turnStart));
-    el.textContent=' · '+fmtClock(ms);
+    el.textContent=fmtClock(ms);
   }
+  strategyPhoneUpdateMoney();
+}
+function strategyPhoneUpdateMoney(){
+  const root=$('#strategyPhoneHeader'),st=ui.st,s=st?.strategy;if(!root||!s)return;
+  for(const el of root.querySelectorAll('[data-battle-gold]')){const value=strategyPhoneMoney(strategyPhoneGold(el.dataset.battleGold,st));if(el.textContent!==value)el.textContent=value;}
+  for(const el of root.querySelectorAll('[data-phone-available]')){
+    const c=el.dataset.phoneAvailable,actual=s.gold[c],collecting=Math.abs(strategyPhoneGold(c,st)-actual)>.001;
+    const value=collecting?'Доступно сейчас: '+strategyPhoneMoney(actual):'Доступно для покупок';
+    if(el.textContent!==value)el.textContent=value;
+    el.classList.toggle('is-collecting',collecting);
+  }
+  const countdown=4-s.seq%4;
+  for(const el of root.querySelectorAll('[data-phone-countdown]'))el.textContent='сбор через '+countdown;
+  for(const el of root.querySelectorAll('[data-cycle-step]'))el.classList.toggle('done',Number(el.dataset.cycleStep)<s.seq%4);
+  const incomeKey=s.seq+'|'+st.seed+'|'+s.upgrades.w.income+'|'+s.upgrades.b.income;
+  if(root.dataset.incomeKey!==incomeKey){root.dataset.incomeKey=incomeKey;for(const el of root.querySelectorAll('[data-phone-income]'))el.textContent='+'+strategyPhoneMoney(strategyRuleIncome(st,el.dataset.phoneIncome))+' за сбор';}
+}
+function strategyDesignControls(){
+  const st=ui.st,s=st?.strategy;if(!s)return;
+  const actor=st.turn;
+  for(const [id,key,icon,note]of [['stratX2','income','↗','Доход территории'],['stratPlus','arsenal','⚔','Урон армии'],['stratCap','logistics','⇢','Стоимость движения']]){
+    const button=$('#'+id),meta=STRAT_UPGRADES[key];if(!button||!meta)continue;
+    const level=s.upgrades[actor][key],cost=strategyUpgradeCost(key,level),max=meta.max;
+    button.classList.add('strategy-upgrade-card');button.dataset.upgrade=key;button.dataset.level=level;
+    button.innerHTML=`<span class="strategy-upgrade-icon">${icon}</span><span class="strategy-upgrade-copy"><b>${meta.name}</b><small>${note}</small></span><span class="strategy-upgrade-step">${level}<i>→</i>${level>=max?'MAX':level+1}</span><span class="strategy-upgrade-price">${level>=max?'Максимум':strategyPhoneMoney(cost)+' 🪙'}</span><span class="strategy-upgrade-track">${Array.from({length:max},(_,i)=>`<i class="${i<level?'done':''}"></i>`).join('')}</span>`;
+    button.setAttribute('aria-label',`${meta.name}: уровень ${level} из ${max}${level<max?', следующий стоит '+cost+' монет':''}`);
+  }
+  const cards=$('#stratCards');if(cards){for(const button of cards.querySelectorAll('.strat-card.support')){const text=button.textContent;button.classList.toggle('active',!!s.support&&((s.support==='heal'&&text.includes('Ремонт'))||(s.support==='shield'&&text.includes('Щит'))));}}
 }
 function setupStrategyPhone(){
   const originalClocks=updateClockEls;
   updateClockEls=function(...args){originalClocks(...args);strategyPhoneUpdateClocks();};
   const original=battleRenderUi;
-  battleRenderUi=function(){original();strategyPhoneSync();if(innerWidth>=1000&&typeof v84BattleDesktopSync==='function')v84BattleDesktopSync();};
+  battleRenderUi=function(){original();strategyDesignControls();strategyPhoneSync();if(innerWidth>=1000&&typeof v84BattleDesktopSync==='function')v84BattleDesktopSync();};
   const originalLayout=battleMobileLayout;
   battleMobileLayout=function(){if(innerWidth<1000&&typeof v84BattleDesktopRestore==='function')v84BattleDesktopRestore();if(innerWidth<1000&&ui.st?.flags.strategy)return strategyPhoneLayout();strategyPhoneRestore();return originalLayout();};
   const originalAnimate=battleAnimateAction;
@@ -118,7 +156,7 @@ function setupStrategyPhone(){
   const originalSelect=strategySelectAttacker;
   strategySelectAttacker=function(...args){const result=originalSelect(...args);strategyPhoneToField();return result;};
   const originalCards=strategyRenderCards;
-  strategyRenderCards=function(){originalCards();const cards=$('#stratCards');if(cards)for(const b of cards.querySelectorAll('button')){const click=b.onclick;b.onclick=(e)=>{click?.(e);strategyPhoneToField();};}};
+  strategyRenderCards=function(){originalCards();const cards=$('#stratCards');if(cards)for(const b of cards.querySelectorAll('button')){const click=b.onclick;b.onclick=(e)=>{click?.(e);strategyDesignControls();strategyPhoneToField();};}};
   const originalShow=showScreen;
   showScreen=function(name){if(name!=='game'){strategyPhoneRestore();if(typeof v84BattleDesktopRestore==='function')v84BattleDesktopRestore();}originalShow(name);if(name==='game'&&ui.st?.flags.strategy){strategyPhoneSync();requestAnimationFrame(()=>{if(ui.screen==='game')renderBoard(false);});}};
   window.addEventListener('resize',()=>{strategyPhoneSync();if(ui.screen==='game'&&ui.st)requestAnimationFrame(()=>renderBoard(false));});

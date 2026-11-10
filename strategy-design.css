@@ -1,0 +1,86 @@
+/* Strategy control room — load after other application styles. No board/territory overrides. */
+html[data-strategy="1"] #gameShell{--strategy-panel:#192a31;--strategy-card:#23373d;--strategy-line:#3a525b;--strategy-ink:#dfeaed;--strategy-muted:#8ba6af;--strategy-teal:#89c9b4;--strategy-gold:#ebcf8d}
+html[data-strategy="1"] #strategyBar,html[data-strategy="1"] #stratInfoPanel{background:var(--strategy-panel)!important;border:1px solid var(--strategy-line);border-radius:15px;box-shadow:0 8px 26px #08131625;color:var(--strategy-ink)}
+html[data-strategy="1"] #strategyBar button,html[data-strategy="1"] #stratInfoPanel button,html[data-strategy="1"] #strategyPhonePane-actions button{box-shadow:none;transition:background .16s,border-color .16s,color .16s}
+html[data-strategy="1"] #strategyBar .sh-btn,html[data-strategy="1"] #stratCards .strat-card,html[data-strategy="1"] #stratCards .strat-recruit{background:#24393f;border:1px solid #47616a;color:#c6dce0;border-radius:9px}
+html[data-strategy="1"] #stratCards .strat-recruit.active,html[data-strategy="1"] #stratCards .strat-card.active,html[data-strategy="1"] #strategyBar .sh-btn.active{border-color:#8ac5ac!important;background:#2c4e46!important;color:#e1f4e9!important;box-shadow:inset 3px 0 #8ac5ac}
+html[data-strategy="1"] #strategyBar button:not(:disabled):hover,html[data-strategy="1"] #stratInfoPanel button:not(:disabled):hover{background:#304b4e;border-color:#74988f}
+html[data-strategy="1"] #strategyBar button:focus-visible,html[data-strategy="1"] #stratInfoPanel button:focus-visible,html[data-strategy="1"] #strategyPhone button:focus-visible{outline:2px solid #a0d7c1;outline-offset:2px}
+html[data-strategy="1"] .battle-v85 button:disabled{opacity:.48;filter:saturate(.6)}
+html[data-strategy="1"] .battle-lock{opacity:.6;margin-right:4px}
+html[data-strategy="1"] #strategyBar #stratAction{padding:12px 13px;border:0;border-left:3px solid #70ab98;border-radius:0 9px 9px 0;background:#233d3e;color:#c7e3dc;font-size:12px;line-height:1.5;font-weight:600;text-align:left}
+html[data-strategy="1"] #strategyBar #stratPhase{color:#9dbeb6;font-size:10px;letter-spacing:.04em;background:transparent}
+html[data-strategy="1"] #strategyTimeline{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:3px 0;font-size:8px}
+html[data-strategy="1"] #strategyTimeline span{color:#668994;background:#15252c;padding:6px 3px;border-radius:5px;text-align:center;border:1px solid #2c454d}
+html[data-strategy="1"] #strategyTimeline span.active{color:#c9e9df;background:#2a4844;border-color:#5c8d7e}
+html[data-strategy="1"] .strategy-upgrade-card{display:grid!important;grid-template-columns:29px minmax(0,1fr) auto;gap:3px 8px;align-items:center;text-align:left!important;width:100%;min-height:78px!important;padding:10px!important;border:1px solid #476369!important;border-radius:10px!important;background:#20383d!important;white-space:normal!important;color:#d9e9e8!important}
+html[data-strategy="1"] .strategy-upgrade-icon{grid-column:1;grid-row:1/3;display:grid;place-items:center;width:28px;height:32px;border-radius:7px;background:#35524f;color:#a8d9c4;font-size:18px}
+html[data-strategy="1"] .strategy-upgrade-copy{grid-column:2;grid-row:1;min-width:0}.strategy-upgrade-copy>b,.strategy-upgrade-copy>small{display:block}
+html[data-strategy="1"] .strategy-upgrade-copy>b{font-size:12px;font-weight:700;line-height:1.2}.strategy-upgrade-copy>small{font-size:9px;font-weight:400;color:#86aaa9;margin-top:4px}
+html[data-strategy="1"] .strategy-upgrade-step{grid-column:3;grid-row:1;font-size:16px;font-weight:750;white-space:nowrap;color:#c8e7da}
+html[data-strategy="1"] .strategy-upgrade-step>i{font-style:normal;font-weight:400;font-size:12px;padding:0 5px;color:#6c9990}
+html[data-strategy="1"] .strategy-upgrade-price{grid-column:2/4;grid-row:2;color:#ead39b;font-weight:650;font-size:11px;text-align:right;line-height:1.5}
+html[data-strategy="1"] .strategy-upgrade-track{display:flex;gap:4px;grid-column:1/-1;grid-row:3;margin-top:3px}
+html[data-strategy="1"] .strategy-upgrade-track>i{display:block;flex:1;height:3px;border-radius:2px;background:#50736b33}
+html[data-strategy="1"] .strategy-upgrade-track>i.done{background:#85b9a0}
+html[data-strategy="1"] .strategy-upgrade-card[data-level="5"] .strategy-upgrade-price{color:#8dafab}
+html[data-strategy="1"] #stratInfoPanel .sip-actions{display:block;padding:0;margin:0}
+html[data-strategy="1"] #stratCards .strat-economy{font-size:10px;line-height:1.55;background:#20353a;border:1px solid #3d585a;border-radius:9px;padding:10px;color:#99b7b4;margin:0 0 3px}
+html[data-strategy="1"] .battle-country-card{background:#21343b;border:1px solid #3f5c62;border-radius:10px;gap:9px;padding:11px}
+html[data-strategy="1"] .battle-country-card>span{font-size:24px;filter:saturate(.6)}
+html[data-strategy="1"] .battle-country-card b{font-size:12px;color:#bed7d7}
+html[data-strategy="1"] .battle-country-card small{color:#7da3a5;font-size:9px;line-height:1.6}
+html[data-strategy="1"] #stratInfoPanel .sip-card{border:1px solid #3b555d;background:#1e323a;border-radius:11px;padding:13px;box-shadow:none}
+html[data-strategy="1"] #stratInfoPanel .sip-badge{color:#8eb7b2;background:transparent;font-size:9px;letter-spacing:.08em;border:0;padding:0;text-align:left}
+html[data-strategy="1"] #stratInfoPanel .sip-glyph{width:64px;height:64px;margin:12px auto 6px}
+html[data-strategy="1"] #stratInfoPanel .sip-name{font-size:17px;color:#d7e6e6;font-weight:700;margin-bottom:10px}
+html[data-strategy="1"] #stratInfoPanel .sip-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:#3a5159;border:1px solid #3a5159;border-radius:8px;overflow:hidden}
+html[data-strategy="1"] #stratInfoPanel .sip-stat{display:flex;flex-direction:column;gap:4px;padding:9px 7px;background:#182a32;min-width:0}
+html[data-strategy="1"] #stratInfoPanel .sip-stat>span{font-size:8px;color:#7c9ca8}
+html[data-strategy="1"] #stratInfoPanel .sip-stat>b{font-size:12px;color:#c8e0d9}
+html[data-strategy="1"] #stratInfoPanel .sip-desc{font-size:10px;line-height:1.6;color:#8daab3;padding-top:10px}
+html[data-strategy="1"] .battle-nuke-card{background:#332e22;border:1px solid #7c6940;border-radius:10px;color:#e3cba0;padding:11px 12px;gap:10px;box-shadow:none}
+html[data-strategy="1"] .battle-nuke-card b{font-size:12px;color:#ebd3a5}.battle-nuke-card small{font-size:9px;line-height:1.55}
+html[data-strategy="1"] .battle-nuke-icon{font-size:25px;color:#cfb370}
+html[data-strategy="1"] .battle-object-legend{background:#1c3036;border-color:#3a565c;padding:11px;border-radius:9px;color:#b1cdce}
+html[data-strategy="1"] .battle-object-legend p{color:#8facb3;line-height:1.65}
+/* A permanent player-owned treasury, never the current turn's purse. */
+html[data-strategy="1"] #strategyTreasury.strategy-treasury{display:block;position:relative;flex:none;isolation:isolate;overflow:hidden;margin:0 0 2px;padding:15px 14px 13px;border:1px solid #a08a50;border-radius:12px;background:#2d2d25;color:#efd79f;box-shadow:0 5px 18px #070e1220;text-align:left}
+#strategyTreasury .treasury-heading{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#strategyTreasury .treasury-heading>span:first-child{font-size:12px;letter-spacing:.04em;font-weight:750;color:#e5cb91}
+#strategyTreasury .treasury-side{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;font-weight:400;color:#a9b2a4}
+#strategyTreasury .treasury-amount{display:flex;align-items:baseline;gap:8px;padding:9px 0 4px;white-space:nowrap;line-height:1}
+#strategyTreasury .treasury-amount>i{font-style:normal;font-size:24px;align-self:center}
+#strategyTreasury .treasury-amount>strong[data-battle-gold]{font-size:38px!important;font-weight:800;letter-spacing:-.035em;line-height:1;color:#f8dda0!important;font-variant-numeric:tabular-nums}
+#strategyTreasury .treasury-amount>small{font-size:10px;color:#b9ad8e}
+#strategyTreasury .treasury-available{font-size:10px;color:#b9c1ae;min-height:14px;line-height:1.45}
+#strategyTreasury .treasury-footer{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 8px;font-size:10px;color:#cfbd92;margin-top:7px;line-height:1.5}
+#strategyTreasury .treasury-cycle{display:flex;gap:4px;margin-top:10px}
+#strategyTreasury .treasury-cycle>i{display:block;flex:1;height:4px;border-radius:2px;background:#77715740}
+#strategyTreasury .treasury-cycle>i.done{background:#d2b570}
+@media(min-width:1000px){
+ html[data-strategy="1"] #gameShell.v84-battle-desktop .v84-battle-column{gap:12px;scrollbar-color:#49626a transparent}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #stratInfoPanel{display:flex;flex-direction:column;gap:12px;padding:12px!important;background:#17272d!important}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #strategyBar{padding:13px!important;gap:11px!important}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #strategyBar .strat-toolbar{display:grid;grid-template-columns:1fr!important;gap:8px}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #strategyBar #stratPhase{padding:0 2px 2px;text-align:left}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #stratCards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #stratCards .strat-economy{grid-column:1/-1}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #stratCards .strat-recruit{height:auto;min-height:78px;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:9px 6px;text-align:center;font-size:10px}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #stratCards .strat-recruit svg{width:35px;height:35px;flex:none}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #stratCards .support{min-height:56px;height:auto;padding:9px 7px;white-space:normal;font-size:10px;line-height:1.4}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #sidePanel{background:#192930;border-color:#354c55;border-radius:13px;box-shadow:none}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #sidePanel .side-panel-header{padding:13px}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #sidePanel .game-status{font-size:17px;color:#cfe5df}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #sidePanel .game-sub{font-size:10px;color:#83a3ac}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #sidePanel .tab{font-size:11px;color:#8daab4}
+ html[data-strategy="1"] #gameShell.v84-battle-desktop #sidePanel .tab.active{color:#b9e1d1;border-color:#86bfa5}
+}
+@media(max-width:999px){
+ html[data-strategy="1"] #gameShell.strategy-phone #strategyBar{border:0!important;background:transparent!important;box-shadow:none!important}
+ html[data-strategy="1"] #gameShell.strategy-phone .strategy-upgrade-card{min-height:73px!important}
+ html[data-strategy="1"] #gameShell.strategy-phone #stratCards .strat-economy{padding:8px;font-size:9px}
+ html[data-strategy="1"] #gameShell.strategy-phone .strategy-phone-money{white-space:normal}
+ html[data-strategy="1"] #gameShell.strategy-phone .strategy-phone-money strong[data-battle-gold]{text-shadow:none}
+}
+@media(prefers-reduced-motion:reduce){html[data-strategy="1"] #strategyBar button,html[data-strategy="1"] #stratInfoPanel button{transition:none}}

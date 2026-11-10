@@ -34,7 +34,7 @@ function specialActionCommitted(kind,r,opts={}){
  const rec={san:specialLabel(kind,r),from,to,color:mover,action:JSON.parse(JSON.stringify(a)),special:kind,spent,at:Date.now(),clock:ui.clocks[mover],captured:!!captured};
  ui.moves.push(rec);ui.lastMove=from>=0&&to>=0?{from,to}:null;ui.frames.push(snap(st,ui.lastMove));ui.viewPly=ui.frames.length-1;
  ui.turnStart=now;ui.running=st.status==='play';ui.selected=-1;ui.hint=null;
-  if(!opts.silent){renderAll(false);renderMoves();renderPgnBox();updateNav();}
+  if(!opts.silent){if(kind==='strategy'&&typeof battlePrepareIncome==='function')battlePrepareIncome(r.events);renderAll(false);renderMoves();renderPgnBox();updateNav();}
   if(!opts.remote&&ui.mode==='online'&&ui.online?.started)netPublish({t:'mode-action',kind,action:rec.action,ply:ui.moves.length,hash:netPositionHash(st),cw:ui.clocks.w,cb:ui.clocks.b});
   if(!opts.replay&&!opts.silent)saveCurrentGame();
   const next=()=>{

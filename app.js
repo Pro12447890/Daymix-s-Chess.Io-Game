@@ -431,7 +431,7 @@ function chooseBotMoveOffThread(st, level, persona, maxMs = 0) {
   if (typeof Worker !== 'function') return Promise.resolve(maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261110-87', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261110-88', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -4967,10 +4967,16 @@ function renderSquares() {
       const influence = st.strategy?.influence?.[i];
       if (influence != null) el.style.setProperty('--claim', Math.abs(influence)/(st.strategy.economyVersion >= 87 ? 4 : 3));
       const object = st.strategy?.objects?.find(o=>o.sq===i);
-      if(object) { el.dataset.object = object.icon || (object.name==='Завод'?'🏭':object.name==='Порт'?'⚓':'🏙'); el.title=object.name+' · +'+object.income+' золота/раунд'; } else delete el.dataset.object;
+      if(object) { el.dataset.object = object.icon || (object.name==='Завод'?'🏭':object.name==='Порт'?'⚓':'🏙'); el.title=object.name+' · +'+object.income+' золота/4 действия'; } else delete el.dataset.object;
       if(ui.strategy.recruit && terr[i]===st.turn && !st.board[i]) cls.push('brawl-deploy');
-      if (terr[i] === 'w') cls.push('strat-w');
-      else if (terr[i] === 'b') cls.push('strat-b');
+      const share = strategyTerritoryShare(st, i, 'w');
+      const tint = [Math.round(179 + (116-179)*share),Math.round(125 + (153-125)*share),Math.round(120 + (183-120)*share)];
+      el.style.setProperty('--territory-tint',tint.join(','));
+      el.style.setProperty('--territory-share',(share*100)+'%');
+      if (share > .5) cls.push('strat-w');
+      else if (share < .5) cls.push('strat-b');
+      else cls.push('strat-contested');
+      el.title=(object?object.name+' · ':'')+`Контроль: белые ${share*100}% · чёрные ${(1-share)*100}%`;
       if (ui.strategy.aim && ui.strategy.aim.has(i)) cls.push('strat-aim');
       if (ui.strategy.targets && ui.strategy.targets.has(i)) cls.push('strat-target');
       if ((ui.strategy.mines || []).some((m) => m.sq === i)) cls.push('strat-mine');
@@ -5322,16 +5328,22 @@ const STRAT = {
   q: { hp: 90, move: 10, atk: 25, dmg: 35, range: 3 },
   k: { hp: 210, move: 12, atk: 20, dmg: 25, range: 1 },
 };
-const STRAT_NUKE = { round: 5, cost: 120, center: 150, inner: 80, outer: 30 };
+const STRAT_PRICE_MULTIPLIER = 2.5;
+function strategyPrice(previousPrice) { return Math.round(previousPrice * STRAT_PRICE_MULTIPLIER * 100) / 100; }
+const STRAT_RECRUIT = Object.fromEntries(Object.entries({p:12,b:26,n:28,r:46,q:65}).map(([t,cost])=>[t,strategyPrice(cost)]));
+const STRAT_SUPPORT = { heal: strategyPrice(20), shield: strategyPrice(25) };
+const STRAT_MINE_COST = strategyPrice(15);
+const STRAT_NUKE = { round: 5, cost: strategyPrice(120), center: 150, inner: 80, outer: 30 };
 const STRAT_UPGRADES = {
   income: { name: 'Экономика', base: 30, max: 5 },
   arsenal: { name: 'Арсенал', base: 35, max: 5 },
   logistics: { name: 'Снабжение', base: 25, max: 5 },
 };
 const STRAT_ECONOMY_SHARE = [1/10, 1/5, 1/4, 1/3, 1/2, 2/3];
-function strategyUpgradeCost(key, level) { return Math.ceil(STRAT_UPGRADES[key].base * 1.8 ** level); }
+function strategyUpgradeCost(key, level) { return strategyPrice(Math.ceil(STRAT_UPGRADES[key].base * 1.8 ** level)); }
 function strategyMoney(value) { return String(Math.round(Number(value || 0) * 100) / 100).replace('.', ','); }
 function strategyMigrateEconomy(s) {
+  s.cap = Math.max(2500, s.cap || 0);
   if (s.economyVersion === 87) return s;
   s.economyVersion = 87;
   s.cap = Math.max(1000, s.cap || 0);
@@ -5352,7 +5364,7 @@ function strategyEnsure(st) {
     territory[i] = owner; influence[i] = owner === 'w' ? 4 : -4;
   }
   st.strategy = {
-    version: 84, economyVersion: 87, hp: {}, shield: {}, moved: {}, gold: { w: 35, b: 35 }, cap: 1000,
+    version: 84, economyVersion: 87, hp: {}, shield: {}, moved: {}, gold: { w: 35, b: 35 }, cap: 2500,
     factions: { w: 'Светлая республика', b: 'Тёмная федерация' },
     phase: 'move', phaseSide: 0, round: 1, seq: 0, phaseRepeated: false,
     nextPhase: 'attack', nextRepeat: false, notice: '',
@@ -5376,11 +5388,11 @@ function strategyPlanPhase(st) {
 function strategyPieceHp(st, p) { return p ? (st.strategy.hp[p.id] ?? STRAT[p.t].hp) : 0; }
 function strategyRuleCost(st, p, kind, sq) {
   const u = st.strategy.upgrades[p.c];
-  const base = kind === 'nuke' ? STRAT_NUKE.cost : kind === 'mine' ? 15
-    : STRAT[p.t][kind === 'move' ? 'move' : 'atk'];
-  if (kind === 'nuke') return base;
-  return Math.max(1, Math.ceil(base * (kind === 'move' ? 1 - u.logistics * .15 : 1)
-    * (strategyOnEnemyHalf(st, sq, p.c) ? 1.1 : 1)));
+  if (kind === 'nuke') return STRAT_NUKE.cost;
+  if (kind === 'mine') return STRAT_MINE_COST;
+  const base = STRAT[p.t][kind === 'move' ? 'move' : 'atk'];
+  return strategyPrice(Math.max(1, Math.ceil(base * (kind === 'move' ? 1 - u.logistics * .15 : 1)
+    * (strategyOnEnemyHalf(st, sq, p.c) ? 1.1 : 1))));
 }
 function strategyRuleDamage(st, p) { return STRAT[p.t].dmg + st.strategy.upgrades[p.c].arsenal * 4; }
 function strategyCleanup(st, events = []) {
@@ -5575,7 +5587,7 @@ function strategyReduceAction(st, action) {
   const costFor = type => strategyRuleCost(st, p, type, action.from);
   const pay = cost => { if (s.gold[mover] < cost) return false; s.gold[mover] -= cost; return true; };
   if (kind === 'pass') {
-    const beforeGold=s.gold[mover];s.gold[mover] = Math.min(s.cap, s.gold[mover] + (s.phase === 'move' ? 6 : 3));events.push({type:'income',color:mover,amount:s.gold[mover]-beforeGold});
+    const beforeGold=s.gold[mover];s.gold[mover] = Math.min(s.cap, s.gold[mover] + (s.phase === 'move' ? 6 : 3));events.push({type:'income',color:mover,amount:s.gold[mover]-beforeGold,before:beforeGold,after:s.gold[mover]});
     events.push({ type: 'pass', color: mover });
   } else if (kind === 'upgrade') {
     const meta = STRAT_UPGRADES[action.upgrade], levels = s.upgrades[mover];
@@ -5588,13 +5600,13 @@ function strategyReduceAction(st, action) {
     if (!target || target.c !== mover || !['heal','shield'].includes(action.support)) return fail('Выбери свою фигуру');
     if (heal && strategyPieceHp(st, target) >= STRAT[target.t].hp) return fail('Фигура уже здорова');
     if (!heal && (s.shield[target.id] || 0) >= 30) return fail('У фигуры уже полный щит');
-    if (!pay(heal ? 20 : 25)) return fail('Недостаточно золота на поддержку');
+    if (!pay(STRAT_SUPPORT[action.support])) return fail('Недостаточно золота на поддержку');
     if (heal) s.hp[target.id] = Math.min(STRAT[target.t].hp, strategyPieceHp(st, target) + 25);
     else s.shield[target.id] = 30;
     events.push({ type: 'support', sq: action.to, support: action.support });
   } else if (kind === 'deploy') {
     if(s.phase!=='move') return fail('Подкрепления доступны в фазе манёвров');
-    const price={p:12,b:26,n:28,r:46,q:65}[action.piece];
+    const price=STRAT_RECRUIT[action.piece];
     if(!price || !Number.isInteger(action.to) || action.to<0 || action.to>=st.board.length || st.board[action.to] || s.territory[action.to]!==mover) return fail('Выбери пустую захваченную клетку');
     if(st.board.filter(p=>p&&p.c===mover).length>=24) return fail('На поле уже 24 своих фигуры');
     if(!pay(price)) return fail('Не хватает золота на подкрепление');
@@ -5631,7 +5643,7 @@ function strategyReduceAction(st, action) {
     const special = action.special || null;
     if (kind === 'mine') {
       if (p.t !== 'n' || s.mines.some(m => m.sq === action.from)) return fail('Здесь нельзя поставить мину');
-      if (!pay(15)) return fail('Мина стоит 15 золота');
+      if (!pay(STRAT_MINE_COST)) return fail(`Мина стоит ${strategyMoney(STRAT_MINE_COST)} золота`);
       s.mines.push({ sq: action.from, owner: mover, expiresRound: s.round + 3 });
       events.push({ type: 'mine', sq: action.from });
     } else {
@@ -5722,7 +5734,7 @@ function strategyAvailableBotActions(st) {
   const s=strategyEnsure(st),color=st.turn,options=[];
   if(s.phase==='move') {
     for(const m of legalMoves(st,color))if(strategyRuleCost(st,st.board[m.from],'move',m.from)<=s.gold[color])options.push({kind:'move',...m});
-    for(const [piece,cost]of Object.entries({p:12,b:26,n:28,r:46,q:65}))if(cost<=s.gold[color]&&st.board.filter(p=>p&&p.c===color).length<24)for(let to=0;to<st.board.length;to++)if(!st.board[to]&&s.territory[to]===color)options.push({kind:'deploy',piece,to});
+    for(const [piece,cost]of Object.entries(STRAT_RECRUIT))if(cost<=s.gold[color]&&st.board.filter(p=>p&&p.c===color).length<24)for(let to=0;to<st.board.length;to++)if(!st.board[to]&&s.territory[to]===color)options.push({kind:'deploy',piece,to});
   } else {
     for(let from=0;from<st.board.length;from++) {
       const p=st.board[from];if(!p||p.c!==color)continue;
@@ -5734,11 +5746,11 @@ function strategyAvailableBotActions(st) {
           options.push({kind:'attack',from,to,special});
         }
       }
-      if(p.t==='n'&&s.gold[color]>=15&&!s.mines.some(m=>m.sq===from))options.push({kind:'mine',from});
+      if(p.t==='n'&&s.gold[color]>=STRAT_MINE_COST&&!s.mines.some(m=>m.sq===from))options.push({kind:'mine',from});
     }
   }
   for(const [upgrade,meta]of Object.entries(STRAT_UPGRADES)){const lv=s.upgrades[color][upgrade];if(lv<meta.max&&strategyUpgradeCost(upgrade,lv)<=s.gold[color])options.push({kind:'upgrade',upgrade});}
-  for(let to=0;to<st.board.length;to++){const p=st.board[to];if(!p||p.c!==color)continue;if(s.gold[color]>=20&&strategyPieceHp(st,p)<STRAT[p.t].hp)options.push({kind:'support',support:'heal',to});if(s.gold[color]>=25&&(s.shield[p.id]||0)<30)options.push({kind:'support',support:'shield',to});}
+  for(let to=0;to<st.board.length;to++){const p=st.board[to];if(!p||p.c!==color)continue;if(s.gold[color]>=STRAT_SUPPORT.heal&&strategyPieceHp(st,p)<STRAT[p.t].hp)options.push({kind:'support',support:'heal',to});if(s.gold[color]>=STRAT_SUPPORT.shield&&(s.shield[p.id]||0)<30)options.push({kind:'support',support:'shield',to});}
   return options;
 }
 function strategyChooseBotAction(st) {
@@ -5838,7 +5850,7 @@ function strategyOnEnemyHalf(st, sq, color) {
 }
 
 function strategyCost(base, st, sq, color) {
-  return Math.round(base * (strategyOnEnemyHalf(st, sq, color) ? 1.1 : 1));
+  return strategyPrice(Math.round(base * (strategyOnEnemyHalf(st, sq, color) ? 1.1 : 1)));
 }
 
 function strategyAddGold(color, amount) {
@@ -5874,17 +5886,17 @@ function strategyRender() {
   let timeline=$('#strategyTimeline');if(!timeline){timeline=document.createElement('div');timeline.id='strategyTimeline';timeline.className='strat-timeline';$('#strategyBar').appendChild(timeline);}
   timeline.innerHTML=['Белые: шаг','Чёрные: шаг','Белые: атака','Чёрные: атака'].map((v,i)=>`<span class="${i===(s.phase==='move'?0:2)+s.phaseSide?'active':''}">${v}</span>`).join('');
   const sp=$('#stratSpecial'),atk=ui.strategy.attacker!=null?ui.st.board[ui.strategy.attacker]:null;
-  if(sp){const labels={n:'💣 Мина · 15',r:'🪨 Катапульта',q:'🚀 Ракета',k:'☢ Ядерка · 120'};sp.textContent=atk?labels[atk.t]||'Нет спецатаки':'Спецатака';sp.disabled=!can||s.phase!=='attack'||!atk||!labels[atk.t]||(atk.t==='k'&&(s.nukeUsed[own]||s.round<STRAT_NUKE.round||s.gold[own]<120));sp.classList.toggle('active',!!ui.strategy.special);}
+  if(sp){const labels={n:`💣 Мина · ${strategyMoney(STRAT_MINE_COST)}`,r:'🪨 Катапульта',q:'🚀 Ракета',k:`☢ Ядерка · ${STRAT_NUKE.cost}`};sp.textContent=atk?labels[atk.t]||'Нет спецатаки':'Спецатака';sp.disabled=!can||s.phase!=='attack'||!atk||!labels[atk.t]||(atk.t==='k'&&(s.nukeUsed[own]||s.round<STRAT_NUKE.round||s.gold[own]<STRAT_NUKE.cost));sp.classList.toggle('active',!!ui.strategy.special);}
   strategyRenderCards();
 }
 function strategyRenderCards() {
   const box=$('#stratCards'),st=ui.st,s=ui.strategy;if(!box||!s)return;box.innerHTML='';
   const can=strategyCanAct(),color=st.turn;
-  const info=document.createElement('p');info.className='strat-economy';info.textContent=`Доход +${strategyMoney(strategyRuleIncome(st,color))} / 4 действия · до сбора ${4-s.seq%4} · ядерка ${s.nukeUsed[color]?'использована':s.round<5?'с 5-го раунда':'готова при 120💰'} · улучшения платные, цена ×1,8 за уровень.`;box.appendChild(info);
-  for(const [kind,text,cost] of [['heal','💚 Ремонт +25 HP',20],['shield','🛡 Щит +30',25]]){
+  const info=document.createElement('p');info.className='strat-economy';info.textContent=`Доход +${strategyMoney(strategyRuleIncome(st,color))} / 4 действия · до сбора ${4-s.seq%4} · ядерка ${s.nukeUsed[color]?'использована':s.round<5?'с 5-го раунда':`готова при ${STRAT_NUKE.cost}💰`} · улучшения платные, цена ×1,8 за уровень.`;box.appendChild(info);
+  for(const [kind,text,cost] of [['heal','💚 Ремонт +25 HP',STRAT_SUPPORT.heal],['shield','🛡 Щит +30',STRAT_SUPPORT.shield]]){
     const b=document.createElement('button');b.type='button';b.className='strat-card support';b.textContent=`${text} · ${cost}💰`;b.disabled=!can||s.gold[color]<cost;b.onclick=()=>{s.recruit=null;s.support=s.support===kind?null:kind;toast(s.support?'Нажми свою фигуру для поддержки':'Поддержка отменена');renderSquares();};box.appendChild(b);
   }
-  if(s.phase==='move')for(const [type,cost] of Object.entries({p:12,b:26,n:28,r:46,q:65})){
+  if(s.phase==='move')for(const [type,cost] of Object.entries(STRAT_RECRUIT)){
     const b=document.createElement('button');b.type='button';b.className='strat-recruit'+(s.recruit===type?' active':'');b.innerHTML=`${pieceSvg(type)}<span>${STRAT_NAMES[type]} · ${cost}💰</span>`;b.disabled=!can||s.gold[color]<cost;b.onclick=()=>{s.support=null;s.recruit=s.recruit===type?null:type;toast(s.recruit?'Выбери пустую захваченную клетку':'Подкрепление отменено');renderSquares();strategyRenderCards();};box.appendChild(b);
   }
 }
@@ -5893,7 +5905,7 @@ function strategyUpdateInfo(p) {
   $('#sipFaction').textContent=s.factions[p.c];$('#sipGlyph').innerHTML=pieceSvg(p.t);$('#sipName').textContent=STRAT_NAMES[p.t];
   $('#sipHp').textContent=`${strategyPieceHp(st,p)}/${m.hp} HP${s.shield[p.id]?' · щит '+s.shield[p.id]:''}`;
   $('#sipMoveCost').textContent=strategyRuleCost(st,p,'move',sq);$('#sipAtkCost').textContent=strategyRuleCost(st,p,'attack',sq);$('#sipDmg').textContent=strategyRuleDamage(st,p);
-  $('#sipDesc').textContent={p:'Прямой выстрел: 4 клетки до первого движения, потом 2. Фигуры заслоняют линию.',b:'Диагональный выстрел и осколки по соседям цели.',n:'Прыжок с отбрасыванием. Мина живёт 3 раунда.',r:'Прямая стрельба; катапульта на 2–6 клеток через препятствия.',q:'Линейный выстрел; ракета перелетает препятствия и отбрасывает.',k:'Штаб. Ядерный удар с раунда 5, 120 золота, один на сторону. Задевает и своих.'}[p.t];
+  $('#sipDesc').textContent={p:'Прямой выстрел: 4 клетки до первого движения, потом 2. Фигуры заслоняют линию.',b:'Диагональный выстрел и осколки по соседям цели.',n:'Прыжок с отбрасыванием. Мина живёт 3 раунда.',r:'Прямая стрельба; катапульта на 2–6 клеток через препятствия.',q:'Линейный выстрел; ракета перелетает препятствия и отбрасывает.',k:`Штаб. Ядерный удар с раунда ${STRAT_NUKE.round}, ${STRAT_NUKE.cost} золота, один на сторону. Задевает и своих.`}[p.t];
 }
 function strategyShowPieceCard(p) { strategyUpdateInfo(p); }
 function strategyTerritory() { return ui.st?.strategy?.territory||{}; }

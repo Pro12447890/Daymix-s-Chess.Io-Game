@@ -7,7 +7,7 @@ function battleFxClear(keepIncome = false) {
 function battleIncomeClear() {
   cancelAnimationFrame(ui.battleIncomeFrame); ui.battleIncomeFrame=0; ui.battleIncomeVisual=null;
   for(const id of ui.battleIncomeTimers||[])clearTimeout(id);ui.battleIncomeTimers=[];
-  document.querySelectorAll('.battle-income,.battle-income-coin').forEach(el=>el.remove());
+  document.querySelectorAll('.battle-income,.battle-income-coin,.battle-income-cell,.battle-income-arrival').forEach(el=>el.remove());
   document.querySelectorAll('.battle-income-pulse').forEach(el=>el.classList.remove('battle-income-pulse'));
 }
 function battleDisplayedGold(color, st = ui.st) {
@@ -15,7 +15,7 @@ function battleDisplayedGold(color, st = ui.st) {
   return visual && visual.state === ui.st && st?.strategy?.seq === ui.st?.strategy?.seq ? (visual.gold[color] ?? st.strategy.gold[color]) : (st?.strategy?.gold[color] || 0);
 }
 function battleIncomeBadge(color) {
-  const candidates=[...document.querySelectorAll(`.strategy-phone-money[data-side="${color}"]`),$('#stratGoldBadge'+color.toUpperCase())].filter(Boolean);
+  const candidates=[...document.querySelectorAll(`#strategyTreasury[data-side="${color}"],.strategy-phone-money[data-side="${color}"]`),$('#stratGoldBadge'+color.toUpperCase())].filter(Boolean);
   return candidates.find(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight;})||candidates[0];
 }
 function battlePaintIncomeGold() {
@@ -47,6 +47,13 @@ function battleRenderCountry(st,color,prefix) {
     badge.innerHTML=`<span class="battle-coin">🪙</span><b><span data-battle-gold="${color}">${strategyMoney(displayed)}</span> <small>/ ${s.cap}</small></b><span class="battle-next-income">+${strategyMoney(strategyRuleIncome(st,color))} / 4 действия</span>`;
   }
 }
+function battleRenderTreasury(st) {
+  const s=st.strategy,own=myColor()==='b'?'b':'w';
+  let box=$('#strategyTreasury');
+  if(!box){box=document.createElement('section');box.id='strategyTreasury';box.className='strategy-treasury';$('#stratInfoPanel').prepend(box);}
+  box.dataset.side=own;
+  box.innerHTML=`<div class="treasury-heading"><span>Моя казна</span><span class="treasury-side">${escapeHtml(s.factions[own])}</span></div><div class="treasury-amount"><i>🪙</i><strong data-battle-gold="${own}">${strategyMoney(battleDisplayedGold(own,st))}</strong><small>монет</small></div><div class="treasury-available">Доступно: <b>${strategyMoney(s.gold[own])}</b> · лимит ${s.cap}</div><div class="treasury-footer"><span>+${strategyMoney(strategyRuleIncome(st,own))} за сбор</span><span>через ${4-s.seq%4} действия</span></div><div class="treasury-cycle">${[0,1,2,3].map(i=>`<i class="${i<s.seq%4?'done':''}"></i>`).join('')}</div>`;
+}
 function battleRenderUi() {
   const st=ui.st;if(!st)return;
   const battle=!!(st.flags.strategy||st.flags.clashBrawl),shell=$('#gameShell');
@@ -59,7 +66,7 @@ function battleRenderUi() {
   if(!battle)return;
   for(const btn of shell.querySelectorAll('#strategyBar button,#stratInfoPanel button,#brawlPanel button'))battleLockButton(btn);
   if(st.flags.strategy){
-    const s=st.strategy,bottom=barOrientation()==='w'?'w':'b';battleRenderCountry(st,other(bottom),'top');battleRenderCountry(st,bottom,'bottom');
+    const s=st.strategy,bottom=barOrientation()==='w'?'w':'b';battleRenderCountry(st,other(bottom),'top');battleRenderCountry(st,bottom,'bottom');battleRenderTreasury(st);
     let nuke=$('#battleNuke');if(!nuke){nuke=document.createElement('button');nuke.type='button';nuke.id='battleNuke';nuke.className='battle-nuke-card';$('#strategyBar').appendChild(nuke);}
     const own=(ui.mode==='online'||ui.bot)?myColor():st.turn;
     let reason=s.nukeUsed[own]?'Запуск уже использован':s.round<STRAT_NUKE.round?`Откроется в раунде ${STRAT_NUKE.round} (сейчас ${s.round})`:s.gold[own]<STRAT_NUKE.cost?`Нужно ${STRAT_NUKE.cost} монет, есть ${s.gold[own]}`:s.phase!=='attack'?'Дождитесь фазы атаки':st.turn!==own?'Сейчас очередь противника':!strategyCanAct()?'Действие временно недоступно':'';
@@ -90,29 +97,63 @@ function battleShowAction(text,color='w') {
   const el=document.createElement('div');el.className='battle-action-toast '+color;el.textContent=text;
   const r=$('#board').getBoundingClientRect();el.style.left=Math.max(8,r.left+r.width/2)+'px';el.style.top=Math.max(10,r.top+r.height*.12)+'px';document.body.appendChild(el);setTimeout(()=>el.remove(),1800);
 }
+function battleIncomeRows(events) {
+  const groups=new Map();
+  for(const event of events||[]){
+    if(event.type!=='income'||event.amount<=0)continue;
+    const previous=groups.get(event.color);
+    const cells=event.cells?.length?event.cells:[{sq:findKing(ui.st,event.color),amount:event.amount}];
+    if(previous){previous.amount+=event.amount;previous.after=event.after??previous.after;previous.collection=previous.collection||event.collection;previous.cells.push(...cells);}
+    else groups.set(event.color,{...event,cells:cells.slice()});
+  }
+  return [...groups.values()];
+}
+function battlePrepareIncome(events) {
+  const income=battleIncomeRows(events);
+  if(!income.length||!ui.st?.strategy)return;
+  battleIncomeClear();
+  const gold={...ui.st.strategy.gold};
+  for(const e of income)gold[e.color]=e.before??gold[e.color]-e.amount;
+  ui.battleIncomeVisual={state:ui.st,gold,rows:[],waiting:true};
+}
+function battleIncomeDuration(events) {
+  if(!(events||[]).some(e=>e.type==='income'&&e.amount>0))return 0;
+  if(profile.calm||matchMedia('(prefers-reduced-motion: reduce)').matches)return 450;
+  return events.some(e=>e.collection)?3100:1100;
+}
 function battleIncomeEvents(events) {
-  const income=(events||[]).filter(e=>e.type==='income'&&e.amount>0),st=ui.st;if(!income.length||!st?.strategy)return;
+  const income=battleIncomeRows(events),st=ui.st;if(!income.length||!st?.strategy)return;
   const quiet=profile.calm||matchMedia('(prefers-reduced-motion: reduce)').matches;
   battleIncomeClear();
   const visual={state:st,gold:{...st.strategy.gold},started:performance.now(),rows:[]};ui.battleIncomeVisual=visual;ui.battleIncomeTimers=[];
+  const duration=battleIncomeDuration(events);
   for(const event of income){
     const color=event.color,badge=battleIncomeBadge(color);if(!badge)continue;
     const before=event.before??st.strategy.gold[color]-event.amount;
-    visual.gold[color]=Math.min(visual.gold[color],before);
-    const cells=event.cells?.length?event.cells:[{sq:findKing(st,color),amount:event.amount}];
-    const step=cells.length>1?Math.min(38,1400/(cells.length-1)):0,flight=quiet?0:650;
-    visual.rows.push({color,before,after:event.after??st.strategy.gold[color],cells,step,flight});
+    visual.gold[color]=before;
+    const cells=(event.cells?.length?event.cells:[{sq:findKing(st,color),amount:event.amount}]).slice().sort((a,b)=>a.sq-b.sq);
+    const collect=!!event.collection,step=cells.length>1?Math.min(45,1200/(cells.length-1)):0,hold=collect?650:80,flight=collect?950:650;
+    visual.rows.push({color,before,after:event.after??st.strategy.gold[color],cells,step,flight:hold+flight});
     badge.classList.add('battle-income-pulse');
-    const label=document.createElement('span'),br=badge.getBoundingClientRect();label.className='battle-income';label.textContent=`+${strategyMoney(event.amount)} 🪙`;label.style.left=br.left+br.width/2+'px';label.style.top=br.top+'px';document.body.appendChild(label);
+    const label=document.createElement('span'),br=badge.getBoundingClientRect();label.className='battle-income';label.textContent=`${color===myColor()?'Мой сбор':'Сбор соперника'} +${strategyMoney(event.amount)}`;label.style.left=br.left+br.width/2+'px';label.style.top=br.top+'px';document.body.appendChild(label);
     if(!quiet)cells.forEach((cell,i)=>{const id=setTimeout(()=>{
       if(ui.battleIncomeVisual!==visual||ui.st!==st)return;
-      const target=battleIncomeBadge(color),from=ui.squareEls[cell.sq]?.getBoundingClientRect(),to=target?.getBoundingClientRect();if(!from||!to)return;
-      const coin=document.createElement('span');coin.className='battle-income-coin'+(cell.boosted?' doubled':'');coin.textContent=cell.boosted?'×2':'🪙';coin.title='+'+strategyMoney(cell.amount);const x=from.left+from.width/2,y=from.top+from.height/2;coin.style.left=x+'px';coin.style.top=y+'px';document.body.appendChild(coin);
-      const dx=to.left+to.width/2-x,dy=to.top+to.height/2-y;
-      const animation=coin.animate([{transform:'translate(-50%,-50%) scale(.4)',opacity:0},{transform:'translate(-50%,-50%) scale(1)',opacity:1,offset:.18},{transform:`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) scale(.45)`,opacity:.1}],{duration:flight,easing:'cubic-bezier(.25,.7,.25,1)',fill:'forwards'});animation.onfinish=()=>coin.remove();
+      const target=battleIncomeBadge(color),from=ui.squareEls[cell.sq]?.getBoundingClientRect(),to=target?.getBoundingClientRect();if(!from||!to||!from.width||!to.width)return;
+      const x=from.left+from.width/2,y=from.top+from.height/2,dx=to.left+to.width/2-x,dy=to.top+to.height/2-y;
+      const coin=document.createElement('span');coin.className='battle-income-coin coin-v88'+(cell.boosted?' doubled':'')+(color===myColor()?' own':' enemy');
+      coin.innerHTML=`<i class="income-coin-face">${cell.boosted?'×2':'₵'}</i><b>+${strategyMoney(cell.amount)}</b>`;coin.style.left=x+'px';coin.style.top=y+'px';document.body.appendChild(coin);
+      const halo=document.createElement('span');halo.className='battle-income-cell';halo.style.left=from.left+'px';halo.style.top=from.top+'px';halo.style.width=from.width+'px';halo.style.height=from.height+'px';document.body.appendChild(halo);
+      const total=hold+flight;
+      const animation=coin.animate([
+        {transform:'translate(-50%,-30%) scale(.25)',opacity:0},
+        {transform:'translate(-50%,-90%) scale(1.12)',opacity:1,offset:Math.min(.16,hold/total*.65)},
+        {transform:'translate(-50%,-90%) scale(1)',opacity:1,offset:hold/total},
+        {transform:`translate(calc(-50% + ${dx*.45}px),calc(-50% + ${Math.min(dy*.5,-60)}px)) scale(.95)`,opacity:1,offset:hold/total+(1-hold/total)*.48},
+        {transform:`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) scale(.4)`,opacity:.7}
+      ],{duration:total,easing:'cubic-bezier(.22,.55,.3,1)',fill:'forwards'});
+      animation.onfinish=()=>{coin.remove();halo.remove();if(ui.battleIncomeVisual!==visual)return;const arrival=document.createElement('i');arrival.className='battle-income-arrival';arrival.style.left=(to.left+to.width/2)+'px';arrival.style.top=(to.top+to.height/2)+'px';document.body.appendChild(arrival);ui.battleIncomeTimers.push(setTimeout(()=>arrival.remove(),380));};
     },i*step);ui.battleIncomeTimers.push(id);});
   }
-  const duration=quiet?220:2200;
   const tick=now=>{if(ui.battleIncomeVisual!==visual||ui.st!==st){battleIncomeClear();return;}
     const elapsed=now-visual.started;
     for(const row of visual.rows){const collected=quiet?(row.after-row.before)*Math.min(1,elapsed/duration):row.cells.reduce((n,c,i)=>n+(elapsed>=i*row.step+row.flight?c.amount:0),0);visual.gold[row.color]=Math.min(row.after,row.before+collected);}
@@ -122,18 +163,18 @@ function battleIncomeEvents(events) {
   battlePaintIncomeGold();ui.battleIncomeFrame=requestAnimationFrame(tick);
 }
 function battleAnimationDuration(events) {
-  const income=events.some(e=>e.type==='income'&&e.amount>0);
-  if(profile.calm||matchMedia('(prefers-reduced-motion: reduce)').matches)return income?300:120;
-  const shot=events.find(e=>e.type==='shot'),base=shot?(shot.special==='nuke'?4000:shot.special==='rocket'||shot.special==='catapult'?1800:1250):events.some(e=>['move','deploy','knockback'].includes(e.type))?700:350;
-  return Math.max(base,income?2300:0);
+  const quiet=profile.calm||matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const shot=events.find(e=>e.type==='shot');
+  const base=quiet?120:shot?(shot.special==='nuke'?4000:shot.special==='rocket'||shot.special==='catapult'?1800:1250):events.some(e=>['move','deploy','knockback'].includes(e.type))?700:350;
+  return base+battleIncomeDuration(events);
 }
 function battleAnimateAction(kind,result,record,done) {
-  const events=result.events||[],st=ui.st,duration=battleAnimationDuration(events),shot=events.find(e=>e.type==='shot');
+  const events=result.events||[],st=ui.st,duration=battleAnimationDuration(events),incomeDuration=battleIncomeDuration(events),actionDuration=duration-incomeDuration,shot=events.find(e=>e.type==='shot');
   battleFxClear(true);ui.battleFxBusy=true;
   const before=result.before;if(before)ui.battleFxState=restoreNetworkState(before);
-  renderBoard(false);battleRenderUi();battleShowAction(record.san,result.mover);battleIncomeEvents(events);
+  renderBoard(false);battleRenderUi();battleShowAction(record.san,result.mover);
   const quiet=profile.calm||matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(shot&&!quiet)strategyProjectile(shot.from,shot.to,shot.special==='nuke'?'☢':shot.special==='rocket'?'🚀':shot.special==='catapult'?'🪨':'•',shot.special==='nuke'?2200:duration-500);
+  if(shot&&!quiet)strategyProjectile(shot.from,shot.to,shot.special==='nuke'?'☢':shot.special==='rocket'?'🚀':shot.special==='catapult'?'🪨':'•',shot.special==='nuke'?2200:actionDuration-500);
   const seq=ui.moves.length;
   const impact=()=>{
     if(ui.st!==st||ui.moves.length!==seq)return;
@@ -151,8 +192,9 @@ function battleAnimateAction(kind,result,record,done) {
       if(e.type==='move'&&before){const p=before.board[e.from],el=p&&ui.pieceNodes.get(p.id);if(el){const a=disp(st,e.from),b=disp(st,e.to);el.animate([{transform:`translate(${a.dx*ui.sq}px,${a.dy*ui.sq}px) scale(.95)`},{transform:`translate(${b.dx*ui.sq}px,${b.dy*ui.sq}px) scale(1)`}],{duration:500,easing:'ease-in-out'});}}
     }
   };
-  const delay=shot&&!quiet?(shot.special==='nuke'?2200:duration-500):0;
-  if(delay){ui.battleFxTimer=setTimeout(()=>{impact();ui.battleFxTimer=setTimeout(finish,duration-delay);},delay);}else{impact();ui.battleFxTimer=setTimeout(finish,duration);}
+  const delay=shot&&!quiet?(shot.special==='nuke'?2200:actionDuration-500):0;
+  if(delay){ui.battleFxTimer=setTimeout(()=>{impact();ui.battleFxTimer=setTimeout(collect,actionDuration-delay);},delay);}else{impact();ui.battleFxTimer=setTimeout(collect,actionDuration);}
+  function collect(){if(ui.st!==st||ui.moves.length!==seq)return;if(incomeDuration){battleIncomeEvents(events);ui.battleFxTimer=setTimeout(finish,incomeDuration);}else finish();}
   function finish(){if(ui.st!==st||ui.moves.length!==seq)return;ui.battleFxBusy=false;ui.battleFxState=null;ui.battleFxTimer=0;renderAll(false);done();}
   return duration;
 }
