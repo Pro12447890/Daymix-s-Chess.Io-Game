@@ -4343,7 +4343,7 @@ html.calm .sr-king, html.calm .sr-result::after { animation: none !important; }
   transform:translate(-50%, -50%);
   border:2px solid #ff5348;
   box-shadow:0 0 9px #ff3b3055;
-  animation:mateWave 2.35s cubic-bezier(.2,.45,.3,1) both;
+  animation:mateWave 1.52s cubic-bezier(.2,.45,.3,1) both;
 }
 @keyframes mateWave {
   0% { opacity:.85; width:var(--mate-size,28px); height:var(--mate-size,28px); }

@@ -431,7 +431,7 @@ function chooseBotMoveOffThread(st, level, persona, maxMs = 0) {
   if (typeof Worker !== 'function') return Promise.resolve(maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261110-86', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261110-86.1', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -828,8 +828,7 @@ function importGameData(data, opts = {}) {
   ui.hint = null;
   ui.endSquare = -1;
   ui.persona = null;
-  clearTimeout(ui.endTimer);
-  ui.endTimer = 0;
+  cancelEndPresentation();
   ui.names = {
     w: (data.players && data.players.w) || { name: 'Белые', avatar: 'k' },
     b: (data.players && data.players.b) || { name: 'Чёрные', avatar: 'k' },
@@ -1610,6 +1609,16 @@ function damageFx(square, dmg, survived, type) {
   setTimeout(() => { ring.remove(); float.remove(); }, 950);
 }
 
+const END_PRESENTATION_MS = 2000;
+
+function cancelEndPresentation() {
+  clearTimeout(ui.endTimer);
+  ui.endTimer = 0;
+  ui.endSequence = null;
+  ui.endSquare = -1;
+  clearMateWaves();
+}
+
 function clearMateWaves() {
   clearTimeout(mateKingWaves.cleanupTimer);
   document.querySelector('.mate-wave-layer')?.remove();
@@ -1633,7 +1642,7 @@ function mateKingWaves(sq) {
     wave.style.animationDelay = (i * .12).toFixed(2) + 's'; layer.appendChild(wave);
   }
   document.body.appendChild(layer);
-  mateKingWaves.cleanupTimer = setTimeout(() => layer.remove(), 2900);
+  mateKingWaves.cleanupTimer = setTimeout(() => layer.remove(), END_PRESENTATION_MS);
 }
 
 function renderResultKings(res) {
@@ -6741,8 +6750,7 @@ function newGame(opts = {}) {
   ui.selected = -1;
   ui.hint = null;
   ui.lastMove = null;
-  clearTimeout(ui.endTimer);
-  ui.endTimer = 0;
+  cancelEndPresentation();
   ui.endSquare = -1;
   ui.chat = [];
   ui.scored = false;
@@ -7084,8 +7092,9 @@ function renderStatus() {
   }
   if (st.status === 'over' && st.result) {
     if (shell) shell.classList.remove('check-alert');
-    el.textContent = resultTitle(st.result);
-    sub.textContent = resultReason(st.result);
+    const pending = !ui.scored && endPresentationReason(st.result);
+    el.textContent = pending ? endPresentationTitle(st.result) : resultTitle(st.result);
+    sub.textContent = pending ? modeName(st.mode) : resultReason(st.result);
     const text = el.textContent + '|' + sub.textContent;
     if (ui.lastStatusText !== text) {
       ui.lastStatusText = text;
@@ -7502,40 +7511,61 @@ function scoreGame(res, st) {
   return st.full <= 10 ? -5 : -4;
 }
 
+function endPresentationReason(res) {
+  return res && ['mate', 'stalemate', 'king', 'kingHp'].includes(res.reason);
+}
+function endPresentationTitle(res) {
+  const en = profile.language === 'en';
+  return res.reason === 'mate' ? (en ? 'CHECKMATE' : 'МАТ')
+    : res.reason === 'stalemate' ? (en ? 'STALEMATE' : 'ПАТ')
+      : res.reason === 'kingHp' ? (en ? 'KING OUT OF HP' : 'КОРОЛЬ БЕЗ ХП')
+        : (en ? 'KING CAPTURED' : 'КОРОЛЬ СНЯТ');
+}
 function finishGame(res, opts = {}) {
+  if (!ui.st || !res || ui.scored) return;
+  const pending = ui.endSequence;
+  if (pending && pending.state === ui.st && opts.endSequence !== pending) {
+    // A duplicate timeout/end packet cannot skip the animation or replace mate.
+    ui.st.status = 'over'; ui.st.result = pending.result;
+    renderStatus();
+    return;
+  }
+  if (opts.endSequence && (pending !== opts.endSequence || pending.state !== ui.st)) return;
+  if (ui.st.status === 'over' && ui.st.result) res = ui.st.result;
+  ui.st.status = 'over'; ui.st.result = res;
   if (ui.cancelDrag) ui.cancelDrag();
   stopRaceClock();
-  if (ui.st && ui.st.flags.zombie) showZombieIntro('outro', res);
+  if (ui.st.flags.zombie) showZombieIntro('outro', res);
   stopZombie(false);
   stopRoyal();
   stopStrategy();
   try { localStorage.removeItem(CURRENT_KEY); } catch (error) { /* ignore */ }
   ui.running = false;
   clearInterval(ui.timer);
-  if (!ui.st) return;
-  if (ui.scored) return;
-  if (!opts.delayed && (res.reason === 'mate' || res.reason === 'stalemate' || res.reason === 'king' || res.reason === 'kingHp')) {
-    if (ui.endTimer) return;
+  if (!opts.endSequence && endPresentationReason(res)) {
+    const sequence = { state: ui.st, result: res };
+    ui.endSequence = sequence;
     const kingEnd = res.reason === 'king' || res.reason === 'kingHp';
     const loser = res.winner ? other(res.winner) : ui.st.turn;
     ui.endSquare = kingEnd ? -1 : findKing(ui.st, loser);
     ui.endReason = res.reason;
-    ui.st.status = 'over';
-    ui.st.result = res;
+    $('#result').classList.add('hidden');
     renderSquares();
     if (res.reason === 'mate') { renderPieces(false); mateKingWaves(ui.endSquare); if (typeof v84MateMood === 'function') v84MateMood(ui.endSquare); }
-    const statusEl = $('#gameStatus');
-    if (statusEl) statusEl.textContent = res.reason === 'mate' ? 'МАТ' : res.reason === 'stalemate' ? 'ПАТ' : res.reason === 'kingHp' ? 'КОРОЛЬ БЕЗ ХП' : 'КОРОЛЬ СНЯТ';
-    const pause = kingEnd ? (profile.calm ? 600 : 1900) : 3000;
+    renderStatus();
     ui.endTimer = setTimeout(() => {
+      if (ui.endSequence !== sequence || ui.st !== sequence.state || ui.st.status !== 'over') return;
       ui.endTimer = 0;
       ui.endSquare = -1;
+      clearMateWaves();
       renderSquares();
-      finishGame(res, { delayed: true });
-    }, pause);
+      finishGame(sequence.result, { endSequence: sequence });
+    }, END_PRESENTATION_MS);
     return;
   }
+  ui.endSequence = null;
   ui.scored = true;
+  renderStatus();
 
   const st = ui.st;
   if (!st.result) st.result = res;
@@ -8163,8 +8193,7 @@ function gotoPly(ply) {
     ui.selected = -1;
     ui.hint = null;
     ui.endSquare = -1;
-    clearTimeout(ui.endTimer);
-    ui.endTimer = 0;
+    cancelEndPresentation();
     clearTimeout(ui.firstMoveTimer);
     ui.firstMoveTimer = 0;
     ui.turnStart = performance.now();
@@ -9704,6 +9733,10 @@ function handleNet(text) {
   }
 
   if (msg.t === 'end' && ui.st) {
+    if (ui.st.status === 'over') {
+      if (!ui.scored && ui.st.result) finishGame(ui.st.result);
+      return;
+    }
     const result = { winner: msg.winner, reason: msg.reason || 'resign' };
     ui.st.status = 'over';
     ui.st.result = result;
@@ -9975,8 +10008,7 @@ function updateResumeFloat() {
 function leaveGame() {
   if (ui.cancelDrag) ui.cancelDrag();
   stopBotWorker();
-  clearTimeout(ui.endTimer);
-  ui.endTimer = 0;
+  cancelEndPresentation();
   ui.endSquare = -1;
   stopRoyal();
   stopZombie();
