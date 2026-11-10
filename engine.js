@@ -377,6 +377,21 @@ const MODES = [
     desc: 'Всё красное, а на значимых ходах звучат теоремы гамбитов, кипяточка и ферзюшки. Дота головного мозга.',
     W: 8, H: 8, flags: { classic: true, infernal: true },
   },
+  {
+    id: 'mirror', n: 66, name: 'Зеркальные шахматы', icon: '🪞',
+    desc: 'Стартовые линии отражены по файлам: король на d1/d8, ферзь на e1/e8. Зеркальная рокировка: слева король b и ладья c, справа король f и ладья e. Остальные правила стандартные.',
+    W: 8, H: 8, flags: { classic: true, mirror: true },
+  },
+  {
+    id: 'asymmetric960', n: 67, name: 'Асимметрия 960', icon: '🎲',
+    desc: 'Авторский вариант по мотивам трансцендентальных шахмат: независимые расстановки Chess960 белых и чёрных. Слоны на разных цветах, король между ладьями. Рокировки нет.',
+    W: 8, H: 8, flags: { classic: true, asymmetric960: true, noCastling: true },
+  },
+  {
+    id: 'noCastling', n: 68, name: 'Без рокировки', icon: '🚫🏰',
+    desc: 'Стандартная расстановка и обычные шахматные правила, но рокировка запрещена обеим сторонам.',
+    W: 8, H: 8, flags: { classic: true, noCastling: true },
+  },
 ];
 
 const MODE_BY_ID = Object.fromEntries(MODES.map((m) => [m.id, m]));
@@ -530,6 +545,20 @@ function setupBoard(st) {
   if (flags.noQueen7) {
     const back = 'rnbknr';
     for (let x = 0; x < Math.min(W, back.length); x++) {
+      board[x] = newPiece(back[x], 'w');
+      board[(H - 1) * W + x] = newPiece(back[x], 'b');
+    }
+  } else if (flags.asymmetric960) {
+    // Two successive draws from the same seeded PRNG, not a mirrored copy.
+    const whiteBack = fischerRank(rng);
+    const blackBack = fischerRank(rng);
+    for (let x = 0; x < W; x++) {
+      board[x] = newPiece(whiteBack[x], 'w');
+      board[(H - 1) * W + x] = newPiece(blackBack[x], 'b');
+    }
+  } else if (flags.mirror) {
+    const back = BACK_RANKS[W].split('').reverse().join('');
+    for (let x = 0; x < W; x++) {
       board[x] = newPiece(back[x], 'w');
       board[(H - 1) * W + x] = newPiece(back[x], 'b');
     }
@@ -698,6 +727,7 @@ function setupNoPawns(st) {
 
 function initCastling(st) {
   st.castling = { w: { k: null, q: null }, b: { k: null, q: null } };
+  if (st.flags.noCastling) return;
   for (const color of ['w', 'b']) {
     const rank = color === 'w' ? 0 : st.H - 1;
     let kingFile = -1;
@@ -1065,6 +1095,7 @@ function addPawnMoves(out, st, from, to, ny) {
 }
 
 function addCastling(st, color, out, kingSq) {
+  if (st.flags.noCastling) return;
   const rank = color === 'w' ? 0 : st.H - 1;
   if (rankOf(st, kingSq) !== rank) return;
   for (const side of ['k', 'q']) {
@@ -1074,8 +1105,8 @@ function addCastling(st, color, out, kingSq) {
     if (rookSq < 0 || rankOf(st, rookSq) !== rank) continue;
     const kingFile = fileOf(st, kingSq);
     const rookFile = fileOf(st, rookSq);
-    const kTarget = side === 'k' ? st.W - 2 : 2;
-    const rTarget = side === 'k' ? st.W - 3 : 3;
+    const kTarget = st.flags.mirror ? (side === 'k' ? st.W - 3 : 1) : (side === 'k' ? st.W - 2 : 2);
+    const rTarget = st.flags.mirror ? (side === 'k' ? st.W - 4 : 2) : (side === 'k' ? st.W - 3 : 3);
     if (kTarget === kingFile && rTarget === rookFile) continue;
 
     let ok = true;

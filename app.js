@@ -431,7 +431,7 @@ function chooseBotMoveOffThread(st, level, persona, maxMs = 0) {
   if (typeof Worker !== 'function') return Promise.resolve(maxMs > 0 ? chooseEmergencyBotMove(st) : chooseBotMove(st, level, persona));
   try {
     if (!botWorker) {
-      const engineUrl = new URL('engine.js?v=20261109-85.3', location.href).href;
+      const engineUrl = new URL('engine.js?v=20261110-86', location.href).href;
       const source = "'use strict'; importScripts(" + JSON.stringify(engineUrl) + ");"
         + 'const BOT_DEPTH=' + JSON.stringify(BOT_DEPTH) + '; const ui={persona:null};'
         + chooseBotMove.toString()
@@ -603,9 +603,10 @@ function buildGameText(data) {
     'Ходы:',
   ];
   const moves = Array.isArray(data.moves) ? data.moves : [];
+  const numbered = numberedGameMoves(moves, mode.id);
   moves.forEach((m, i) => {
-    const num = Math.floor(i / 2) + 1;
-    const prefix = i % 2 === 0 ? `${num}.` : `${num}...`;
+    const entry = numbered[i];
+    const prefix = `${entry.num}${entry.color === 'b' ? '...' : '.'}`;
     const promo = m.promo ? '=' + String(m.promo).toUpperCase() : '';
     const san = m.san ? ` (${m.san})` : '';
     const time = m.ms != null && Number(m.ms) > 0 ? `${(Number(m.ms) / 1000).toFixed(1)} с` : 'без времени';
@@ -751,7 +752,7 @@ function parseExportText(raw) {
     if (move) {
       data.moves.push({
         n: data.moves.length + 1,
-        side: data.moves.length % 2 === 0 ? 'w' : 'b',
+        side: value.match(/^\d+\.\.\./) ? 'b' : 'w',
         san: move[5] || '',
         from: move[2].toLowerCase(),
         to: move[3].toLowerCase(),
@@ -766,7 +767,7 @@ function parseExportText(raw) {
 }
 
 function modeIdOr(id) {
-  return modeById(String(id || '').toLowerCase()) ? String(id).toLowerCase() : 'classic';
+  return MODES.find(m => m.id.toLowerCase() === String(id || '').toLowerCase())?.id || 'classic';
 }
 
 function parseGameText(raw) {
@@ -816,6 +817,7 @@ function importGameData(data, opts = {}) {
   if(initial&&['w','b'].every(c=>Number.isFinite(initial[c])&&initial[c]>=0&&initial[c]<=ui.timeMs))ui.initialClocks={...initial};
   ui.clocks={...ui.initialClocks};
   ui.st = createState(mode.id, { square: !!(data.mode && data.mode.square), seed: data.mode && data.mode.seed });
+  ui.initialState = captureNetworkState(ui.st);
   ui.modePick = mode.id;
   ui.frames = [snap(ui.st)];
   ui.moves = [];
@@ -1804,6 +1806,7 @@ const OPENINGS = [
 ];
 
 function openingName() {
+  if (ui.st && ui.st.modeId !== 'classic') return null;
   const sans = ui.moves.map((m) => String(m.san || '').replace(/[+#]$/, ''));
   let best = null;
   for (const o of OPENINGS) {
@@ -1832,9 +1835,13 @@ const MODE_SHORT = {
   pawnBack: 'Назад', kingKnight: 'Король-конь', queenLose: 'Ферзь', weakKnights: 'Кони',
   castleReturn: 'Рокировка', square10: '10×10', square12: '12×12', infernal: 'Инферно', clashBrawl: 'Brawl', royalBattle: 'Битва', zombie: 'Зомби', strategy: 'Стратегия',
   annihilation: 'Аннигиляция', ultraBalance: 'Ультрабаланс',
+  mirror: 'Зеркало', asymmetric960: 'Асим. 960', noCastling: 'Без рокировки',
 };
 
 const MODE_EN = {
+  mirror: ['Mirror', 'Both back ranks are reflected: kings on d1/d8, queens on e1/e8. Castling is reflected too: king to b or f, rook to c or e. All other rules are classic.'],
+  asymmetric960: ['Asymmetric 960', 'An original variant inspired by Transcendental Chess: each side gets an independent Chess960 back rank. Opposite-coloured bishops; no castling. Check, mate, en passant and promotion remain.'],
+  noCastling: ['No castling', 'Standard chess, except castling is forbidden throughout the game. Check, mate, en passant and promotion remain.'],
   classic: ['Classic', "Standard 8×8 chess: castling, en passant, promotion, mate, stalemate and the 50-move rule."],
   threeChecks: ['Three-check', "No mate needed: give three checks to win."],
   kingCapture: ['King capture', "The king may move into danger. Lose your king and you lose."],
@@ -1950,8 +1957,8 @@ const THEMES = [
 const PIECE_SKINS = [
   { id: '1', name: 'Классика', w: '#ffffff', we: '#1f1f1f', wd: '#404040', b: '#312e2b', be: '#0d0d0d', bd: '#5a5652', sw: 2.2 },
   { id: 'thin', name: 'Тонкие', w: '#ffffff', we: '#2b2b2b', wd: '#4a4a4a', b: '#312e2b', be: '#111111', bd: '#5a5652', sw: 1.45 },
-  /* ровно посередине между «Тонкими» 1.45 и «Жирными» 4.2 */
-  { id: 'medium', name: 'Средние', w: '#ffffff', we: '#252525', wd: '#454545', b: '#312e2b', be: '#0f0f0f', bd: '#5a5652', sw: 2.83 },
+  /* среднее арифметическое контуров «Классика» 2.2 и «Жирные» 4.2 */
+  { id: 'medium', name: 'Средние', w: '#ffffff', we: '#252525', wd: '#454545', b: '#312e2b', be: '#0f0f0f', bd: '#5a5652', sw: (2.2 + 4.2) / 2 },
   { id: '2', name: 'Жирные', w: '#fdfbf6', we: '#b9ab90', wd: '#a89a80', b: '#23262c', be: '#0d0f12', bd: '#343a43', sw: 4.2 },
   { id: '3', name: 'Контур', w: '#2a241d', we: '#2a241d', wd: '#2a241d', b: '#1d2026', be: '#1d2026', bd: '#1d2026', sw: 1.9, hollow: true },
   { id: '4', name: 'Металл', w: '#e8edf2', we: '#4a4640', wd: '#7d786f', b: '#3a4048', be: '#e9edf2', bd: '#d7dbe0', sw: 1.9, metal: true },
@@ -4042,7 +4049,7 @@ function startGameWithMode(opts = {}) {
 }
 
 const MODE_CATS = {
-  popular: ['classic', 'fischer', 'threeChecks', 'kingCapture'],
+  popular: ['classic', 'blackFirst', 'mirror', 'noCastling', 'asymmetric960', 'fischer', 'threeChecks', 'kingCapture'],
   pieces: ['jester', 'boy', 'queens', 'pawnField', 'pawnFieldQ', 'knights', 'rooks', 'bishops'],
   chaos: ['explode', 'annihilation', 'fog', 'blocks', 'race', 'queenPierce', 'noPawns', 'center', 'damage', 'damageKing'],
   mini: ['strategy', 'ultraBalance', 'zombie', 'royalBattle', 'clashBrawl', 'infernal', 'devourAll', 'captureRace', 'antichess'],
@@ -4057,7 +4064,7 @@ function modesByFilter(filter) {
 }
 
 const MODE_GROUP = {
-  random: 1, classic: 1, threeChecks: 1, kingCapture: 1, center: 1, fischer: 1, chess960: 1,
+  random: 1, classic: 1, mirror: 1, noCastling: 1, asymmetric960: 2, threeChecks: 1, kingCapture: 1, center: 1, fischer: 1, chess960: 1,
   pawnRush: 1, backCapture: 1, radiusCheck: 1, vanishEdge: 1,
   pawnRows: 2, kqp: 2, wide10: 2, tall10: 2, jester: 2, boy: 2, queens: 2, bishops: 2,
   knights: 2, rooks: 2, pawnField: 2, pawnFieldQ: 2, noPawns: 2, blocks: 2, swapReplace: 2, convert20: 2,
@@ -5268,6 +5275,8 @@ function snap(st, lastMove = null) {
     board: st.board.slice(),
     lastMove: lastMove ? { ...lastMove } : null,
     turn: st.turn,
+    full: st.full, half: st.half,
+    mv: { w: { ...st.mv.w }, b: { ...st.mv.b } },
     ep: st.ep,
     castling: { w: { ...st.castling.w }, b: { ...st.castling.b } },
     blocked: st.blocked.slice(),
@@ -6829,7 +6838,7 @@ function newGame(opts = {}) {
   requestAnimationFrame(() => { if (ui.st) renderBoard(false); });
 
   $('#result').classList.add('hidden');
-  $('#gameStatus').textContent = 'Ход белых';
+  renderStatus();
   $('#gameSub').textContent = mode.name + ' · ' + (ui.timeMs ? profile.timeLabel : 'без ограничений');
 
   saveCurrentGame();
@@ -8009,16 +8018,26 @@ function showPhase(phase) {
 
 /* ───────────────────────── 11. СПИСОК ХОДОВ ───────────────────────────── */
 
+function numberedGameMoves(moves = ui.moves, modeId = ui.st?.modeId) {
+  const first = modeById(modeId).flags.blackFirst ? 'b' : 'w';
+  let num = 1;
+  return moves.map((m, i) => {
+    const color = m.color || m.side || (i % 2 ? other(first) : first);
+    const entry = { m, ply: i + 1, num, color };
+    if (color === 'b') num++;
+    return entry;
+  });
+}
+
 function renderMobileMoves() {
   const strip = $('#mobileMoves');
   if (!strip) return;
-  const last = ui.moves.slice(-8);
+  const last = numberedGameMoves().slice(-8);
   if (!last.length) {
     strip.innerHTML = '<span class="mm mm-empty">сделайте первый ход</span>';
   } else {
-    strip.innerHTML = last.map((m, idx) => {
-      const ply = ui.moves.length - last.length + idx + 1;
-      const num = Math.ceil(ply / 2) + (ply % 2 === 0 ? '…' : '.');
+    strip.innerHTML = last.map(({ m, ply, num: moveNum, color }) => {
+      const num = moveNum + (color === 'b' ? '…' : '.');
       return `<span class="mm ${ply === ui.viewPly ? 'last' : ''}"><span class="mm-num">${num}</span>${escapeHtml(m.san)}</span>`;
     }).join('');
   }
@@ -8035,17 +8054,23 @@ function renderMoves() {
   }
   const rows = [];
   const cur = ui.viewPly;
-  for (let i = 0; i < ui.moves.length; i += 2) {
-    const num = i / 2 + 1;
-    const one = ui.moves[i];
-    const two = ui.moves[i + 1];
-    const cell = (m, ply) => {
-      if (!m) return '<span class="mv-empty"></span>';
-      const time = ui.timeMs && m.spent > 0 ? `<em>${(m.spent / 1000).toFixed(1)}с</em>` : '';
-      const grade = ui.training && ui.training.rows[ply - 1] ? ui.training.rows[ply - 1].grade : '';
-      return `<button type="button" class="mv ${ply === cur ? 'active' : ''}${grade ? ' tr-' + grade : ''}" data-ply="${ply}">${escapeHtml(m.san)}${time}</button>`;
-    };
-    rows.push(`<div class="move-row"><span class="mv-num">${num}.</span>${cell(one, i + 1)}${cell(two, i + 2)}</div>`);
+  const cell = (entry) => {
+    if (!entry) return '<span class="mv-empty"></span>';
+    const { m, ply } = entry;
+    const time = ui.timeMs && m.spent > 0 ? `<em>${(m.spent / 1000).toFixed(1)}с</em>` : '';
+    const grade = ui.training && ui.training.rows[ply - 1] ? ui.training.rows[ply - 1].grade : '';
+    return `<button type="button" class="mv ${ply === cur ? 'active' : ''}${grade ? ' tr-' + grade : ''}" data-ply="${ply}">${escapeHtml(m.san)}${time}</button>`;
+  };
+  if (typeof specialMode === 'function' && specialMode()) {
+    // Battle actions need not alternate colours; keep their existing action-pair view.
+    for (let i = 0; i < ui.moves.length; i += 2) rows.push(`<div class="move-row"><span class="mv-num">${i / 2 + 1}.</span>${cell({m:ui.moves[i],ply:i+1})}${ui.moves[i+1] ? cell({m:ui.moves[i+1],ply:i+2}) : cell(null)}</div>`);
+  } else {
+    const grouped = new Map();
+    for (const entry of numberedGameMoves()) {
+      if (!grouped.has(entry.num)) grouped.set(entry.num, {});
+      grouped.get(entry.num)[entry.color] = entry;
+    }
+    for (const [num, pair] of grouped) rows.push(`<div class="move-row"><span class="mv-num">${num}.</span>${cell(pair.w)}${cell(pair.b)}</div>`);
   }
   box.innerHTML = rows.join('');
   box.querySelectorAll('.mv').forEach((b) => {
@@ -8128,7 +8153,11 @@ function gotoPly(ply) {
     ui.st.lastCheckDamage = null;
     ui.st.status = f.status || 'play';
     ui.st.result = f.result ? { ...f.result } : null;
-    if(!f.specialState) ui.st.full = Math.floor(target / 2) + 1;
+    if (!f.specialState) {
+      ui.st.full = f.full ?? (1 + ui.moves.slice(0, target).filter((m, i) => (m.color || (ui.st.flags.blackFirst ? (i % 2 ? 'w' : 'b') : (i % 2 ? 'b' : 'w'))) === 'b').length);
+      if (f.half != null) ui.st.half = f.half;
+      if (f.mv) ui.st.mv = { w: { ...f.mv.w }, b: { ...f.mv.b } };
+    }
     ui.viewPly = target;
     ui.lastMove = f.lastMove || null;
     ui.selected = -1;
@@ -8289,6 +8318,32 @@ function playHistorySound(prevView, nextView) {
   if (nextView.check) setTimeout(() => sound.check(), 110);
 }
 
+function initialPositionFen(st) {
+  const ranks = [];
+  for (let y = st.H - 1; y >= 0; y--) {
+    let row = '', empty = 0;
+    for (let x = 0; x < st.W; x++) {
+      const p = st.board[y * st.W + x];
+      if (!p) { empty++; continue; }
+      if (empty) { row += empty; empty = 0; }
+      row += p.c === 'w' ? p.t.toUpperCase() : p.t;
+    }
+    if (empty) row += empty;
+    ranks.push(row);
+  }
+  let rights = '';
+  for (const color of ['w', 'b']) for (const side of ['k', 'q']) {
+    const id = st.castling[color][side];
+    const sq = st.board.findIndex(p => p && p.id === id);
+    if (id == null || sq < 0) continue;
+    const file = sq % st.W;
+    const king = st.board.findIndex(p => p && p.c === color && p.t === 'k') % st.W;
+    let c = king === 4 && (file === 0 || file === 7) ? (side === 'k' ? 'k' : 'q') : 'abcdefgh'[file];
+    rights += color === 'w' ? c.toUpperCase() : c;
+  }
+  return `${ranks.join('/')} ${st.turn} ${rights || '-'} ${st.ep >= 0 ? sqName(st, st.ep) : '-'} ${st.half || 0} ${st.full || 1}`;
+}
+
 function buildPgnText() {
   const st = ui.st;
   if (!st) return '';
@@ -8307,12 +8362,14 @@ function buildPgnText() {
     `[Variant "${st.mode.name}"]`,
     `[TimeControl "${ui.timeMs ? Math.round(ui.timeMs / 1000) : '-'}"]`,
     `[Opening "${openingName() || ''}"]`,
+    ...(st.modeId !== 'classic' && st.W === 8 && st.H === 8 && ui.initialState ? ['[SetUp "1"]', `[FEN "${initialPositionFen(ui.initialState)}"]`] : []),
     '',
   ];
   const body = [];
-  for (let i = 0; i < ui.moves.length; i += 2) {
-    const num = i / 2 + 1;
-    body.push(`${num}. ${ui.moves[i].san}${ui.moves[i + 1] ? ' ' + ui.moves[i + 1].san : ''}`);
+  const entries = numberedGameMoves();
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    body.push(e.color === 'w' ? `${e.num}. ${e.m.san}` : (i && entries[i - 1].color === 'w' && entries[i - 1].num === e.num ? e.m.san : `${e.num}... ${e.m.san}`));
   }
   return lines.join('\n') + body.join(' ') + (body.length ? ' ' + result : '');
 }
